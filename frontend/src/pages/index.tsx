@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import CircularProgress from '@mui/material/CircularProgress';
 import ButtonBase from '@mui/material/ButtonBase';
-import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
-import LightModeIcon from '@mui/icons-material/LightModeOutlined';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import CircularProgress from '@mui/material/CircularProgress';
+import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
+import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import CloudOffRoundedIcon from '@mui/icons-material/CloudOffRounded';
+import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
+import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
+import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { iconButton, primaryButton, slimScroll } from '@/shared/styles/ui';
 import { layoutCommits, type Commit } from '@/shared/graphLayout';
@@ -15,13 +18,26 @@ import {
   gitgraphGraphUrl,
   gitgraphInitUrl,
 } from '@/shared/state/API_ENDPOINTS';
-import AppPicker, { type AppEntry } from '@/components/AppPicker';
+import AppRail from '@/components/AppRail';
+import type { AppEntry } from '@/components/AppPicker';
 import CommitList from '@/components/CommitList';
-import CommitPanel, { type DirtyFile } from '@/components/CommitPanel';
-import DiscardButton from '@/components/DiscardButton';
+import CommitSheet from '@/components/CommitSheet';
+import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
-import MagicUpdateButton from '@/components/MagicUpdateButton';
+import HomeGrid from '@/components/HomeGrid';
+import RepoHero from '@/components/RepoHero';
+import { Placeholder, Scroller, Shell, Toolbar } from '@/components/Chrome';
 import { githubStatusUrl } from '@/shared/state/API_ENDPOINTS';
+import type { DirtyFile } from '@/components/CommitPanel';
+
+interface HomeMeta {
+  is_repo: boolean;
+  commit_count: number;
+  dirty_count: number;
+  current_branch: string | null;
+  head_subject: string | null;
+  head_date: string | null;
+}
 
 interface Graph {
   is_repo: boolean;
@@ -39,14 +55,13 @@ interface CommitFile {
   removed: number | null;
 }
 
-const TOOLBAR_HEIGHT = 44;
-
 const Home: React.FC = () => {
   const c = useClaudeTokens();
-  const { mode, toggleMode } = useThemeMode();
+  const { mode: themeMode, toggleMode } = useThemeMode();
 
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
+  const [mode, setMode] = useState<'home' | 'app'>('home');
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +73,10 @@ const Home: React.FC = () => {
   const [magicBusy, setMagicBusy] = useState(false);
   const [initBusy, setInitBusy] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [trackingId, setTrackingId] = useState<string | null>(null);
+
+  const [homeMeta, setHomeMeta] = useState<Record<string, HomeMeta>>({});
+  const [metaLoading, setMetaLoading] = useState<Set<string>>(() => new Set());
 
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
     const res = await fetch(GITGRAPH_APPS_URL);
@@ -81,7 +100,7 @@ const Home: React.FC = () => {
         const data = await res.json();
         if (!cancelled) setHasRemote(Boolean(data?.has_remote));
       } catch {
-        // Non-fatal: the Magic Update button just skips pushing.
+        /* Non-fatal: the Magic Update button just skips pushing. */
       }
     })();
     return () => {
@@ -93,9 +112,7 @@ const Home: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await refetchApps();
-        if (cancelled) return;
-        setSelected(list.find(a => a.has_git) ?? list[0] ?? null);
+        await refetchApps();
       } catch {
         if (!cancelled) setError("Couldn't reach the backend.");
       } finally {
@@ -116,7 +133,20 @@ const Home: React.FC = () => {
     try {
       const res = await fetch(gitgraphGraphUrl(app.workspace_id));
       if (!res.ok) throw new Error(`graph ${res.status}`);
-      setGraph(await res.json());
+      const data: Graph = await res.json();
+      setGraph(data);
+      // Refresh this app's home-grid meta so returning home matches reality.
+      setHomeMeta(prev => ({
+        ...prev,
+        [app.workspace_id]: {
+          is_repo: data.is_repo,
+          commit_count: data.commits?.length ?? 0,
+          dirty_count: data.dirty?.length ?? 0,
+          current_branch: data.current_branch ?? null,
+          head_subject: data.commits?.[0]?.subject ?? null,
+          head_date: data.commits?.[0]?.date ?? null,
+        },
+      }));
     } catch {
       setGraph(null);
       setError("Couldn't read that workspace.");
@@ -126,10 +156,66 @@ const Home: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (mode !== 'app') return;
     void loadGraph(selected);
-  }, [selected, loadGraph]);
+  }, [selected, loadGraph, mode]);
 
-  // Details load lazily: the graph payload stays small even for deep repos.
+  // Lazily fetch home meta for tracked apps so the grid can show branch,
+  // commit count, and last-change time without spinning up every graph
+  // eagerly on first paint.
+  useEffect(() => {
+    if (mode !== 'home') return;
+    const needs = apps.filter(
+      a =>
+        a.has_git &&
+        a.workspace_exists &&
+        homeMeta[a.workspace_id] === undefined &&
+        !metaLoading.has(a.workspace_id),
+    );
+    if (needs.length === 0) return;
+
+    let cancelled = false;
+    setMetaLoading(prev => {
+      const next = new Set(prev);
+      for (const a of needs) next.add(a.workspace_id);
+      return next;
+    });
+
+    for (const app of needs) {
+      void (async () => {
+        try {
+          const res = await fetch(gitgraphGraphUrl(app.workspace_id));
+          if (!res.ok) throw new Error(`graph ${res.status}`);
+          const data: Graph = await res.json();
+          if (cancelled) return;
+          setHomeMeta(prev => ({
+            ...prev,
+            [app.workspace_id]: {
+              is_repo: data.is_repo,
+              commit_count: data.commits?.length ?? 0,
+              dirty_count: data.dirty?.length ?? 0,
+              current_branch: data.current_branch ?? null,
+              head_subject: data.commits?.[0]?.subject ?? null,
+              head_date: data.commits?.[0]?.date ?? null,
+            },
+          }));
+        } catch {
+          /* leave meta undefined — the card falls back to "not tracked yet" */
+        } finally {
+          if (cancelled) return;
+          setMetaLoading(prev => {
+            const next = new Set(prev);
+            next.delete(app.workspace_id);
+            return next;
+          });
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [apps, mode, homeMeta, metaLoading]);
+
   useEffect(() => {
     if (!selected || !selectedSha) return;
     let cancelled = false;
@@ -152,6 +238,7 @@ const Home: React.FC = () => {
   const trackApp = useCallback(
     async (app: AppEntry) => {
       setInitBusy(true);
+      setTrackingId(app.workspace_id);
       setInitError(null);
       try {
         const res = await fetch(gitgraphInitUrl(app.workspace_id), { method: 'POST' });
@@ -161,15 +248,33 @@ const Home: React.FC = () => {
         }
         const list = await refetchApps();
         const fresh = list.find(a => a.workspace_id === app.workspace_id) ?? app;
+        // Drop any stale meta so the grid refetches once we're back home.
+        setHomeMeta(prev => {
+          const next = { ...prev };
+          delete next[fresh.workspace_id];
+          return next;
+        });
         setSelected(fresh);
+        setMode('app');
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Failed to track.');
       } finally {
         setInitBusy(false);
+        setTrackingId(null);
       }
     },
     [refetchApps],
   );
+
+  const openApp = useCallback((app: AppEntry) => {
+    setSelected(app);
+    setMode('app');
+  }, []);
+
+  const goHome = useCallback(() => {
+    setMode('home');
+    setSelectedSha(null);
+  }, []);
 
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
@@ -181,85 +286,138 @@ const Home: React.FC = () => {
     [layout, selectedSha],
   );
 
-  return (
-    <Box
-      sx={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: c.bg.window,
-        fontFamily: c.font.sans,
-      }}
-    >
-      <Box
-        sx={{
-          height: TOOLBAR_HEIGHT,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          background: c.bg.sidebar,
-          borderBottom: `0.5px solid ${c.separator}`,
-        }}
-      >
-        <AppPicker
-          apps={apps}
-          selected={selected}
-          onSelect={setSelected}
-          onTracked={app => {
-            void (async () => {
-              const list = await refetchApps().catch(() => null);
-              const fresh =
-                list?.find(a => a.workspace_id === app.workspace_id) ?? app;
-              setSelected(fresh);
-            })();
-          }}
-        />
+  const headCommit = useMemo(
+    () => (graph?.head_sha ? layout.nodes.find(n => n.sha === graph.head_sha) ?? null : null),
+    [graph, layout],
+  );
 
-        {graph?.current_branch && (
-          <Typography sx={{ ...c.type.callout, color: c.text.tertiary }}>
-            {graph.current_branch}
-            {graph.branches.length > 1 && ` · ${graph.branches.length} branches`}
-          </Typography>
+  const refresh = useCallback(() => {
+    setGitHubKey(k => k + 1);
+    void loadGraph(selected);
+  }, [loadGraph, selected]);
+
+  const rail = (
+    <AppRail
+      apps={apps}
+      selected={mode === 'app' ? selected : null}
+      homeActive={mode === 'home'}
+      onHome={goHome}
+      onSelect={openApp}
+      onTracked={app => {
+        void (async () => {
+          const list = await refetchApps().catch(() => null);
+          const fresh = list?.find(a => a.workspace_id === app.workspace_id) ?? app;
+          setHomeMeta(prev => {
+            const next = { ...prev };
+            delete next[fresh.workspace_id];
+            return next;
+          });
+          setSelected(fresh);
+          setMode('app');
+        })();
+      }}
+    />
+  );
+
+  const refreshHome = useCallback(() => {
+    setHomeMeta({});
+    void refetchApps();
+  }, [refetchApps]);
+
+  const toolbarChrome = (
+    <>
+      <Tooltip title="Refresh">
+        <ButtonBase
+          onClick={mode === 'home' ? refreshHome : refresh}
+          sx={{ ...iconButton(c), display: 'flex' }}
+          aria-label="Refresh"
+        >
+          <RefreshRoundedIcon sx={{ fontSize: 16 }} />
+        </ButtonBase>
+      </Tooltip>
+      <Tooltip title={themeMode === 'dark' ? 'Light mode' : 'Dark mode'}>
+        <ButtonBase
+          onClick={toggleMode}
+          sx={{ ...iconButton(c), display: 'flex' }}
+          aria-label="Toggle theme"
+        >
+          {themeMode === 'dark' ? (
+            <LightModeRoundedIcon sx={{ fontSize: 16 }} />
+          ) : (
+            <DarkModeRoundedIcon sx={{ fontSize: 16 }} />
+          )}
+        </ButtonBase>
+      </Tooltip>
+    </>
+  );
+
+  if (mode === 'home') {
+    return (
+      <Shell rail={rail}>
+        <Toolbar>
+          <Box sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}>
+            Home
+          </Box>
+          <Box sx={{ ...c.type.callout, color: c.text.tertiary }}>
+            {apps.length} {apps.length === 1 ? 'app' : 'apps'}
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          {toolbarChrome}
+        </Toolbar>
+        <Scroller>
+          {loading && apps.length === 0 ? (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 320,
+              }}
+            >
+              <CircularProgress size={20} sx={{ color: c.text.tertiary }} />
+            </Box>
+          ) : error && apps.length === 0 ? (
+            <Placeholder
+              danger
+              icon={<CloudOffRoundedIcon />}
+              title="Couldn't reach the backend"
+              hint={error}
+            />
+          ) : apps.length === 0 ? (
+            <Placeholder
+              icon={<SearchOffRoundedIcon />}
+              title="No apps yet"
+              hint="Once you have apps in your workspace they'll appear here."
+            />
+          ) : (
+            <HomeGrid
+              apps={apps}
+              meta={homeMeta}
+              metaLoading={metaLoading}
+              onOpen={openApp}
+              onTrack={trackApp}
+              trackingId={trackingId}
+            />
+          )}
+        </Scroller>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell rail={rail}>
+      <Toolbar>
+        <Box sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}>
+          {selected ? selected.name : 'Git Graph'}
+        </Box>
+        {selected && graph?.is_repo && (
+          <Box sx={{ ...c.type.callout, color: c.text.tertiary }}>
+            {layout.nodes.length} {layout.nodes.length === 1 ? 'commit' : 'commits'}
+            {graph.truncated && '+'}
+          </Box>
         )}
 
         <Box sx={{ flex: 1 }} />
-
-        {selected && graph?.dirty?.length ? (
-          <MagicUpdateButton
-            workspaceId={selected.workspace_id}
-            hasRemote={hasRemote}
-            onBusyChange={setMagicBusy}
-            onDone={() => {
-              setGitHubKey(k => k + 1);
-              void loadGraph(selected);
-            }}
-          />
-        ) : null}
-
-        {selected && graph?.dirty?.length && !magicBusy ? (
-          <CommitPanel
-            workspaceId={selected.workspace_id}
-            dirty={graph.dirty}
-            onCommitted={() => {
-              setGitHubKey(k => k + 1);
-              void loadGraph(selected);
-            }}
-          />
-        ) : null}
-
-        {selected && graph?.dirty?.length && !magicBusy ? (
-          <DiscardButton
-            workspaceId={selected.workspace_id}
-            dirtyCount={graph.dirty.length}
-            onDiscarded={() => {
-              setGitHubKey(k => k + 1);
-              void loadGraph(selected);
-            }}
-          />
-        ) : null}
 
         {selected && graph?.is_repo && (
           <GitHubPanel
@@ -269,50 +427,45 @@ const Home: React.FC = () => {
           />
         )}
 
-        <ButtonBase
-          onClick={() => {
-            setGitHubKey(k => k + 1);
-            void loadGraph(selected);
-          }}
-          sx={{ ...iconButton(c), display: 'flex' }}
-        >
-          <RefreshIcon sx={{ fontSize: 15 }} />
-        </ButtonBase>
-        <ButtonBase onClick={toggleMode} sx={{ ...iconButton(c), display: 'flex' }}>
-          {mode === 'dark' ? (
-            <LightModeIcon sx={{ fontSize: 15 }} />
-          ) : (
-            <DarkModeIcon sx={{ fontSize: 15 }} />
-          )}
-        </ButtonBase>
-      </Box>
+        {toolbarChrome}
+      </Toolbar>
 
-      <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', ...slimScroll(c) }}>
-          {loading ? (
-            <Centered>
-              <CircularProgress size={18} sx={{ color: c.text.quaternary }} />
-            </Centered>
-          ) : error ? (
-            <Centered>
-              <Typography sx={{ ...c.type.body, color: c.status.danger }}>{error}</Typography>
-            </Centered>
-          ) : !selected ? (
-            <Centered>
-              <Typography sx={{ ...c.type.body, color: c.text.tertiary }}>
-                No apps found.
-              </Typography>
-            </Centered>
-          ) : !graph?.is_repo ? (
-            <Centered>
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
-                <Typography sx={{ ...c.type.body, color: c.text.secondary }}>
-                  {selected?.name ?? 'This app'} isn't tracked yet.
-                </Typography>
+      <Scroller>
+        {loading ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 320,
+            }}
+          >
+            <CircularProgress size={20} sx={{ color: c.text.tertiary }} />
+          </Box>
+        ) : error ? (
+          <Placeholder
+            danger
+            icon={<CloudOffRoundedIcon />}
+            title="Couldn't reach the backend"
+            hint={error}
+          />
+        ) : !selected ? (
+          <Placeholder
+            icon={<SearchOffRoundedIcon />}
+            title="No apps yet"
+            hint="Once you have apps in your workspace they'll appear in the sidebar."
+          />
+        ) : !graph?.is_repo ? (
+          <Placeholder
+            icon={<RocketLaunchRoundedIcon />}
+            title={`Start tracking ${selected.name}`}
+            hint="Turn this workspace into a real git repository so you can commit, branch, and roll back."
+            action={
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                 <ButtonBase
-                  onClick={() => selected && void trackApp(selected)}
-                  disabled={initBusy || !selected}
-                  sx={{ ...primaryButton(c), height: 28, px: '14px' }}
+                  onClick={() => void trackApp(selected)}
+                  disabled={initBusy}
+                  sx={{ ...primaryButton(c), height: 32, px: '18px' }}
                 >
                   {initBusy ? (
                     <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
@@ -321,129 +474,103 @@ const Home: React.FC = () => {
                   )}
                 </ButtonBase>
                 {initError && (
-                  <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+                  <Box sx={{ ...c.type.caption, color: c.status.danger }}>
                     {initError}
-                  </Typography>
+                  </Box>
                 )}
               </Box>
-            </Centered>
-          ) : (
-            <>
-              <Box sx={{ height: 8 }} />
-              <CommitList
-                layout={layout}
-                selectedSha={selectedSha}
-                workspaceId={selected?.workspace_id ?? null}
-                headSha={graph?.head_sha ?? null}
-                currentBranch={graph?.current_branch ?? null}
-                branches={graph?.branches ?? []}
-                onSelect={sha => setSelectedSha(prev => (prev === sha ? null : sha))}
-                onRestored={() => {
-                  setGitHubKey(k => k + 1);
-                  void loadGraph(selected);
-                }}
+            }
+          />
+        ) : (
+          <>
+            <RepoHero
+              app={selected}
+              currentBranch={graph.current_branch}
+              branches={graph.branches}
+              headSubject={headCommit?.subject ?? null}
+              headSha={graph.head_sha}
+              headDate={headCommit?.date ?? null}
+              commitCount={layout.nodes.length}
+              dirtyCount={graph.dirty?.length ?? 0}
+            />
+
+            {graph.dirty && graph.dirty.length > 0 && (
+              <DirtyWorkCard
+                workspaceId={selected.workspace_id}
+                dirty={graph.dirty}
+                hasRemote={hasRemote}
+                magicBusy={magicBusy}
+                onBusyChange={setMagicBusy}
+                onCommitted={refresh}
+                onDiscarded={refresh}
+                onMagicDone={refresh}
               />
-              {graph.truncated && (
-                <Typography
-                  sx={{ ...c.type.caption, color: c.text.quaternary, px: 3, pb: 3 }}
-                >
-                  Showing the {layout.nodes.length} most recent commits.
-                </Typography>
-              )}
-            </>
-          )}
-        </Box>
-
-        {detail && (
-          <Box
-            sx={{
-              width: 300,
-              flexShrink: 0,
-              borderLeft: `0.5px solid ${c.separator}`,
-              background: c.bg.sidebar,
-              overflowY: 'auto',
-              p: 2,
-              ...slimScroll(c),
-            }}
-          >
-            <Typography sx={{ ...c.type.title3, color: c.text.primary, mb: 0.5 }}>
-              {detail.subject}
-            </Typography>
-            <Typography sx={{ ...c.type.callout, color: c.text.secondary }}>
-              {detail.author}
-            </Typography>
-            <Typography
-              sx={{ ...c.type.caption, fontFamily: c.font.mono, color: c.text.tertiary, mb: 2 }}
-            >
-              {detail.short} · {new Date(detail.date).toLocaleString()}
-            </Typography>
-
-            {files === null ? (
-              <Typography sx={{ ...c.type.caption, color: c.text.quaternary }}>
-                Loading changes…
-              </Typography>
-            ) : (
-              files.map(f => (
-                <Box
-                  key={f.path}
-                  sx={{ display: 'flex', alignItems: 'baseline', gap: 1, py: '3px' }}
-                >
-                  <Typography
-                    sx={{
-                      ...c.type.caption,
-                      fontFamily: c.font.mono,
-                      color: c.text.secondary,
-                      flex: 1,
-                      minWidth: 0,
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {f.path}
-                  </Typography>
-                  <Typography
-                    sx={{
-                      ...c.type.caption,
-                      fontFamily: c.font.mono,
-                      color: c.status.success,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {f.added === null ? 'bin' : `+${f.added}`}
-                  </Typography>
-                  {f.removed !== null && f.removed > 0 && (
-                    <Typography
-                      sx={{
-                        ...c.type.caption,
-                        fontFamily: c.font.mono,
-                        color: c.status.danger,
-                        flexShrink: 0,
-                      }}
-                    >
-                      -{f.removed}
-                    </Typography>
-                  )}
-                </Box>
-              ))
             )}
-          </Box>
+
+            <Box
+              sx={{
+                mx: 3,
+                mb: 1,
+                pb: 1,
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 1,
+                borderBottom: `0.5px solid ${c.separator}`,
+              }}
+            >
+              <Box
+                sx={{
+                  ...c.type.footnote,
+                  fontWeight: 590,
+                  color: c.text.tertiary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  fontSize: '10px',
+                }}
+              >
+                History
+              </Box>
+              <Box sx={{ flex: 1 }} />
+              <Box sx={{ ...c.type.caption, color: c.text.quaternary }}>
+                Newest first
+              </Box>
+            </Box>
+
+            <CommitList
+              layout={layout}
+              selectedSha={selectedSha}
+              headSha={graph.head_sha}
+              onSelect={sha => setSelectedSha(prev => (prev === sha ? null : sha))}
+            />
+
+            {graph.truncated && (
+              <Box
+                sx={{
+                  ...c.type.caption,
+                  color: c.text.quaternary,
+                  px: 3,
+                  pb: 3,
+                }}
+              >
+                Showing the {layout.nodes.length} most recent commits.
+              </Box>
+            )}
+          </>
         )}
-      </Box>
-    </Box>
+      </Scroller>
+
+      <CommitSheet
+        commit={detail}
+        files={files}
+        workspaceId={selected?.workspace_id ?? null}
+        headSha={graph?.head_sha ?? null}
+        currentBranch={graph?.current_branch ?? null}
+        branches={graph?.branches ?? []}
+        onClose={() => setSelectedSha(null)}
+        onRestored={refresh}
+      />
+    </Shell>
   );
 };
-
-const Centered: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <Box
-    sx={{
-      height: '100%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: 240,
-    }}
-  >
-    {children}
-  </Box>
-);
 
 export default Home;
