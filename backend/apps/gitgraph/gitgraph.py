@@ -11,6 +11,7 @@ from backend.apps.gitgraph import github, magic
 from backend.apps.gitgraph.discovery import (
     commit_paths,
     discard_dirty,
+    init_repo,
     list_apps,
     read_commit_detail,
     read_graph,
@@ -105,6 +106,17 @@ async def magic_update(workspace_id: str, body: MagicUpdateRequest) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     debug(workspace_id, result["sha"][:7], result["pushed"])
+    return result
+
+
+@gitgraph.router.post("/init/{workspace_id}")
+@typechecked
+async def init(workspace_id: str) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = init_repo(path)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Init failed."))
     return result
 
 

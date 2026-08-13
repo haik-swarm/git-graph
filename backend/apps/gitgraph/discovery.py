@@ -151,6 +151,41 @@ def workspace_path(workspace_id: str) -> Optional[Path]:
 
 
 @typechecked
+def init_repo(path: Path) -> Tuple[bool, Dict[str, Any]]:
+    """Turn a plain workspace into a git repo with one initial commit.
+
+    Uses `-b main` so the default branch matches what GitHub expects,
+    which avoids a later rename dance when the user connects a remote.
+    Refuses if `.git` already exists so a click can't quietly rewrite
+    history on a repo that was set up deliberately.
+    """
+    if (path / ".git").is_dir():
+        return False, {"detail": "This workspace is already tracked."}
+
+    ok, _, err = _run_git_result(["init", "-b", "main"], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git init failed."])[0]}
+
+    ok, _, err = _run_git_result(["add", "-A"], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git add failed."])[0]}
+
+    # An empty repo (say, the workspace only contains .gitignored files) still
+    # gets to the graph view; the empty-state banner just stays instead of
+    # showing a commit row.
+    staged = _run_git(["diff", "--cached", "--name-only"], path) or ""
+    if not staged.strip():
+        return True, {"sha": None, "created_commit": False}
+
+    ok, _, err = _run_git_result(["commit", "-m", "Initial commit"], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git commit failed."])[0]}
+
+    sha = (_run_git(["rev-parse", "HEAD"], path) or "").strip()
+    return True, {"sha": sha or None, "created_commit": True}
+
+
+@typechecked
 def _parse_refs(raw: str) -> List[str]:
     """Split %D into individual ref labels, dropping the HEAD arrow."""
     refs: List[str] = []

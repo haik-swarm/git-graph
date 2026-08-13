@@ -7,12 +7,13 @@ import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
 import LightModeIcon from '@mui/icons-material/LightModeOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
-import { iconButton, slimScroll } from '@/shared/styles/ui';
+import { iconButton, primaryButton, slimScroll } from '@/shared/styles/ui';
 import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
   gitgraphCommitUrl,
   gitgraphGraphUrl,
+  gitgraphInitUrl,
 } from '@/shared/state/API_ENDPOINTS';
 import AppPicker, { type AppEntry } from '@/components/AppPicker';
 import CommitList from '@/components/CommitList';
@@ -55,6 +56,17 @@ const Home: React.FC = () => {
   const [gitHubKey, setGitHubKey] = useState(0);
   const [hasRemote, setHasRemote] = useState(false);
   const [magicBusy, setMagicBusy] = useState(false);
+  const [initBusy, setInitBusy] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
+    const res = await fetch(GITGRAPH_APPS_URL);
+    if (!res.ok) throw new Error(`apps ${res.status}`);
+    const data = await res.json();
+    const list: AppEntry[] = data.apps ?? [];
+    setApps(list);
+    return list;
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -81,12 +93,8 @@ const Home: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(GITGRAPH_APPS_URL);
-        if (!res.ok) throw new Error(`apps ${res.status}`);
-        const data = await res.json();
-        const list: AppEntry[] = data.apps ?? [];
+        const list = await refetchApps();
         if (cancelled) return;
-        setApps(list);
         setSelected(list.find(a => a.has_git) ?? list[0] ?? null);
       } catch {
         if (!cancelled) setError("Couldn't reach the backend.");
@@ -97,7 +105,7 @@ const Home: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refetchApps]);
 
   const loadGraph = useCallback(async (app: AppEntry | null) => {
     if (!app) return;
@@ -141,6 +149,28 @@ const Home: React.FC = () => {
     };
   }, [selected, selectedSha]);
 
+  const trackApp = useCallback(
+    async (app: AppEntry) => {
+      setInitBusy(true);
+      setInitError(null);
+      try {
+        const res = await fetch(gitgraphInitUrl(app.workspace_id), { method: 'POST' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.detail || `init ${res.status}`);
+        }
+        const list = await refetchApps();
+        const fresh = list.find(a => a.workspace_id === app.workspace_id) ?? app;
+        setSelected(fresh);
+      } catch (err) {
+        setInitError(err instanceof Error ? err.message : 'Failed to track.');
+      } finally {
+        setInitBusy(false);
+      }
+    },
+    [refetchApps],
+  );
+
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
     [graph],
@@ -174,7 +204,19 @@ const Home: React.FC = () => {
           borderBottom: `0.5px solid ${c.separator}`,
         }}
       >
-        <AppPicker apps={apps} selected={selected} onSelect={setSelected} />
+        <AppPicker
+          apps={apps}
+          selected={selected}
+          onSelect={setSelected}
+          onTracked={app => {
+            void (async () => {
+              const list = await refetchApps().catch(() => null);
+              const fresh =
+                list?.find(a => a.workspace_id === app.workspace_id) ?? app;
+              setSelected(fresh);
+            })();
+          }}
+        />
 
         {graph?.current_branch && (
           <Typography sx={{ ...c.type.callout, color: c.text.tertiary }}>
@@ -263,9 +305,27 @@ const Home: React.FC = () => {
             </Centered>
           ) : !graph?.is_repo ? (
             <Centered>
-              <Typography sx={{ ...c.type.body, color: c.text.secondary }}>
-                No git history in this workspace yet.
-              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+                <Typography sx={{ ...c.type.body, color: c.text.secondary }}>
+                  {selected?.name ?? 'This app'} isn't tracked yet.
+                </Typography>
+                <ButtonBase
+                  onClick={() => selected && void trackApp(selected)}
+                  disabled={initBusy || !selected}
+                  sx={{ ...primaryButton(c), height: 28, px: '14px' }}
+                >
+                  {initBusy ? (
+                    <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                  ) : (
+                    'Track this app'
+                  )}
+                </ButtonBase>
+                {initError && (
+                  <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+                    {initError}
+                  </Typography>
+                )}
+              </Box>
             </Centered>
           ) : (
             <>
