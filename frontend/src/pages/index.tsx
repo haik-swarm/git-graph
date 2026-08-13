@@ -17,6 +17,7 @@ import {
 import AppPicker, { type AppEntry } from '@/components/AppPicker';
 import CommitList from '@/components/CommitList';
 import CommitPanel, { type DirtyFile } from '@/components/CommitPanel';
+import GitHubPanel from '@/components/GitHubPanel';
 
 interface Graph {
   is_repo: boolean;
@@ -47,6 +48,7 @@ const Home: React.FC = () => {
 
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [files, setFiles] = useState<CommitFile[] | null>(null);
+  const [gitHubKey, setGitHubKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,12 +162,26 @@ const Home: React.FC = () => {
           <CommitPanel
             workspaceId={selected.workspace_id}
             dirty={graph.dirty}
-            onCommitted={() => void loadGraph(selected)}
+            onCommitted={() => {
+              setGitHubKey(k => k + 1);
+              void loadGraph(selected);
+            }}
           />
         ) : null}
 
+        {selected && graph?.is_repo && (
+          <GitHubPanel
+            workspaceId={selected.workspace_id}
+            appName={selected.name}
+            refreshKey={gitHubKey}
+          />
+        )}
+
         <ButtonBase
-          onClick={() => void loadGraph(selected)}
+          onClick={() => {
+            setGitHubKey(k => k + 1);
+            void loadGraph(selected);
+          }}
           sx={{ ...iconButton(c), display: 'flex' }}
         >
           <RefreshIcon sx={{ fontSize: 15 }} />

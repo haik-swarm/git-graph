@@ -28,6 +28,10 @@ MAX_COMMITS = 500
 
 _GIT_TIMEOUT = 15
 
+# Pushing waits on the network and on GitHub's side of the handshake, which
+# a local-only budget would cut off mid-transfer.
+_GIT_NETWORK_TIMEOUT = 120
+
 
 @typechecked
 def openswarm_data_dir() -> Path:
@@ -42,11 +46,15 @@ def openswarm_data_dir() -> Path:
 
 
 @typechecked
-def _run_git_result(args: List[str], cwd: Path) -> Tuple[bool, str, str]:
+def _run_git_result(
+    args: List[str], cwd: Path, env: Optional[Dict[str, str]] = None
+) -> Tuple[bool, str, str]:
     """Run git and return (succeeded, stdout, stderr).
 
     Writing commands need git's own diagnostics — an unset user.email or a
     pre-commit hook rejection is only explainable by quoting stderr back.
+    `env` is merged over the inherited environment, which is how a token
+    reaches a credential helper without appearing in the command line.
     """
     try:
         proc = subprocess.run(
@@ -54,7 +62,8 @@ def _run_git_result(args: List[str], cwd: Path) -> Tuple[bool, str, str]:
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=_GIT_TIMEOUT,
+            timeout=_GIT_TIMEOUT if env is None else _GIT_NETWORK_TIMEOUT,
+            env={**os.environ, **env} if env else None,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, "", str(exc)

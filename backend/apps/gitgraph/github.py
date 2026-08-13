@@ -1,0 +1,309 @@
+"""Giving each app workspace its own private GitHub repo.
+
+The GitHub credential is the one the user already connected to OpenSwarm
+(Settings > the GitHub integration), read from the shared tools registry.
+Nothing is copied into this workspace, so revoking the integration
+revokes this app too.
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
+from typeguard import typechecked
+
+from backend.apps.gitgraph.discovery import (
+    _run_git,
+    _run_git_result,
+    openswarm_data_dir,
+)
+
+API_ROOT = "https://api.github.com"
+_HTTP_TIMEOUT = 20
+
+# git asks the helper for credentials on stdin/stdout rather than reading a
+# file, so the token reaches git through the environment and never lands on
+# disk or in a command line that `ps` would show.
+_CREDENTIAL_HELPER = (
+    '!f() { test "$1" = get && '
+    'echo username=x-access-token && '
+    'echo "password=$GITGRAPH_GITHUB_TOKEN"; }; f'
+)
+
+
+@typechecked
+def _credential_args() -> List[str]:
+    """Force git to use OUR token and nothing else.
+
+    Helpers are cumulative and consulted in order, so on a machine with a
+    global osxkeychain entry for github.com that one answers first. If it
+    holds a credential for a different account, GitHub reports a private
+    repo as "not found" and the real token is never tried. The empty value
+    resets the inherited list, leaving ours as the only helper.
+    """
+    return [
+        "-c",
+        "credential.helper=",
+        "-c",
+        f"credential.helper={_CREDENTIAL_HELPER}",
+    ]
+
+
+@typechecked
+def read_token() -> Optional[str]:
+    """The access token from the user's connected GitHub tool, if any."""
+    tools_dir = openswarm_data_dir() / "tools"
+    if not tools_dir.is_dir():
+        return None
+
+    for entry in sorted(tools_dir.glob("*.json")):
+        try:
+            tool = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(tool, dict):
+            continue
+        if str(tool.get("name", "")).strip().lower() != "github":
+            continue
+        token = (tool.get("oauth_tokens") or {}).get("access_token")
+        if isinstance(token, str) and token:
+            return token
+    return None
+
+
+@typechecked
+def _account_label() -> Optional[str]:
+    tools_dir = openswarm_data_dir() / "tools"
+    if not tools_dir.is_dir():
+        return None
+    for entry in sorted(tools_dir.glob("*.json")):
+        try:
+            tool = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(tool, dict):
+            continue
+        if str(tool.get("name", "")).strip().lower() != "github":
+            continue
+        if (tool.get("oauth_tokens") or {}).get("access_token"):
+            label = tool.get("connected_account_email")
+            return label if isinstance(label, str) and label else None
+    return None
+
+
+@typechecked
+def _headers(token: str) -> Dict[str, str]:
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+@typechecked
+def slugify(name: str) -> str:
+    """An app's display name as a repo name GitHub will accept."""
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-._").lower()
+    slug = re.sub(r"-{2,}", "-", slug)
+    return slug[:90] or "openswarm-app"
+
+
+@typechecked
+def parse_remote(url: str) -> Optional[Tuple[str, str]]:
+    """(owner, repo) from either an https or ssh GitHub remote."""
+    cleaned = url.strip()
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[: -len(".git")]
+    match = re.search(r"github\.com[:/]+([^/]+)/([^/]+)$", cleaned)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+@typechecked
+def remote_url(path: Path) -> Optional[str]:
+    url = _run_git(["remote", "get-url", "origin"], path)
+    return (url or "").strip() or None
+
+
+@typechecked
+def _unpushed_count(path: Path, branch: Optional[str]) -> Optional[int]:
+    """Commits on `branch` that origin doesn't have yet.
+
+    Counted against the local remote-tracking ref, without fetching: the
+    status call runs on every app switch, and a network round trip there
+    would make the picker feel broken on a slow connection.
+    """
+    if not branch:
+        return None
+    if _run_git(["rev-parse", "--verify", f"refs/remotes/origin/{branch}"], path) is None:
+        return None
+    raw = _run_git(["rev-list", "--count", f"origin/{branch}..HEAD"], path)
+    if raw is None:
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+@typechecked
+def _local_commit_count(path: Path) -> int:
+    raw = _run_git(["rev-list", "--count", "HEAD"], path)
+    try:
+        return int((raw or "0").strip())
+    except ValueError:
+        return 0
+
+
+@typechecked
+def status(path: Path, app_name: str) -> Dict[str, Any]:
+    """Everything the push UI needs for one workspace, in one call."""
+    token = read_token()
+    is_repo = (path / ".git").is_dir()
+    branch = (_run_git(["branch", "--show-current"], path) or "").strip() or None
+    url = remote_url(path) if is_repo else None
+    parsed = parse_remote(url) if url else None
+    commits = _local_commit_count(path) if is_repo else 0
+    unpushed = _unpushed_count(path, branch) if url else None
+
+    return {
+        "connected": bool(token),
+        "account": _account_label(),
+        "is_repo": is_repo,
+        "branch": branch,
+        "remote_url": url,
+        "owner": parsed[0] if parsed else None,
+        "repo": parsed[1] if parsed else None,
+        "html_url": f"https://github.com/{parsed[0]}/{parsed[1]}" if parsed else None,
+        "commit_count": commits,
+        # None means origin has never been seen locally, so every commit is
+        # new to it; the UI says "push" rather than a misleading "0 to push".
+        "unpushed": commits if url and unpushed is None else unpushed,
+        "has_remote": bool(url),
+    }
+
+
+@typechecked
+async def _repo_exists(client: httpx.AsyncClient, token: str, owner: str, name: str) -> bool:
+    res = await client.get(f"{API_ROOT}/repos/{owner}/{name}", headers=_headers(token))
+    return res.status_code == 200
+
+
+@typechecked
+async def create_repo(
+    path: Path, app_name: str, requested_name: Optional[str] = None
+) -> Tuple[bool, Any]:
+    """Create a private repo for this workspace and wire it up as origin."""
+    token = read_token()
+    if not token:
+        return False, "Connect the GitHub integration in OpenSwarm settings first."
+    if not (path / ".git").is_dir():
+        return False, "This workspace isn't a git repository."
+    if remote_url(path):
+        return False, "This workspace already has a remote."
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        me = await client.get(f"{API_ROOT}/user", headers=_headers(token))
+        if me.status_code != 200:
+            return False, "GitHub rejected the stored token. Reconnect the integration."
+        owner = me.json().get("login")
+        if not owner:
+            return False, "Couldn't read the GitHub account."
+
+        base = slugify(requested_name or app_name)
+        name = base
+        # A name already in use would come back as a 422 that reads like a
+        # validation bug, so a free one is picked up front instead.
+        for suffix in range(2, 12):
+            if not await _repo_exists(client, token, owner, name):
+                break
+            name = f"{base}-{suffix}"
+        else:
+            return False, f"Every name from {base} to {base}-11 is taken."
+
+        created = await client.post(
+            f"{API_ROOT}/user/repos",
+            headers=_headers(token),
+            json={
+                "name": name,
+                "private": True,
+                "description": f"OpenSwarm app: {app_name}",
+                "auto_init": False,
+            },
+        )
+        if created.status_code not in (200, 201):
+            detail = ""
+            try:
+                detail = created.json().get("message", "")
+            except ValueError:
+                pass
+            return False, detail or f"GitHub returned {created.status_code}."
+
+        repo = created.json()
+
+    ok, _, err = _run_git_result(
+        ["remote", "add", "origin", repo.get("clone_url", "")], path
+    )
+    if not ok:
+        return False, err.strip() or "Couldn't add the remote."
+
+    return True, {
+        "owner": owner,
+        "repo": name,
+        "html_url": repo.get("html_url", f"https://github.com/{owner}/{name}"),
+        "private": bool(repo.get("private", True)),
+    }
+
+
+@typechecked
+def push(path: Path) -> Tuple[bool, Any]:
+    """Push the current branch to origin, setting upstream on first push."""
+    token = read_token()
+    if not token:
+        return False, "Connect the GitHub integration in OpenSwarm settings first."
+    url = remote_url(path)
+    if not url:
+        return False, "This workspace has no GitHub repo yet."
+
+    branch = (_run_git(["branch", "--show-current"], path) or "").strip()
+    if not branch:
+        return False, "No branch is checked out."
+    if _local_commit_count(path) == 0:
+        return False, "Nothing to push: this repo has no commits yet."
+
+    ok, _, err = _run_git_result(
+        [
+            *_credential_args(),
+            "push",
+            "--set-upstream",
+            "origin",
+            branch,
+        ],
+        path,
+        env={"GITGRAPH_GITHUB_TOKEN": token, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if not ok:
+        lines = [ln for ln in err.strip().splitlines() if ln.strip()]
+        # git narrates the whole push on stderr; the failure is the last line.
+        return False, lines[-1] if lines else "git push failed."
+
+    parsed = parse_remote(url)
+    return True, {
+        "branch": branch,
+        "html_url": f"https://github.com/{parsed[0]}/{parsed[1]}" if parsed else url,
+    }
+
+
+@typechecked
+def disconnect(path: Path) -> Tuple[bool, str]:
+    """Drop the remote locally. The GitHub repo itself is left alone."""
+    if not remote_url(path):
+        return False, "This workspace has no remote."
+    ok, _, err = _run_git_result(["remote", "remove", "origin"], path)
+    if not ok:
+        return False, err.strip() or "Couldn't remove the remote."
+    return True, "ok"

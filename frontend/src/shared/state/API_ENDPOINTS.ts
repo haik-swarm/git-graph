@@ -11,3 +11,13 @@ export const gitgraphCommitUrl = (workspaceId: string, sha: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
 export const gitgraphCreateCommitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}`;
+
+// GITHUB - Endpoints
+export const githubStatusUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}`;
+export const githubCreateRepoUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/create`;
+export const githubPushUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/push`;
+export const githubDisconnectUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/disconnect`;
