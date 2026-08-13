@@ -1,0 +1,246 @@
+"""One shared .gitignore, mirrored into every tracked app.
+
+The user edits ONE file (`gitgraph_global.gitignore` alongside the app
+registry). Saving that file walks every tracked workspace and rewrites a
+`# >>> openswarm-managed >>>` block at the top of its `.gitignore`; the
+rest of that file — anything below the closing marker — is app-specific
+and never touched. A per-app opt-out flag stored in
+`gitgraph_global.opt_out.json` lets the user peel the block off a
+workspace without losing the rules for the others.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+from typeguard import typechecked
+
+from backend.apps.gitgraph.discovery import (
+    list_apps,
+    openswarm_data_dir,
+    workspace_path,
+)
+
+_HEAD = "# >>> openswarm-managed (edit in Git Graph → Global .gitignore) >>>"
+_TAIL = "# <<< openswarm-managed <<<"
+
+
+@typechecked
+def _global_path() -> Path:
+    return openswarm_data_dir() / "gitgraph_global.gitignore"
+
+
+@typechecked
+def _opt_out_path() -> Path:
+    return openswarm_data_dir() / "gitgraph_global.opt_out.json"
+
+
+@typechecked
+def _default_content() -> str:
+    # Deliberately short: the value of "one shared list" is that it stays
+    # readable, not that it enumerates every ecosystem on earth.
+    return (
+        "# Global rules shared across every tracked OpenSwarm app.\n"
+        "# Edit here to add or remove rules for all of them at once.\n"
+        "\n"
+        ".DS_Store\n"
+        "Thumbs.db\n"
+        "*.log\n"
+        "\n"
+        "node_modules/\n"
+        "dist/\n"
+        "build/\n"
+        ".venv/\n"
+        "__pycache__/\n"
+        "*.pyc\n"
+        "\n"
+        ".env\n"
+        ".env.local\n"
+    )
+
+
+@typechecked
+def load_global() -> str:
+    path = _global_path()
+    if not path.exists():
+        content = _default_content()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        except OSError:
+            pass
+        return content
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+@typechecked
+def _load_opt_out() -> Dict[str, bool]:
+    path = _opt_out_path()
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: bool(v) for k, v in raw.items() if isinstance(k, str)}
+
+
+@typechecked
+def _save_opt_out(opt_out: Dict[str, bool]) -> None:
+    path = _opt_out_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Only keep opted-out entries so the file doesn't grow monotonically
+        # as apps come and go from the registry.
+        trimmed = {k: True for k, v in opt_out.items() if v}
+        path.write_text(json.dumps(trimmed, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+@typechecked
+def _strip_managed(existing: str) -> str:
+    """Return `existing` with any prior managed block removed.
+
+    Deliberately tolerant of a partial or malformed block (missing tail,
+    duplicate blocks from a botched previous write) so a manual edit that
+    the user made in-file can be recovered from cleanly.
+    """
+    if _HEAD not in existing:
+        return existing
+    lines = existing.splitlines()
+    out: List[str] = []
+    skipping = False
+    for line in lines:
+        if line.strip() == _HEAD:
+            skipping = True
+            continue
+        if skipping and line.strip() == _TAIL:
+            skipping = False
+            continue
+        if not skipping:
+            out.append(line)
+    text = "\n".join(out).lstrip("\n")
+    return text
+
+
+@typechecked
+def _compose(existing: str, block_body: str) -> str:
+    """Prepend a managed block to whatever the user has authored below it."""
+    stripped = _strip_managed(existing)
+    body = block_body.strip("\n")
+    block = f"{_HEAD}\n{body}\n{_TAIL}\n"
+    if stripped.strip():
+        return f"{block}\n{stripped.lstrip()}"
+    return block
+
+
+@typechecked
+def _write_ignore(workspace_id: str, want_block: bool) -> Tuple[bool, str]:
+    path = workspace_path(workspace_id)
+    if path is None:
+        return False, "workspace missing"
+    ignore = path / ".gitignore"
+    try:
+        existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+    except OSError as exc:
+        return False, str(exc)
+
+    if want_block:
+        new_content = _compose(existing, load_global())
+    else:
+        new_content = _strip_managed(existing)
+        if not new_content.endswith("\n") and new_content:
+            new_content += "\n"
+
+    if new_content == existing:
+        return True, "unchanged"
+    try:
+        ignore.write_text(new_content, encoding="utf-8")
+    except OSError as exc:
+        return False, str(exc)
+    return True, "written"
+
+
+@typechecked
+def ensure_synced_for_new_repo(workspace_id: str) -> None:
+    """Called when `init_repo` succeeds so the app gets the block immediately."""
+    opt_out = _load_opt_out()
+    if opt_out.get(workspace_id):
+        return
+    _write_ignore(workspace_id, want_block=True)
+
+
+@typechecked
+def sync_all() -> List[Dict[str, Any]]:
+    """Apply the current global text to every tracked, opted-in app.
+
+    Returns one row per tracked app so the client can show which files
+    changed and which were skipped.
+    """
+    opt_out = _load_opt_out()
+    results: List[Dict[str, Any]] = []
+    for entry in list_apps():
+        if not (entry["has_git"] and entry["workspace_exists"]):
+            continue
+        wid = entry["workspace_id"]
+        included = not opt_out.get(wid)
+        ok, note = _write_ignore(wid, want_block=included)
+        results.append(
+            {
+                "workspace_id": wid,
+                "name": entry["name"],
+                "included": included,
+                "ok": ok,
+                "detail": note,
+            }
+        )
+    return results
+
+
+@typechecked
+def save_global(content: str) -> List[Dict[str, Any]]:
+    path = _global_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"couldn't write global .gitignore: {exc}")
+    return sync_all()
+
+
+@typechecked
+def read_state() -> Dict[str, Any]:
+    """Everything the UI needs to render the sheet in one round-trip."""
+    opt_out = _load_opt_out()
+    apps: List[Dict[str, Any]] = []
+    for entry in list_apps():
+        if not (entry["has_git"] and entry["workspace_exists"]):
+            continue
+        wid = entry["workspace_id"]
+        apps.append(
+            {
+                "workspace_id": wid,
+                "name": entry["name"],
+                "included": not opt_out.get(wid),
+            }
+        )
+    return {"content": load_global(), "apps": apps}
+
+
+@typechecked
+def set_included(workspace_id: str, included: bool) -> Dict[str, Any]:
+    opt_out = _load_opt_out()
+    if included:
+        opt_out.pop(workspace_id, None)
+    else:
+        opt_out[workspace_id] = True
+    _save_opt_out(opt_out)
+    ok, note = _write_ignore(workspace_id, want_block=included)
+    return {"included": included, "ok": ok, "detail": note}

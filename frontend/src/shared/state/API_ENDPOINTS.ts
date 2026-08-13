@@ -5,6 +5,7 @@ export const HEALTH_CHECK_URL = API_URL + '/health/check';
 
 // GIT GRAPH - Endpoints
 export const GITGRAPH_APPS_URL = API_URL + '/gitgraph/apps';
+export const GITGRAPH_STATUS_URL = API_URL + '/gitgraph/status';
 export const gitgraphGraphUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/graph/${encodeURIComponent(workspaceId)}`;
 export const gitgraphCommitUrl = (workspaceId: string, sha: string) =>
@@ -19,6 +20,11 @@ export const gitgraphDiscardUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/discard/${encodeURIComponent(workspaceId)}`;
 export const gitgraphInitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/init/${encodeURIComponent(workspaceId)}`;
+
+export const GITGRAPH_GLOBAL_IGNORE_URL = API_URL + '/gitgraph/global-ignore';
+export const GITGRAPH_GLOBAL_IGNORE_SYNC_URL = API_URL + '/gitgraph/global-ignore/sync';
+export const gitgraphGlobalIgnoreToggleUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/global-ignore/apps/${encodeURIComponent(workspaceId)}`;
 
 // GITHUB - Endpoints
 export const githubStatusUrl = (workspaceId: string) =>

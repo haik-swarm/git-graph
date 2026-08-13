@@ -8,12 +8,14 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import CloudOffRoundedIcon from '@mui/icons-material/CloudOffRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
+import RuleFolderRoundedIcon from '@mui/icons-material/RuleFolderRounded';
 import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
-import { iconButton, primaryButton, slimScroll } from '@/shared/styles/ui';
+import { iconButton, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
 import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
+  GITGRAPH_STATUS_URL,
   gitgraphCommitUrl,
   gitgraphGraphUrl,
   gitgraphInitUrl,
@@ -24,6 +26,7 @@ import CommitList from '@/components/CommitList';
 import CommitSheet from '@/components/CommitSheet';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
+import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
 import HomeGrid from '@/components/HomeGrid';
 import RepoHero from '@/components/RepoHero';
 import { Placeholder, Scroller, Shell, Toolbar } from '@/components/Chrome';
@@ -76,7 +79,8 @@ const Home: React.FC = () => {
   const [trackingId, setTrackingId] = useState<string | null>(null);
 
   const [homeMeta, setHomeMeta] = useState<Record<string, HomeMeta>>({});
-  const [metaLoading, setMetaLoading] = useState<Set<string>>(() => new Set());
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [ignoreOpen, setIgnoreOpen] = useState(false);
 
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
     const res = await fetch(GITGRAPH_APPS_URL);
@@ -135,18 +139,6 @@ const Home: React.FC = () => {
       if (!res.ok) throw new Error(`graph ${res.status}`);
       const data: Graph = await res.json();
       setGraph(data);
-      // Refresh this app's home-grid meta so returning home matches reality.
-      setHomeMeta(prev => ({
-        ...prev,
-        [app.workspace_id]: {
-          is_repo: data.is_repo,
-          commit_count: data.commits?.length ?? 0,
-          dirty_count: data.dirty?.length ?? 0,
-          current_branch: data.current_branch ?? null,
-          head_subject: data.commits?.[0]?.subject ?? null,
-          head_date: data.commits?.[0]?.date ?? null,
-        },
-      }));
     } catch {
       setGraph(null);
       setError("Couldn't read that workspace.");
@@ -160,61 +152,40 @@ const Home: React.FC = () => {
     void loadGraph(selected);
   }, [selected, loadGraph, mode]);
 
-  // Lazily fetch home meta for tracked apps so the grid can show branch,
-  // commit count, and last-change time without spinning up every graph
-  // eagerly on first paint.
+  // Batch fetch every app's status in one call (backend fans out across
+  // threads). Cheap enough to re-run on Home entry and on window focus,
+  // which is what keeps the grid honest when the user commits outside the
+  // app or the workspace changes between visits.
+  const refreshHomeMeta = useCallback(async () => {
+    setMetaBusy(true);
+    try {
+      const res = await fetch(GITGRAPH_STATUS_URL);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      const raw = (data?.status ?? {}) as Record<string, HomeMeta>;
+      setHomeMeta(raw);
+    } catch {
+      /* Non-fatal: cards keep whatever they last saw. */
+    } finally {
+      setMetaBusy(false);
+    }
+  }, []);
+
+  // Re-scan every time the user lands on Home so returning from an app
+  // page (or from another window entirely) doesn't leave stale numbers.
   useEffect(() => {
     if (mode !== 'home') return;
-    const needs = apps.filter(
-      a =>
-        a.has_git &&
-        a.workspace_exists &&
-        homeMeta[a.workspace_id] === undefined &&
-        !metaLoading.has(a.workspace_id),
-    );
-    if (needs.length === 0) return;
-
-    let cancelled = false;
-    setMetaLoading(prev => {
-      const next = new Set(prev);
-      for (const a of needs) next.add(a.workspace_id);
-      return next;
-    });
-
-    for (const app of needs) {
-      void (async () => {
-        try {
-          const res = await fetch(gitgraphGraphUrl(app.workspace_id));
-          if (!res.ok) throw new Error(`graph ${res.status}`);
-          const data: Graph = await res.json();
-          if (cancelled) return;
-          setHomeMeta(prev => ({
-            ...prev,
-            [app.workspace_id]: {
-              is_repo: data.is_repo,
-              commit_count: data.commits?.length ?? 0,
-              dirty_count: data.dirty?.length ?? 0,
-              current_branch: data.current_branch ?? null,
-              head_subject: data.commits?.[0]?.subject ?? null,
-              head_date: data.commits?.[0]?.date ?? null,
-            },
-          }));
-        } catch {
-          /* leave meta undefined — the card falls back to "not tracked yet" */
-        } finally {
-          if (cancelled) return;
-          setMetaLoading(prev => {
-            const next = new Set(prev);
-            next.delete(app.workspace_id);
-            return next;
-          });
-        }
-      })();
-    }
-    return () => {
-      cancelled = true;
+    void refreshHomeMeta();
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') void refreshHomeMeta();
     };
-  }, [apps, mode, homeMeta, metaLoading]);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [mode, refreshHomeMeta, apps.length]);
 
   useEffect(() => {
     if (!selected || !selectedSha) return;
@@ -248,12 +219,6 @@ const Home: React.FC = () => {
         }
         const list = await refetchApps();
         const fresh = list.find(a => a.workspace_id === app.workspace_id) ?? app;
-        // Drop any stale meta so the grid refetches once we're back home.
-        setHomeMeta(prev => {
-          const next = { ...prev };
-          delete next[fresh.workspace_id];
-          return next;
-        });
         setSelected(fresh);
         setMode('app');
       } catch (err) {
@@ -294,7 +259,11 @@ const Home: React.FC = () => {
   const refresh = useCallback(() => {
     setGitHubKey(k => k + 1);
     void loadGraph(selected);
-  }, [loadGraph, selected]);
+    // App-page commits are the most common way home's counts go stale,
+    // so eagerly rescan the batch too instead of waiting for the user to
+    // navigate back and trigger the focus effect.
+    void refreshHomeMeta();
+  }, [loadGraph, selected, refreshHomeMeta]);
 
   const rail = (
     <AppRail
@@ -307,11 +276,6 @@ const Home: React.FC = () => {
         void (async () => {
           const list = await refetchApps().catch(() => null);
           const fresh = list?.find(a => a.workspace_id === app.workspace_id) ?? app;
-          setHomeMeta(prev => {
-            const next = { ...prev };
-            delete next[fresh.workspace_id];
-            return next;
-          });
           setSelected(fresh);
           setMode('app');
         })();
@@ -320,9 +284,9 @@ const Home: React.FC = () => {
   );
 
   const refreshHome = useCallback(() => {
-    setHomeMeta({});
     void refetchApps();
-  }, [refetchApps]);
+    void refreshHomeMeta();
+  }, [refetchApps, refreshHomeMeta]);
 
   const toolbarChrome = (
     <>
@@ -362,6 +326,22 @@ const Home: React.FC = () => {
             {apps.length} {apps.length === 1 ? 'app' : 'apps'}
           </Box>
           <Box sx={{ flex: 1 }} />
+          <Tooltip title="Global .gitignore — one list, mirrored into every tracked app">
+            <ButtonBase
+              onClick={() => setIgnoreOpen(true)}
+              sx={{
+                ...pushButton(c),
+                height: 28,
+                px: '10px',
+                gap: '6px',
+                '& svg': { fontSize: 14 },
+              }}
+              aria-label="Global .gitignore"
+            >
+              <RuleFolderRoundedIcon />
+              Global .gitignore
+            </ButtonBase>
+          </Tooltip>
           {toolbarChrome}
         </Toolbar>
         <Scroller>
@@ -393,13 +373,21 @@ const Home: React.FC = () => {
             <HomeGrid
               apps={apps}
               meta={homeMeta}
-              metaLoading={metaLoading}
+              metaBusy={metaBusy}
               onOpen={openApp}
               onTrack={trackApp}
               trackingId={trackingId}
+              onBulkDone={() => void refreshHomeMeta()}
             />
           )}
         </Scroller>
+        <GlobalIgnoreSheet
+          open={ignoreOpen}
+          onClose={() => setIgnoreOpen(false)}
+          // Editing the shared list can change what git sees as dirty, so
+          // rescan meta once the sheet reports a save.
+          onSaved={() => void refreshHomeMeta()}
+        />
       </Shell>
     );
   }

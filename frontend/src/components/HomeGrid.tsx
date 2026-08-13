@@ -12,6 +12,7 @@ import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
+import BulkActionBar from '@/components/BulkActionBar';
 import { relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
@@ -30,10 +31,11 @@ interface Meta {
 interface Props {
   apps: AppEntry[];
   meta: Record<string, Meta>;
-  metaLoading: Set<string>;
+  metaBusy: boolean;
   onOpen: (app: AppEntry) => void;
   onTrack: (app: AppEntry) => Promise<void> | void;
   trackingId: string | null;
+  onBulkDone: (workspaceIds: string[]) => void;
 }
 
 /**
@@ -43,10 +45,11 @@ interface Props {
 const HomeGrid: React.FC<Props> = ({
   apps,
   meta,
-  metaLoading,
+  metaBusy,
   onOpen,
   onTrack,
   trackingId,
+  onBulkDone,
 }) => {
   const c = useClaudeTokens();
   const [query, setQuery] = React.useState('');
@@ -91,13 +94,23 @@ const HomeGrid: React.FC<Props> = ({
 
   const counts = React.useMemo(() => {
     let tracked = 0;
-    let dirty = 0;
     for (const a of apps) {
       if (a.has_git && a.workspace_exists) tracked += 1;
-      const m = meta[a.workspace_id];
-      if (m?.dirty_count) dirty += m.dirty_count;
     }
-    return { tracked, dirty, total: apps.length };
+    return { tracked, total: apps.length };
+  }, [apps]);
+
+  const dirtyApps = React.useMemo(() => {
+    const rows: { app: AppEntry; dirtyCount: number }[] = [];
+    for (const a of apps) {
+      const m = meta[a.workspace_id];
+      if (a.has_git && a.workspace_exists && m?.dirty_count) {
+        rows.push({ app: a, dirtyCount: m.dirty_count });
+      }
+    }
+    // Most changes first so the "who needs attention" order is obvious.
+    rows.sort((a, b) => b.dirtyCount - a.dirtyCount);
+    return rows;
   }, [apps, meta]);
 
   return (
@@ -193,14 +206,6 @@ const HomeGrid: React.FC<Props> = ({
 
           <Box sx={{ flex: 1 }} />
 
-          {counts.dirty > 0 && (
-            <Pill tone="warning">
-              <RadioButtonCheckedRoundedIcon />
-              {counts.dirty} uncommitted across {countAppsWithDirty(meta)} app
-              {countAppsWithDirty(meta) === 1 ? '' : 's'}
-            </Pill>
-          )}
-
           <Segmented
             value={sort}
             onChange={setSort}
@@ -212,6 +217,12 @@ const HomeGrid: React.FC<Props> = ({
           />
         </Box>
       </Box>
+
+      {dirtyApps.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <BulkActionBar dirtyApps={dirtyApps} onDone={onBulkDone} />
+        </Box>
+      )}
 
       {rows.length === 0 ? (
         <Placeholder
@@ -232,7 +243,7 @@ const HomeGrid: React.FC<Props> = ({
               key={app.workspace_id}
               app={app}
               meta={meta[app.workspace_id]}
-              loading={metaLoading.has(app.workspace_id)}
+              loading={metaBusy && meta[app.workspace_id] === undefined}
               onOpen={() => onOpen(app)}
               onTrack={onTrack}
               tracking={trackingId === app.workspace_id}
@@ -243,12 +254,6 @@ const HomeGrid: React.FC<Props> = ({
     </Box>
   );
 };
-
-function countAppsWithDirty(meta: Record<string, Meta>): number {
-  let n = 0;
-  for (const m of Object.values(meta)) if (m?.dirty_count) n += 1;
-  return n;
-}
 
 const AppCard: React.FC<{
   app: AppEntry;

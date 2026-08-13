@@ -499,6 +499,58 @@ def read_graph(path: Path) -> Dict[str, Any]:
 
 
 @typechecked
+def read_status(path: Path) -> Dict[str, Any]:
+    """Cheap per-app summary for the home grid.
+
+    Skips `git log --all` and rev walking — reads only current branch,
+    HEAD subject/date, dirty count, and commit count via `rev-list --count`.
+    An order of magnitude faster than `read_graph` on a large repo, which
+    matters because the home view scans every app on every focus.
+    """
+    if not (path / ".git").is_dir():
+        return {
+            "is_repo": False,
+            "commit_count": 0,
+            "dirty_count": 0,
+            "current_branch": None,
+            "head_subject": None,
+            "head_date": None,
+        }
+
+    current = _run_git(["branch", "--show-current"], path)
+    current_branch = (current or "").strip() or None
+
+    dirty = read_dirty(path)
+
+    count_raw = _run_git(["rev-list", "--count", "HEAD"], path)
+    try:
+        commit_count = int((count_raw or "0").strip())
+    except ValueError:
+        commit_count = 0
+
+    head_raw = _run_git(
+        ["log", "-1", f"--pretty=format:%s{_SEP}%aI", "HEAD"], path
+    )
+    head_subject: Optional[str] = None
+    head_date: Optional[str] = None
+    if head_raw:
+        parts = head_raw.split(_SEP, 1)
+        if parts:
+            head_subject = parts[0] or None
+        if len(parts) > 1:
+            head_date = parts[1] or None
+
+    return {
+        "is_repo": True,
+        "commit_count": commit_count,
+        "dirty_count": len(dirty),
+        "current_branch": current_branch,
+        "head_subject": head_subject,
+        "head_date": head_date,
+    }
+
+
+@typechecked
 def read_commit_detail(path: Path, sha: str) -> Optional[Dict[str, Any]]:
     """Per-file stats for one commit.
 
