@@ -7,6 +7,7 @@ import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonChecke
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { BrandGlyph, Pill } from '@/components/Chrome';
 import { relativeTime } from '@/shared/graphLayout';
+import { statusChip } from '@/shared/styles/ui';
 import type { AppEntry } from '@/components/AppPicker';
 
 interface Props {
@@ -70,21 +71,9 @@ const RepoHero: React.FC<Props> = ({
           </Box>
           {currentBranch && (
             <Box
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                px: '7px',
-                height: 20,
-                borderRadius: `${c.radius.xs}px`,
-                background: c.accent.wash,
-                color: c.accent.base,
-                ...c.type.caption,
-                fontWeight: 590,
-                fontFamily: c.font.mono,
-              }}
+              sx={{ ...statusChip(c, 'accent'), fontFamily: c.font.mono }}
             >
-              <CallSplitRoundedIcon sx={{ fontSize: 11 }} />
+              <CallSplitRoundedIcon />
               {currentBranch}
             </Box>
           )}
@@ -149,8 +138,8 @@ const RepoHero: React.FC<Props> = ({
               px: 1.5,
               py: 1,
               borderRadius: `${c.radius.md}px`,
-              background: c.bg.fill,
-              border: `0.5px solid ${c.separator}`,
+              background: c.bg.secondary,
+              border: `1px solid ${c.border.subtle}`,
               display: 'flex',
               alignItems: 'center',
               gap: 1,
@@ -162,9 +151,9 @@ const RepoHero: React.FC<Props> = ({
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                background: c.accent.base,
+                background: c.accent.primary,
                 flexShrink: 0,
-                boxShadow: `0 0 0 3px ${c.accent.wash}`,
+                boxShadow: `0 0 0 3px ${`rgba(${c.accentRgb},0.10)`}`,
               }}
             />
             <Box

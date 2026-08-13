@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { laneColor, relativeTime, type Layout } from '@/shared/graphLayout';
+import { statusChip } from '@/shared/styles/ui';
 import GraphRail, { ROW_HEIGHT } from './GraphRail';
 
 interface Props {
@@ -42,10 +43,10 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                 px: 1.5,
                 cursor: 'pointer',
                 borderRadius: `${c.radius.md}px`,
-                background: isSelected ? c.accent.wash : 'transparent',
+                background: isSelected ? `rgba(${c.accentRgb},0.10)` : 'transparent',
                 transition: 'background 120ms ease',
                 '&:hover': {
-                  background: isSelected ? c.accent.wash : c.bg.fill,
+                  background: isSelected ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary,
                 },
               }}
             >
@@ -67,19 +68,7 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                   {isHead && (
                     <Box
                       title="Your working tree is on this commit"
-                      sx={{
-                        flexShrink: 0,
-                        px: '7px',
-                        height: 18,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        borderRadius: `${c.radius.xs}px`,
-                        color: c.text.onAccent,
-                        background: c.accent.base,
-                        ...c.type.caption,
-                        fontWeight: 600,
-                        letterSpacing: '0.02em',
-                      }}
+                      sx={statusChip(c, 'accent')}
                     >
                       current
                     </Box>
@@ -89,21 +78,13 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                     <Box
                       key={ref}
                       sx={{
-                        flexShrink: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        px: '6px',
-                        height: 18,
-                        borderRadius: `${c.radius.xs}px`,
-                        ...c.type.caption,
+                        ...statusChip(c, 'neutral'),
                         fontFamily: c.font.mono,
                         color: laneColor(node.lane),
-                        border: `0.5px solid ${laneColor(node.lane)}`,
-                        background: `${laneColor(node.lane)}12`,
+                        background: `${laneColor(node.lane)}1A`,
                       }}
                     >
-                      <CallSplitRoundedIcon sx={{ fontSize: 10 }} />
+                      <CallSplitRoundedIcon />
                       {ref}
                     </Box>
                   ))}
@@ -148,7 +129,7 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                   >
                     {node.author}
                   </Box>
-                  <Box sx={{ color: c.text.quaternary }}>·</Box>
+                  <Box sx={{ color: c.text.ghost }}>·</Box>
                   <Box>{relativeTime(node.date)}</Box>
                 </Box>
               </Box>
@@ -157,7 +138,7 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                 sx={{
                   ...c.type.caption,
                   fontFamily: c.font.mono,
-                  color: isSelected ? c.accent.base : c.text.quaternary,
+                  color: isSelected ? c.accent.primary : c.text.ghost,
                   flexShrink: 0,
                   letterSpacing: '0.02em',
                 }}

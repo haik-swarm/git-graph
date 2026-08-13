@@ -147,10 +147,10 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           sx: {
             width: 560,
             maxWidth: '92vw',
-            background: c.bg.window,
+            background: c.bg.page,
             backgroundImage: 'none',
             border: 'none',
-            boxShadow: c.shadow.popover,
+            boxShadow: c.shadow.lg,
             display: 'flex',
             flexDirection: 'column',
           },
@@ -165,7 +165,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           px: 2,
           height: 48,
           flexShrink: 0,
-          borderBottom: `0.5px solid ${c.separator}`,
+          borderBottom: `1px solid ${c.border.subtle}`,
         }}
       >
         <Box sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
@@ -178,7 +178,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
             height: 26,
             borderRadius: `${c.radius.sm}px`,
             color: c.text.secondary,
-            '&:hover': { color: c.text.primary, background: c.bg.fill },
+            '&:hover': { color: c.text.primary, background: c.bg.secondary },
           }}
         >
           <CloseRoundedIcon sx={{ fontSize: 16 }} />
@@ -197,7 +197,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           <CircularProgress size={20} sx={{ color: c.text.tertiary }} />
         </Box>
       ) : error && !state ? (
-        <Box sx={{ p: 3, ...c.type.body, color: c.status.danger }}>{error}</Box>
+        <Box sx={{ p: 3, ...c.type.body, color: c.status.error }}>{error}</Box>
       ) : state ? (
         <>
           <Box
@@ -289,7 +289,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                       cursor: busy ? 'default' : 'pointer',
                       textAlign: 'left',
                       borderRadius: `${c.radius.sm}px`,
-                      '&:hover': { background: busy ? 'transparent' : c.bg.fill },
+                      '&:hover': { background: busy ? 'transparent' : c.bg.secondary },
                     }}
                   >
                     <Box
@@ -298,15 +298,15 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                         height: 14,
                         flexShrink: 0,
                         borderRadius: `${c.radius.xs}px`,
-                        border: `1px solid ${app.included ? c.accent.base : c.border}`,
-                        background: app.included ? c.accent.base : 'transparent',
+                        border: `1px solid ${app.included ? c.accent.primary : c.border.subtle}`,
+                        background: app.included ? c.accent.primary : 'transparent',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
                       {app.included && (
-                        <CheckIcon sx={{ fontSize: 11, color: c.text.onAccent }} />
+                        <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
                       )}
                     </Box>
                     <BrandGlyph
@@ -347,7 +347,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
             sx={{
               px: 2,
               py: 1.5,
-              borderTop: `0.5px solid ${c.separator}`,
+              borderTop: `1px solid ${c.border.subtle}`,
               display: 'flex',
               alignItems: 'center',
               gap: 1,
@@ -356,7 +356,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           >
             <Box sx={{ ...c.type.caption, color: c.text.tertiary, flex: 1 }}>
               {error ? (
-                <Box component="span" sx={{ color: c.status.danger }}>{error}</Box>
+                <Box component="span" sx={{ color: c.status.error }}>{error}</Box>
               ) : savedFlash ? (
                 <Box component="span" sx={{ color: c.status.success }}>
                   Saved and synced to {includedCount} app
@@ -368,16 +368,16 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                 'Editing the list also re-syncs every included app.'
               )}
             </Box>
-            <ButtonBase onClick={onClose} sx={{ ...pushButton(c), height: 28 }}>
+            <ButtonBase onClick={onClose} sx={{ ...pushButton(c) }}>
               Close
             </ButtonBase>
             <ButtonBase
               onClick={() => void save()}
               disabled={!dirty || saving}
-              sx={{ ...primaryButton(c), height: 28 }}
+              sx={{ ...primaryButton(c) }}
             >
               {saving ? (
-                <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
               ) : (
                 'Save & sync'
               )}

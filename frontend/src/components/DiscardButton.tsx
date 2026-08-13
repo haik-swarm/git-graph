@@ -63,12 +63,12 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
           borderRadius: `${c.radius.sm}px`,
           ...c.type.caption,
           color: c.text.secondary,
-          border: `0.5px solid ${c.border}`,
+          border: `1px solid ${c.border.subtle}`,
           transition: c.transition,
           '&:hover': {
-            color: c.status.danger,
-            borderColor: c.status.danger,
-            background: c.bg.fill,
+            color: c.status.error,
+            borderColor: c.status.error,
+            background: c.bg.secondary,
           },
         }}
       >
@@ -88,13 +88,13 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
           sx={{
             px: 1.5,
             py: '10px',
-            borderBottom: `0.5px solid ${c.separator}`,
+            borderBottom: `1px solid ${c.border.subtle}`,
             display: 'flex',
             alignItems: 'center',
             gap: 1,
           }}
         >
-          <RestoreIcon sx={{ fontSize: 13, color: c.status.danger }} />
+          <RestoreIcon sx={{ fontSize: 13, color: c.status.error }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             Discard changes
           </Typography>
@@ -110,7 +110,7 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
           </Typography>
 
           {error && (
-            <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+            <Typography sx={{ ...c.type.caption, color: c.status.error }}>
               {error}
             </Typography>
           )}
@@ -125,7 +125,7 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
                 borderRadius: `${c.radius.sm}px`,
                 ...c.type.caption,
                 color: c.text.secondary,
-                '&:hover': { background: c.bg.fill },
+                '&:hover': { background: c.bg.secondary },
               }}
             >
               Cancel
@@ -140,17 +140,17 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
                 borderRadius: `${c.radius.sm}px`,
                 ...c.type.callout,
                 fontWeight: 590,
-                color: c.text.onAccent,
-                background: c.status.danger,
+                color: "#FFFFFF",
+                background: c.status.error,
                 border: 'none',
-                boxShadow: c.shadow.control,
+                boxShadow: c.shadow.sm,
                 transition: c.transition,
                 '&:hover': { filter: 'brightness(1.08)' },
                 '&:disabled': { opacity: 0.5 },
               }}
             >
               {busy ? (
-                <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
               ) : (
                 'Discard'
               )}

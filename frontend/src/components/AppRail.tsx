@@ -83,7 +83,7 @@ const AppRail: React.FC<Props> = ({
           height: 48,
           flexShrink: 0,
           px: '14px',
-          borderBottom: `0.5px solid ${c.separator}`,
+          borderBottom: `1px solid ${c.border.subtle}`,
           cursor: 'pointer',
           '&:hover .brand-title': { color: c.text.primary },
         }}
@@ -97,9 +97,9 @@ const AppRail: React.FC<Props> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: `linear-gradient(135deg, ${c.accent.base}, ${c.accent.hover})`,
-            color: c.text.onAccent,
-            boxShadow: c.shadow.control,
+            background: `linear-gradient(135deg, ${c.accent.primary}, ${c.accent.hover})`,
+            color: "#FFFFFF",
+            boxShadow: c.shadow.sm,
           }}
         >
           <CallSplitRoundedIcon sx={{ fontSize: 13 }} />
@@ -121,7 +121,7 @@ const AppRail: React.FC<Props> = ({
             height: 26,
             px: '8px',
             ...sunkenField(c),
-            '&:focus-within': { boxShadow: c.accent.ring },
+            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
           }}
         >
           <SearchRoundedIcon sx={{ fontSize: 13, color: c.text.tertiary, flexShrink: 0 }} />
@@ -180,10 +180,10 @@ const AppRail: React.FC<Props> = ({
             cursor: 'pointer',
             textAlign: 'left',
             borderRadius: `${c.radius.sm}px`,
-            background: homeActive ? c.accent.wash : 'transparent',
+            background: homeActive ? `rgba(${c.accentRgb},0.10)` : 'transparent',
             color: c.text.primary,
             transition: 'background 100ms linear',
-            '&:hover': { background: homeActive ? c.accent.wash : c.bg.fill },
+            '&:hover': { background: homeActive ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary },
           }}
         >
           <Box
@@ -195,8 +195,8 @@ const AppRail: React.FC<Props> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: homeActive ? c.accent.base : c.text.tertiary,
-              background: homeActive ? c.accent.wash : 'transparent',
+              color: homeActive ? c.accent.primary : c.text.tertiary,
+              background: homeActive ? `rgba(${c.accentRgb},0.10)` : 'transparent',
             }}
           >
             <GridViewRoundedIcon sx={{ fontSize: 13 }} />
@@ -248,7 +248,7 @@ const AppRail: React.FC<Props> = ({
           <Box
             sx={{
               ...c.type.caption,
-              color: c.status.danger,
+              color: c.status.error,
               px: '8px',
               py: '6px',
               lineHeight: 1.35,
@@ -301,12 +301,12 @@ const RailAppRow: React.FC<{
         cursor: 'pointer',
         textAlign: 'left',
         borderRadius: `${c.radius.sm}px`,
-        background: selected ? c.accent.wash : 'transparent',
+        background: selected ? `rgba(${c.accentRgb},0.10)` : 'transparent',
         color: selected ? c.text.primary : c.text.primary,
         transition: 'background 100ms linear',
         '& .track-slot': { opacity: 0, transition: 'opacity 120ms linear' },
         '&:hover': {
-          background: selected ? c.accent.wash : c.bg.fill,
+          background: selected ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary,
           '& .track-slot': { opacity: 1 },
         },
       }}
@@ -325,7 +325,7 @@ const RailAppRow: React.FC<{
                 height: 8,
                 borderRadius: '50%',
                 background: c.status.success,
-                border: `1.5px solid ${selected ? c.accent.wash : c.bg.raised}`,
+                border: `1.5px solid ${selected ? `rgba(${c.accentRgb},0.10)` : c.bg.surface}`,
               }}
             />
           )}
@@ -340,7 +340,7 @@ const RailAppRow: React.FC<{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: c.text.quaternary,
+            color: c.text.ghost,
           }}
         >
           <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 13 }} />
@@ -363,7 +363,7 @@ const RailAppRow: React.FC<{
       </Box>
 
       {missing ? (
-        <Box sx={{ ...c.type.caption, color: c.status.danger, opacity: 0.85 }}>gone</Box>
+        <Box sx={{ ...c.type.caption, color: c.status.error, opacity: 0.85 }}>gone</Box>
       ) : onTrack ? (
         <Box
           component="span"
@@ -380,13 +380,13 @@ const RailAppRow: React.FC<{
             px: '7px',
             ...c.type.caption,
             fontWeight: 500,
-            color: c.accent.base,
+            color: c.accent.primary,
             borderRadius: `${c.radius.xs}px`,
-            border: `0.5px solid ${c.accent.edge}`,
-            '&:hover': { background: c.accent.wash },
+            border: `1px solid ${`rgba(${c.accentRgb},0.35)`}`,
+            '&:hover': { background: `rgba(${c.accentRgb},0.10)` },
           }}
         >
-          {tracking ? <CircularProgress size={9} sx={{ color: c.accent.base }} /> : 'Track'}
+          {tracking ? <CircularProgress size={9} sx={{ color: c.accent.primary }} /> : 'Track'}
         </Box>
       ) : null}
     </Box>

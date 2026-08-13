@@ -100,9 +100,9 @@ const CommitSheet: React.FC<Props> = ({
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            background: c.bg.window,
-            borderLeft: `0.5px solid ${c.border}`,
-            boxShadow: c.shadow.popover,
+            background: c.bg.page,
+            borderLeft: `1px solid ${c.border.subtle}`,
+            boxShadow: c.shadow.lg,
             outline: 'none',
           }}
         >
@@ -114,7 +114,7 @@ const CommitSheet: React.FC<Props> = ({
               height: 48,
               flexShrink: 0,
               px: 1.5,
-              borderBottom: `0.5px solid ${c.separator}`,
+              borderBottom: `1px solid ${c.border.subtle}`,
             }}
           >
             {commit && (
@@ -189,7 +189,7 @@ const CommitSheet: React.FC<Props> = ({
                         ...c.type.caption,
                         fontFamily: c.font.mono,
                         color: laneColor(commit.lane),
-                        border: `0.5px solid ${laneColor(commit.lane)}`,
+                        border: `1px solid ${laneColor(commit.lane)}`,
                       }}
                     >
                       <CallSplitRoundedIcon sx={{ fontSize: 10 }} />
@@ -219,7 +219,7 @@ const CommitSheet: React.FC<Props> = ({
                   sx={{
                     mt: 2.5,
                     pt: 1.5,
-                    borderTop: `0.5px solid ${c.separator}`,
+                    borderTop: `1px solid ${c.border.subtle}`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
@@ -248,7 +248,7 @@ const CommitSheet: React.FC<Props> = ({
                           sx={{
                             ...c.type.caption,
                             fontFamily: c.font.mono,
-                            color: c.status.danger,
+                            color: c.status.error,
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
@@ -277,7 +277,7 @@ const CommitSheet: React.FC<Props> = ({
                           alignItems: 'center',
                           gap: 1,
                           py: '6px',
-                          borderTop: `0.5px solid ${c.separator}`,
+                          borderTop: `1px solid ${c.border.subtle}`,
                           '&:first-of-type': { borderTop: 'none' },
                         }}
                       >
@@ -316,7 +316,7 @@ const CommitSheet: React.FC<Props> = ({
                                 sx={{
                                   ...c.type.caption,
                                   fontFamily: c.font.mono,
-                                  color: c.status.danger,
+                                  color: c.status.error,
                                   fontVariantNumeric: 'tabular-nums',
                                 }}
                               >
@@ -342,7 +342,7 @@ const CommitSheet: React.FC<Props> = ({
                 px: 2.5,
                 py: 1.5,
                 flexShrink: 0,
-                borderTop: `0.5px solid ${c.separator}`,
+                borderTop: `1px solid ${c.border.subtle}`,
               }}
             >
               <Box

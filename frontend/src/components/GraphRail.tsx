@@ -91,7 +91,7 @@ const GraphRail: React.FC<Props> = ({ layout, selectedSha, headSha }) => {
               cx={cx(node.lane)}
               cy={cy(node.row)}
               r={DOT / 2}
-              fill={isMerge ? c.bg.window : color}
+              fill={isMerge ? c.bg.page : color}
               stroke={color}
               strokeWidth={isMerge ? 2 : 1.25}
             />
@@ -100,7 +100,7 @@ const GraphRail: React.FC<Props> = ({ layout, selectedSha, headSha }) => {
                 cx={cx(node.lane)}
                 cy={cy(node.row)}
                 r={DOT / 2 - 2}
-                fill={c.bg.window}
+                fill={c.bg.page}
               />
             )}
           </g>

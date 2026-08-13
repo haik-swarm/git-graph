@@ -55,7 +55,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
     <>
       <ButtonBase
         onClick={e => setAnchor(e.currentTarget)}
-        sx={{ ...pushButton(c), height: 28, px: '11px', minWidth: 210, justifyContent: 'space-between' }}
+        sx={{ ...pushButton(c), minWidth: 210, justifyContent: 'space-between' }}
       >
         <Typography component="span" sx={{ ...c.type.headline, color: c.text.primary }}>
           {selected ? selected.name : 'Choose an app'}
@@ -103,12 +103,12 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                   textAlign: 'left',
                   borderRadius: `${c.radius.sm}px`,
                   p: '2px',
-                  '&:hover': { background: c.bg.fill },
+                  '&:hover': { background: c.bg.secondary },
                 }}
               >
                 <Box sx={{ width: 14, flexShrink: 0, pt: '2px' }}>
                   {isSelected && (
-                    <CheckIcon sx={{ fontSize: 12, color: c.accent.base, display: 'block' }} />
+                    <CheckIcon sx={{ fontSize: 12, color: c.accent.primary, display: 'block' }} />
                   )}
                 </Box>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -116,7 +116,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                     {app.name}
                   </Typography>
                   {!app.workspace_exists ? (
-                    <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+                    <Typography sx={{ ...c.type.caption, color: c.status.error }}>
                       workspace missing
                     </Typography>
                   ) : !app.has_git ? (
@@ -135,8 +135,6 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                   disabled={isTracking}
                   sx={{
                     ...pushButton(c),
-                    height: 22,
-                    px: '8px',
                     flexShrink: 0,
                     mt: '2px',
                     ...c.type.caption,
@@ -156,7 +154,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
 
         {trackError && (
           <Typography
-            sx={{ ...c.type.caption, color: c.status.danger, px: '8px', py: '4px' }}
+            sx={{ ...c.type.caption, color: c.status.error, px: '8px', py: '4px' }}
           >
             {trackError}
           </Typography>

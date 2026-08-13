@@ -128,20 +128,17 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
         title={isInert ? 'Up to date with GitHub' : undefined}
         sx={{
           ...pushButton(c),
-          height: 22,
-          px: '8px',
-          ...c.type.caption,
-          color: highlight ? c.accent.base : c.text.secondary,
-          borderColor: highlight ? c.accent.base : c.border,
+          color: highlight ? c.accent.primary : c.text.secondary,
+          borderColor: highlight ? c.accent.primary : c.border.medium,
           '&:disabled': {
             opacity: 0.5,
             cursor: 'default',
             color: c.text.tertiary,
-            borderColor: c.border,
+            borderColor: c.border.subtle,
           },
         }}
       >
-        <GitHubIcon sx={{ fontSize: 12 }} />
+        <GitHubIcon sx={{ fontSize: 16 }} />
         {label}
       </ButtonBase>
 
@@ -157,7 +154,7 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
           sx={{
             px: 1.5,
             py: '8px',
-            borderBottom: `0.5px solid ${c.separator}`,
+            borderBottom: `1px solid ${c.border.subtle}`,
             display: 'flex',
             alignItems: 'center',
             gap: 1,
@@ -205,10 +202,10 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
                     name: name.trim(),
                   })
                 }
-                sx={{ ...primaryButton(c), height: 26 }}
+                sx={{ ...primaryButton(c) }}
               >
                 {busy === 'create' ? (
-                  <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                  <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
                 ) : (
                   'Create private repo'
                 )}
@@ -228,7 +225,7 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
                   textDecoration: 'none',
                   ...c.type.body,
                   fontFamily: c.font.mono,
-                  color: c.accent.base,
+                  color: c.accent.primary,
                   wordBreak: 'break-all',
                 }}
               >
@@ -247,10 +244,10 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
                 disabled={busy !== null || pending === 0}
                 onClick={() => void call(githubPushUrl(workspaceId), 'push')}
                 title={pending === 0 ? 'Nothing to push — origin is up to date' : undefined}
-                sx={{ ...primaryButton(c), height: 26 }}
+                sx={{ ...primaryButton(c) }}
               >
                 {busy === 'push' ? (
-                  <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                  <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
                 ) : pending === 0 ? (
                   'Up to date'
                 ) : (
@@ -269,7 +266,7 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
                   alignSelf: 'flex-start',
                   px: '4px',
                   borderRadius: `${c.radius.xs}px`,
-                  '&:hover': { color: c.status.danger },
+                  '&:hover': { color: c.status.error },
                 }}
               >
                 Disconnect remote
@@ -278,7 +275,7 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
           )}
 
           {error && (
-            <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+            <Typography sx={{ ...c.type.caption, color: c.status.error }}>
               {error}
             </Typography>
           )}

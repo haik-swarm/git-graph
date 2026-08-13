@@ -93,15 +93,15 @@ const MagicUpdateButton: React.FC<Props> = ({
           gap: '5px',
           borderRadius: `${c.radius.sm}px`,
           ...c.type.caption,
-          color: c.accent.base,
-          border: `0.5px solid ${c.accent.base}`,
+          color: c.accent.primary,
+          border: `1px solid ${c.accent.primary}`,
           transition: c.transition,
-          '&:hover': { background: c.bg.fill },
+          '&:hover': { background: c.bg.secondary },
           '&:disabled': { opacity: 0.65 },
         }}
       >
         {busy ? (
-          <CircularProgress size={10} sx={{ color: c.accent.base }} />
+          <CircularProgress size={10} sx={{ color: c.accent.primary }} />
         ) : (
           <AutoAwesomeIcon sx={{ fontSize: 12 }} />
         )}
@@ -120,13 +120,13 @@ const MagicUpdateButton: React.FC<Props> = ({
           sx={{
             px: 1.5,
             py: '10px',
-            borderBottom: `0.5px solid ${c.separator}`,
+            borderBottom: `1px solid ${c.border.subtle}`,
             display: 'flex',
             alignItems: 'center',
             gap: 1,
           }}
         >
-          <AutoAwesomeIcon sx={{ fontSize: 13, color: c.accent.base }} />
+          <AutoAwesomeIcon sx={{ fontSize: 13, color: c.accent.primary }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             Magic update
           </Typography>
@@ -147,7 +147,7 @@ const MagicUpdateButton: React.FC<Props> = ({
           )}
 
           {error && (
-            <Typography sx={{ ...c.type.body, color: c.status.danger }}>
+            <Typography sx={{ ...c.type.body, color: c.status.error }}>
               {error}
             </Typography>
           )}
@@ -181,7 +181,7 @@ const MagicUpdateButton: React.FC<Props> = ({
                     color: result.pushed
                       ? c.status.success
                       : result.push_error
-                        ? c.status.danger
+                        ? c.status.error
                         : c.text.tertiary,
                   }}
                 >
@@ -193,7 +193,7 @@ const MagicUpdateButton: React.FC<Props> = ({
                 </Typography>
               </Box>
               {result.push_error && (
-                <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+                <Typography sx={{ ...c.type.caption, color: c.status.error }}>
                   {result.push_error}
                 </Typography>
               )}
@@ -205,9 +205,9 @@ const MagicUpdateButton: React.FC<Props> = ({
                     px: '10px',
                     borderRadius: `${c.radius.sm}px`,
                     ...c.type.caption,
-                    color: c.accent.base,
-                    border: `0.5px solid ${c.accent.base}`,
-                    '&:hover': { background: c.bg.fill },
+                    color: c.accent.primary,
+                    border: `1px solid ${c.accent.primary}`,
+                    '&:hover': { background: c.bg.secondary },
                   }}
                 >
                   Done

@@ -53,9 +53,9 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
         gap: 1.5,
         p: 1.5,
         borderRadius: `${c.radius.xl}px`,
-        border: `0.5px solid ${c.border}`,
-        background: c.bg.raised,
-        boxShadow: c.shadow.control,
+        border: `1px solid ${c.border.subtle}`,
+        background: c.bg.surface,
+        boxShadow: c.shadow.sm,
         position: 'relative',
         overflow: 'hidden',
         '&::before': {
@@ -65,7 +65,7 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
           top: 0,
           bottom: 0,
           width: 3,
-          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.base})`,
+          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.primary})`,
         },
       }}
     >
@@ -102,8 +102,6 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
           title="Draft AI commit messages across apps"
           sx={{
             ...primaryButton(c),
-            height: 30,
-            px: '12px',
             gap: '6px',
             '& svg': { fontSize: 13 },
           }}
@@ -115,7 +113,7 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
         <ButtonBase
           onClick={open('commit')}
           disabled={dirtyApps.length === 0}
-          sx={{ ...pushButton(c), height: 30, px: '12px' }}
+          sx={{ ...pushButton(c) }}
         >
           Commit all…
         </ButtonBase>
@@ -256,7 +254,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
         sx={{
           px: 1.5,
           py: '10px',
-          borderBottom: `0.5px solid ${c.separator}`,
+          borderBottom: `1px solid ${c.border.subtle}`,
         }}
       >
         <Box sx={{ ...c.type.headline, color: c.text.primary }}>{title}</Box>
@@ -296,7 +294,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                 cursor: busy ? 'default' : 'pointer',
                 textAlign: 'left',
                 borderRadius: `${c.radius.sm}px`,
-                '&:hover': { background: busy ? 'transparent' : c.bg.fill },
+                '&:hover': { background: busy ? 'transparent' : c.bg.secondary },
               }}
             >
               <Box
@@ -305,15 +303,15 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                   height: 14,
                   flexShrink: 0,
                   borderRadius: `${c.radius.xs}px`,
-                  border: `1px solid ${isChosen ? c.accent.base : c.border}`,
-                  background: isChosen ? c.accent.base : 'transparent',
+                  border: `1px solid ${isChosen ? c.accent.primary : c.border.subtle}`,
+                  background: isChosen ? c.accent.primary : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 {isChosen && (
-                  <CheckIcon sx={{ fontSize: 11, color: c.text.onAccent }} />
+                  <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
                 )}
               </Box>
 
@@ -347,7 +345,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                 <CheckRoundedIcon sx={{ fontSize: 14, color: c.status.success }} />
               )}
               {status === 'failed' && (
-                <ErrorOutlineRoundedIcon sx={{ fontSize: 14, color: c.status.danger }} />
+                <ErrorOutlineRoundedIcon sx={{ fontSize: 14, color: c.status.error }} />
               )}
             </Box>
           );
@@ -357,7 +355,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
       <Box
         sx={{
           p: 1.5,
-          borderTop: `0.5px solid ${c.separator}`,
+          borderTop: `1px solid ${c.border.subtle}`,
           display: 'flex',
           flexDirection: 'column',
           gap: 1,
@@ -383,7 +381,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
               color: c.text.primary,
               px: 1,
               py: '6px',
-              '& textarea::placeholder': { color: c.text.quaternary, opacity: 1 },
+              '& textarea::placeholder': { color: c.text.ghost, opacity: 1 },
             }}
           />
         )}
@@ -395,7 +393,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
         )}
 
         {result && result.failed.length > 0 && (
-          <Box sx={{ ...c.type.caption, color: c.status.danger }}>
+          <Box sx={{ ...c.type.caption, color: c.status.error }}>
             {result.failed.length} failed:{' '}
             {result.failed.map(f => `${f.name} (${f.error})`).join('; ')}
           </Box>
@@ -415,7 +413,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                   ml: '6px',
                   border: 'none',
                   background: 'transparent',
-                  color: c.accent.base,
+                  color: c.accent.primary,
                   cursor: 'pointer',
                   ...c.type.caption,
                   p: 0,
@@ -433,7 +431,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                   ml: '6px',
                   border: 'none',
                   background: 'transparent',
-                  color: c.accent.base,
+                  color: c.accent.primary,
                   cursor: 'pointer',
                   ...c.type.caption,
                   p: 0,
@@ -446,10 +444,10 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
           <ButtonBase
             disabled={result ? false : !canRun}
             onClick={result ? closeIfIdle : () => void run()}
-            sx={{ ...primaryButton(c), height: 28 }}
+            sx={{ ...primaryButton(c) }}
           >
             {busy ? (
-              <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+              <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
             ) : result ? (
               'Done'
             ) : (

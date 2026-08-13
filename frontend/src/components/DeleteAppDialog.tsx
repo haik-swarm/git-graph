@@ -80,11 +80,11 @@ const DeleteAppDialog: React.FC<Props> = ({
         backdrop: { sx: { background: 'rgba(0,0,0,0.35)' } },
         paper: {
           sx: {
-            background: c.bg.window,
+            background: c.bg.page,
             backgroundImage: 'none',
-            border: `0.5px solid ${c.border}`,
+            border: `1px solid ${c.border.subtle}`,
             borderRadius: `${c.radius.xl}px`,
-            boxShadow: c.shadow.popover,
+            boxShadow: c.shadow.lg,
             width: 460,
             maxWidth: '92vw',
           },
@@ -101,8 +101,8 @@ const DeleteAppDialog: React.FC<Props> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: c.status.dangerWash,
-              color: c.status.danger,
+              background: c.status.errorBg,
+              color: c.status.error,
             }}
           >
             <DeleteForeverRoundedIcon sx={{ fontSize: 18 }} />
@@ -143,7 +143,7 @@ const DeleteAppDialog: React.FC<Props> = ({
         </Box>
 
         {error && (
-          <Box sx={{ ...c.type.caption, color: c.status.danger }}>{error}</Box>
+          <Box sx={{ ...c.type.caption, color: c.status.error }}>{error}</Box>
         )}
 
         <Box
@@ -164,14 +164,10 @@ const DeleteAppDialog: React.FC<Props> = ({
               sx={{
                 ...pushButton(c),
                 textDecoration: 'none',
-                height: 28,
-                px: '12px',
-                gap: '5px',
-                color: c.text.secondary,
               }}
               title="Open the GitHub repo's Danger Zone in a new tab"
             >
-              <GitHubIcon sx={{ fontSize: 12 }} />
+              <GitHubIcon sx={{ fontSize: 16 }} />
               Delete on GitHub
               <OpenInNewIcon sx={{ fontSize: 11 }} />
             </Box>
@@ -182,7 +178,7 @@ const DeleteAppDialog: React.FC<Props> = ({
           <ButtonBase
             onClick={onClose}
             disabled={busy}
-            sx={{ ...pushButton(c), height: 28, px: '14px' }}
+            sx={{ ...pushButton(c) }}
           >
             Cancel
           </ButtonBase>
@@ -200,18 +196,18 @@ const DeleteAppDialog: React.FC<Props> = ({
               fontFamily: c.font.sans,
               ...c.type.callout,
               fontWeight: 590,
-              color: c.text.onAccent,
-              background: c.status.danger,
+              color: "#FFFFFF",
+              background: c.status.error,
               border: 'none',
               borderRadius: `${c.radius.sm}px`,
-              boxShadow: c.shadow.control,
+              boxShadow: c.shadow.sm,
               transition: c.transition,
               '&:hover': { opacity: 0.9 },
               '&:disabled': { opacity: 0.45, cursor: 'default' },
             }}
           >
             {busy ? (
-              <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+              <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
             ) : (
               'Delete local'
             )}

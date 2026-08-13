@@ -54,7 +54,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
     () => ({
       add: c.status.success,
       edit: c.status.warning,
-      remove: c.status.danger,
+      remove: c.status.error,
     }),
     [c],
   );
@@ -101,9 +101,9 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
           borderRadius: `${c.radius.sm}px`,
           ...c.type.caption,
           color: c.status.warning,
-          border: `0.5px solid ${c.status.warning}`,
+          border: `1px solid ${c.status.warning}`,
           transition: c.transition,
-          '&:hover': { background: c.bg.fill },
+          '&:hover': { background: c.bg.secondary },
         }}
       >
         {dirty.length} uncommitted
@@ -123,7 +123,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
             alignItems: 'center',
             px: 1.5,
             py: '8px',
-            borderBottom: `0.5px solid ${c.separator}`,
+            borderBottom: `1px solid ${c.border.subtle}`,
           }}
         >
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
@@ -135,7 +135,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
             }
             sx={{
               ...c.type.callout,
-              color: c.accent.base,
+              color: c.accent.primary,
               px: '4px',
               borderRadius: `${c.radius.xs}px`,
             }}
@@ -165,7 +165,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
                   cursor: 'pointer',
                   textAlign: 'left',
                   borderRadius: `${c.radius.sm}px`,
-                  '&:hover': { background: c.bg.fill },
+                  '&:hover': { background: c.bg.secondary },
                 }}
               >
                 <Box
@@ -174,15 +174,15 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
                     height: 14,
                     flexShrink: 0,
                     borderRadius: `${c.radius.xs}px`,
-                    border: `1px solid ${isChosen ? c.accent.base : c.border}`,
-                    background: isChosen ? c.accent.base : 'transparent',
+                    border: `1px solid ${isChosen ? c.accent.primary : c.border.subtle}`,
+                    background: isChosen ? c.accent.primary : 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
                   {isChosen && (
-                    <CheckIcon sx={{ fontSize: 11, color: c.text.onAccent }} />
+                    <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
                   )}
                 </Box>
 
@@ -216,7 +216,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
         <Box
           sx={{
             p: 1.5,
-            borderTop: `0.5px solid ${c.separator}`,
+            borderTop: `1px solid ${c.border.subtle}`,
             display: 'flex',
             flexDirection: 'column',
             gap: 1,
@@ -240,12 +240,12 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
               color: c.text.primary,
               px: 1,
               py: '6px',
-              '& textarea::placeholder': { color: c.text.quaternary, opacity: 1 },
+              '& textarea::placeholder': { color: c.text.ghost, opacity: 1 },
             }}
           />
 
           {error && (
-            <Typography sx={{ ...c.type.caption, color: c.status.danger }}>
+            <Typography sx={{ ...c.type.caption, color: c.status.error }}>
               {error}
             </Typography>
           )}
@@ -257,10 +257,10 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
             <ButtonBase
               disabled={!canCommit}
               onClick={() => void submit()}
-              sx={{ ...primaryButton(c), height: 26 }}
+              sx={{ ...primaryButton(c) }}
             >
               {busy ? (
-                <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
               ) : (
                 'Commit'
               )}

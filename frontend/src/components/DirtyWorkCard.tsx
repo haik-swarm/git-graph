@@ -49,7 +49,7 @@ const DirtyWorkCard: React.FC<Props> = ({
   }, [dirty]);
 
   const chip = (label: string, tone: 'add' | 'edit' | 'remove', Icon: React.ElementType) => {
-    const color = tone === 'add' ? c.status.success : tone === 'remove' ? c.status.danger : c.status.warning;
+    const color = tone === 'add' ? c.status.success : tone === 'remove' ? c.status.error : c.status.warning;
     return (
       <Box
         sx={{
@@ -74,9 +74,9 @@ const DirtyWorkCard: React.FC<Props> = ({
         mb: 2,
         p: 1.75,
         borderRadius: `${c.radius.xl}px`,
-        border: `0.5px solid ${c.border}`,
-        background: c.bg.raised,
-        boxShadow: c.shadow.control,
+        border: `1px solid ${c.border.subtle}`,
+        background: c.bg.surface,
+        boxShadow: c.shadow.sm,
         display: 'flex',
         alignItems: 'center',
         gap: 1.5,
@@ -91,7 +91,7 @@ const DirtyWorkCard: React.FC<Props> = ({
           top: 0,
           bottom: 0,
           width: 3,
-          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.base})`,
+          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.primary})`,
         },
       }}
     >

@@ -103,10 +103,10 @@ const RestoreControl: React.FC<Props> = ({
           borderRadius: `${c.radius.sm}px`,
           ...c.type.caption,
           color: c.text.secondary,
-          border: `0.5px solid ${c.border}`,
-          background: c.bg.raised,
+          border: `1px solid ${c.border.subtle}`,
+          background: c.bg.surface,
           transition: c.transition,
-          '&:hover': { color: c.accent.base, borderColor: c.accent.base, background: c.bg.fill },
+          '&:hover': { color: c.accent.primary, borderColor: c.accent.primary, background: c.bg.secondary },
         }}
       >
         <ChipIcon sx={{ fontSize: 12 }} />
@@ -126,13 +126,13 @@ const RestoreControl: React.FC<Props> = ({
           sx={{
             px: 1.5,
             py: '10px',
-            borderBottom: `0.5px solid ${c.separator}`,
+            borderBottom: `1px solid ${c.border.subtle}`,
             display: 'flex',
             alignItems: 'center',
             gap: 1,
           }}
         >
-          <ChipIcon sx={{ fontSize: 13, color: c.accent.base }} />
+          <ChipIcon sx={{ fontSize: 13, color: c.accent.primary }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             {isSwitch ? `Switch to ${switchTo}` : 'Restore'}
           </Typography>
@@ -186,7 +186,7 @@ const RestoreControl: React.FC<Props> = ({
                     borderRadius: `${c.radius.sm}px`,
                     ...c.type.caption,
                     color: c.text.secondary,
-                    '&:hover': { background: c.bg.fill },
+                    '&:hover': { background: c.bg.secondary },
                   }}
                 >
                   Cancel
@@ -194,10 +194,10 @@ const RestoreControl: React.FC<Props> = ({
                 <ButtonBase
                   disabled={busy || isHead}
                   onClick={confirm}
-                  sx={{ ...primaryButton(c), height: 26 }}
+                  sx={{ ...primaryButton(c) }}
                 >
                   {busy ? (
-                    <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                    <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
                   ) : isHead ? (
                     'Already here'
                   ) : (
@@ -210,7 +210,7 @@ const RestoreControl: React.FC<Props> = ({
 
           {error && (
             <>
-              <Typography sx={{ ...c.type.body, color: c.status.danger }}>
+              <Typography sx={{ ...c.type.body, color: c.status.error }}>
                 {error}
               </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: '4px' }}>
@@ -221,9 +221,9 @@ const RestoreControl: React.FC<Props> = ({
                     px: '10px',
                     borderRadius: `${c.radius.sm}px`,
                     ...c.type.caption,
-                    color: c.accent.base,
-                    border: `0.5px solid ${c.accent.base}`,
-                    '&:hover': { background: c.bg.fill },
+                    color: c.accent.primary,
+                    border: `1px solid ${c.accent.primary}`,
+                    '&:hover': { background: c.bg.secondary },
                   }}
                 >
                   Close
@@ -271,9 +271,9 @@ const RestoreControl: React.FC<Props> = ({
                     px: '10px',
                     borderRadius: `${c.radius.sm}px`,
                     ...c.type.caption,
-                    color: c.accent.base,
-                    border: `0.5px solid ${c.accent.base}`,
-                    '&:hover': { background: c.bg.fill },
+                    color: c.accent.primary,
+                    border: `1px solid ${c.accent.primary}`,
+                    '&:hover': { background: c.bg.secondary },
                   }}
                 >
                   Done

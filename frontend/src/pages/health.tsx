@@ -33,7 +33,7 @@ const Health: React.FC = () => {
   }, []);
 
   const tone =
-    status === 'ok' ? c.status.success : status === 'error' ? c.status.danger : c.text.tertiary;
+    status === 'ok' ? c.status.success : status === 'error' ? c.status.error : c.text.tertiary;
 
   return (
     <Box sx={{ p: 4, maxWidth: 420 }}>

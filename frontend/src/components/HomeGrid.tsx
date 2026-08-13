@@ -10,7 +10,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
+import { card, primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
 import { relativeTime } from '@/shared/graphLayout';
@@ -163,16 +163,15 @@ const HomeGrid: React.FC<Props> = ({
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              height: 30,
-              px: '10px',
-              width: 300,
+              gap: 1,
+              minHeight: 38,
+              px: 1.5,
+              width: 320,
               maxWidth: '100%',
               ...sunkenField(c),
-              '&:focus-within': { boxShadow: c.accent.ring },
             }}
           >
-            <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
+            <SearchRoundedIcon sx={{ fontSize: 18, color: c.text.muted, flexShrink: 0 }} />
             <Box
               component="input"
               value={query}
@@ -295,34 +294,12 @@ const AppCard: React.FC<{
         display: 'flex',
         flexDirection: 'column',
         gap: 1.5,
-        p: 2,
+        p: 2.5,
         minHeight: 176,
         textAlign: 'left',
-        cursor: 'pointer',
-        background: c.bg.raised,
-        border: `0.5px solid ${c.border}`,
-        borderRadius: `${c.radius.xl}px`,
-        boxShadow: c.shadow.control,
-        transition: c.transition,
         overflow: 'hidden',
-        '&:hover': {
-          borderColor: c.accent.edge,
-          transform: 'translateY(-1px)',
-          boxShadow: `0 4px 14px rgba(0,0,0,${c.isDark ? 0.32 : 0.08}), 0 0 0 0.5px ${c.accent.edge}`,
-        },
-        '&:focus-visible': { outline: 'none', boxShadow: c.accent.ring },
-        // Signature stripe on tracked cards keeps the grid legible without
-        // needing a status pill on every tile.
-        '&::before': tracked
-          ? {
-              content: '""',
-              position: 'absolute',
-              inset: 0,
-              width: 3,
-              background: dirty ? c.status.warning : c.accent.base,
-              opacity: dirty ? 0.9 : 0.55,
-            }
-          : undefined,
+        ...card(c, true),
+        '&:focus-visible': { outline: 'none', boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
@@ -339,7 +316,7 @@ const AppCard: React.FC<{
                 height: 12,
                 borderRadius: '50%',
                 background: meta.runtime_ready ? c.status.success : c.status.warning,
-                border: `2px solid ${c.bg.raised}`,
+                border: `2px solid ${c.bg.surface}`,
                 boxShadow: meta.runtime_ready
                   ? `0 0 0 3px rgba(52,199,89,0.18)`
                   : `0 0 0 3px rgba(255,149,0,0.18)`,
@@ -475,13 +452,12 @@ const AppCard: React.FC<{
             }}
             sx={{
               ...primaryButton(c),
-              height: 26,
-              px: '12px',
-              fontSize: '11px',
+              minHeight: 30,
+              px: 1.5,
             }}
           >
             {tracking ? (
-              <CircularProgress size={10} sx={{ color: c.text.onAccent }} />
+              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
             ) : (
               'Track'
             )}
@@ -492,13 +468,11 @@ const AppCard: React.FC<{
             component="span"
             sx={{
               ...pushButton(c),
-              height: 26,
-              px: '10px',
-              fontSize: '11px',
-              color: c.text.secondary,
+              minHeight: 30,
+              px: 1.5,
             }}
           >
-            Open →
+            Open
           </Box>
         )}
       </Box>
@@ -517,7 +491,7 @@ function Segmented<T extends string>({
 }) {
   const c = useClaudeTokens();
   return (
-    <Box sx={{ display: 'flex', gap: '2px', p: '2px', ...sunkenField(c), flexShrink: 0, height: 30 }}>
+    <Box sx={{ display: 'flex', gap: '2px', p: '3px', ...sunkenField(c), flexShrink: 0, minHeight: 38 }}>
       {options.map(o => {
         const on = o.id === value;
         return (
@@ -526,26 +500,27 @@ function Segmented<T extends string>({
             key={o.id}
             onClick={() => onChange(o.id)}
             sx={{
-              height: 24,
-              px: '11px',
+              px: 1.75,
               border: 'none',
               cursor: 'pointer',
               borderRadius: `${c.radius.xs}px`,
               fontFamily: c.font.sans,
-              ...c.type.callout,
-              color: on ? c.text.primary : c.text.secondary,
-              background: on ? c.bg.controlRaised : 'transparent',
-              boxShadow: on ? c.shadow.control : 'none',
+              ...c.type.body,
+              color: on ? c.text.primary : c.text.muted,
+              background: on ? c.bg.surface : 'transparent',
+              boxShadow: on ? c.shadow.sm : 'none',
               transition: c.transition,
               whiteSpace: 'nowrap',
               display: 'inline-grid',
               alignItems: 'center',
               justifyItems: 'center',
               '&:hover': { color: c.text.primary },
+              // Reserve the bold width up front so the row doesn't reflow
+              // when the active item's weight changes.
               '&::before': {
                 content: `"${o.label}"`,
                 gridArea: '1 / 1',
-                fontWeight: 600,
+                fontWeight: 500,
                 visibility: 'hidden',
                 pointerEvents: 'none',
               },
@@ -553,7 +528,7 @@ function Segmented<T extends string>({
           >
             <Box
               component="span"
-              sx={{ gridArea: '1 / 1', fontWeight: on ? 600 : 450 }}
+              sx={{ gridArea: '1 / 1', fontWeight: on ? 500 : 400 }}
             >
               {o.label}
             </Box>

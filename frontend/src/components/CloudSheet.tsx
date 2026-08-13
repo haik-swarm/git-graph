@@ -148,10 +148,10 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
           sx: {
             width: 600,
             maxWidth: '92vw',
-            background: c.bg.window,
+            background: c.bg.page,
             backgroundImage: 'none',
             border: 'none',
-            boxShadow: c.shadow.popover,
+            boxShadow: c.shadow.lg,
             display: 'flex',
             flexDirection: 'column',
           },
@@ -166,10 +166,10 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
           px: 2,
           height: 48,
           flexShrink: 0,
-          borderBottom: `0.5px solid ${c.separator}`,
+          borderBottom: `1px solid ${c.border.subtle}`,
         }}
       >
-        <CloudRoundedIcon sx={{ fontSize: 16, color: c.accent.base }} />
+        <CloudRoundedIcon sx={{ fontSize: 16, color: c.accent.primary }} />
         <Box sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
           Your cloud
         </Box>
@@ -180,7 +180,7 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
             height: 26,
             borderRadius: `${c.radius.sm}px`,
             color: c.text.secondary,
-            '&:hover': { color: c.text.primary, background: c.bg.fill },
+            '&:hover': { color: c.text.primary, background: c.bg.secondary },
           }}
         >
           <CloseRoundedIcon sx={{ fontSize: 16 }} />
@@ -210,7 +210,7 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
             height: 30,
             px: '10px',
             ...sunkenField(c),
-            '&:focus-within': { boxShadow: c.accent.ring },
+            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
           }}
         >
           <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
@@ -285,7 +285,7 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
         )}
 
         {installError && (
-          <Box sx={{ mt: 1.5, ...c.type.caption, color: c.status.danger }}>
+          <Box sx={{ mt: 1.5, ...c.type.caption, color: c.status.error }}>
             {installError}
           </Box>
         )}
@@ -308,10 +308,10 @@ const RepoRow: React.FC<{
         alignItems: 'flex-start',
         gap: 1.5,
         p: 1.5,
-        background: c.bg.raised,
-        border: `0.5px solid ${c.border}`,
+        background: c.bg.surface,
+        border: `1px solid ${c.border.subtle}`,
         borderRadius: `${c.radius.lg}px`,
-        boxShadow: c.shadow.control,
+        boxShadow: c.shadow.sm,
       }}
     >
       <BrandGlyph seed={repo.full_name} letter={repo.app_name[0] || '?'} size={32} />
@@ -352,7 +352,7 @@ const RepoRow: React.FC<{
             sx={{
               color: c.text.tertiary,
               display: 'inline-flex',
-              '&:hover': { color: c.accent.base },
+              '&:hover': { color: c.accent.primary },
             }}
           >
             <OpenInNewIcon sx={{ fontSize: 11 }} />
@@ -375,7 +375,7 @@ const RepoRow: React.FC<{
           </Box>
         )}
         {repo.pushed_at && (
-          <Box sx={{ ...c.type.caption, color: c.text.quaternary, mt: '6px' }}>
+          <Box sx={{ ...c.type.caption, color: c.text.ghost, mt: '6px' }}>
             updated {relativeTime(repo.pushed_at)}
           </Box>
         )}
@@ -386,13 +386,11 @@ const RepoRow: React.FC<{
           <Box
             sx={{
               ...pushButton(c),
-              height: 26,
-              px: '10px',
               gap: '4px',
               color: c.status.success,
-              borderColor: c.border,
+              borderColor: c.border.subtle,
               cursor: 'default',
-              '&:hover': { background: c.bg.controlRaised },
+              '&:hover': { background: c.bg.elevated },
             }}
             title="Already installed on this machine"
           >
@@ -405,13 +403,11 @@ const RepoRow: React.FC<{
             disabled={installing}
             sx={{
               ...primaryButton(c),
-              height: 26,
-              px: '12px',
               gap: '4px',
             }}
           >
             {installing ? (
-              <CircularProgress size={11} sx={{ color: c.text.onAccent }} />
+              <CircularProgress size={11} sx={{ color: "#FFFFFF" }} />
             ) : (
               <>
                 <CloudDownloadRoundedIcon sx={{ fontSize: 13 }} />

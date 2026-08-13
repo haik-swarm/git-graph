@@ -383,11 +383,9 @@ const Home: React.FC = () => {
               onClick={() => setCloudOpen(true)}
               sx={{
                 ...pushButton(c),
-                height: 28,
-                px: '10px',
                 gap: '6px',
-                color: c.accent.base,
-                borderColor: c.accent.edge,
+                color: c.accent.primary,
+                borderColor: `rgba(${c.accentRgb},0.35)`,
                 '& svg': { fontSize: 14 },
               }}
               aria-label="Your cloud"
@@ -401,8 +399,6 @@ const Home: React.FC = () => {
               onClick={() => setIgnoreOpen(true)}
               sx={{
                 ...pushButton(c),
-                height: 28,
-                px: '10px',
                 gap: '6px',
                 '& svg': { fontSize: 14 },
               }}
@@ -496,11 +492,9 @@ const Home: React.FC = () => {
               onClick={() => setDeleteOpen(true)}
               sx={{
                 ...pushButton(c),
-                height: 22,
-                px: '8px',
                 gap: '4px',
                 color: c.text.secondary,
-                '&:hover': { color: c.status.danger, borderColor: c.status.danger },
+                '&:hover': { color: c.status.error, borderColor: c.status.error },
                 '& svg': { fontSize: 12 },
               }}
               aria-label="Delete app"
@@ -549,16 +543,16 @@ const Home: React.FC = () => {
                 <ButtonBase
                   onClick={() => void trackApp(selected)}
                   disabled={initBusy}
-                  sx={{ ...primaryButton(c), height: 32, px: '18px' }}
+                  sx={{ ...primaryButton(c) }}
                 >
                   {initBusy ? (
-                    <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                    <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
                   ) : (
                     'Track this app'
                   )}
                 </ButtonBase>
                 {initError && (
-                  <Box sx={{ ...c.type.caption, color: c.status.danger }}>
+                  <Box sx={{ ...c.type.caption, color: c.status.error }}>
                     {initError}
                   </Box>
                 )}
@@ -599,7 +593,7 @@ const Home: React.FC = () => {
                 display: 'flex',
                 alignItems: 'baseline',
                 gap: 1,
-                borderBottom: `0.5px solid ${c.separator}`,
+                borderBottom: `1px solid ${c.border.subtle}`,
               }}
             >
               <Box
@@ -615,7 +609,7 @@ const Home: React.FC = () => {
                 History
               </Box>
               <Box sx={{ flex: 1 }} />
-              <Box sx={{ ...c.type.caption, color: c.text.quaternary }}>
+              <Box sx={{ ...c.type.caption, color: c.text.ghost }}>
                 Newest first
               </Box>
             </Box>
@@ -631,7 +625,7 @@ const Home: React.FC = () => {
               <Box
                 sx={{
                   ...c.type.caption,
-                  color: c.text.quaternary,
+                  color: c.text.ghost,
                   px: 3,
                   pb: 3,
                 }}

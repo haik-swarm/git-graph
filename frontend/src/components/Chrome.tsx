@@ -1,12 +1,11 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { slimScroll } from '@/shared/styles/ui';
+import { slimScroll, statusChip } from '@/shared/styles/ui';
 
 /**
- * Two-column app frame: tinted sidebar rail on the left, scrolling content
- * well on the right. The rail is the primary orientation surface, the
- * content well is where the work happens.
+ * Two-column app frame: sidebar rail on the left, scrolling content well on
+ * the right. Dashboard archetype — the rail is the orientation surface.
  */
 export const Shell: React.FC<{
   rail: React.ReactNode;
@@ -19,19 +18,19 @@ export const Shell: React.FC<{
         position: 'fixed',
         inset: 0,
         display: 'flex',
-        background: c.bg.window,
+        background: c.bg.page,
         fontFamily: c.font.sans,
         color: c.text.primary,
       }}
     >
       <Box
         sx={{
-          width: 224,
+          width: 260,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          background: c.bg.sidebar,
-          borderRight: `0.5px solid ${c.separator}`,
+          background: c.bg.surface,
+          borderRight: `1px solid ${c.border.subtle}`,
         }}
       >
         {rail}
@@ -43,7 +42,7 @@ export const Shell: React.FC<{
   );
 };
 
-/** Sticky view header: hierarchy on the left, controls on the right, hairline underneath. */
+/** Sticky view header: hierarchy left, controls right. */
 export const Toolbar: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const c = useClaudeTokens();
   return (
@@ -51,12 +50,12 @@ export const Toolbar: React.FC<{ children: React.ReactNode }> = ({ children }) =
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1,
-        height: 48,
+        gap: 1.5,
+        minHeight: 64,
         flexShrink: 0,
-        px: 2,
-        borderBottom: `0.5px solid ${c.separator}`,
-        background: c.bg.window,
+        px: 3,
+        borderBottom: `1px solid ${c.border.subtle}`,
+        background: c.bg.page,
       }}
     >
       {children}
@@ -78,15 +77,12 @@ export const RailLabel: React.FC<{ children: React.ReactNode }> = ({ children })
   return (
     <Box
       sx={{
-        ...c.type.footnote,
-        fontWeight: 590,
-        color: c.text.tertiary,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        fontSize: '10px',
-        px: '10px',
-        pt: 1.5,
-        pb: '4px',
+        ...c.type.caption,
+        fontWeight: 500,
+        color: c.text.muted,
+        px: 2,
+        pt: 2.5,
+        pb: 1,
         userSelect: 'none',
       }}
     >
@@ -96,7 +92,7 @@ export const RailLabel: React.FC<{ children: React.ReactNode }> = ({ children })
 };
 
 /**
- * Deterministic hue per key so every app card gets a stable colored glyph
+ * Deterministic hue per key so every app gets a stable colored glyph
  * without needing an actual icon.
  */
 export function seedHue(key: string): number {
@@ -110,11 +106,11 @@ export const BrandGlyph: React.FC<{
   letter: string;
   size?: number;
   active?: boolean;
-}> = ({ seed, letter, size = 22, active }) => {
+}> = ({ seed, letter, size = 28, active }) => {
   const c = useClaudeTokens();
   const hue = seedHue(seed);
-  const bg = `hsl(${hue} ${c.isDark ? '42% 34%' : '68% 90%'})`;
-  const fg = `hsl(${hue} ${c.isDark ? '72% 82%'  : '48% 30%'})`;
+  const bg = `hsl(${hue} ${c.isDark ? '38% 30%' : '70% 93%'})`;
+  const fg = `hsl(${hue} ${c.isDark ? '70% 80%' : '50% 32%'})`;
   return (
     <Box
       sx={{
@@ -128,12 +124,10 @@ export const BrandGlyph: React.FC<{
         background: bg,
         color: fg,
         fontFamily: c.font.sans,
-        fontSize: size * 0.5,
-        fontWeight: 700,
+        fontSize: size * 0.42,
+        fontWeight: 600,
         letterSpacing: '-0.02em',
-        boxShadow: active
-          ? `0 0 0 1.5px ${c.bg.sidebar}, 0 0 0 2.5px ${c.accent.base}`
-          : 'none',
+        boxShadow: active ? `0 0 0 2px ${c.accent.primary}` : 'none',
         transition: c.transition,
         userSelect: 'none',
       }}
@@ -148,30 +142,20 @@ export const Pill: React.FC<{
   tone?: 'plain' | 'accent' | 'success' | 'warning' | 'danger' | 'ghost';
 }> = ({ children, tone = 'plain' }) => {
   const c = useClaudeTokens();
-  const tones = {
-    plain: { bg: c.bg.fill, fg: c.text.secondary },
-    accent: { bg: c.accent.wash, fg: c.accent.base },
-    success: { bg: `rgba(52,199,89,${c.isDark ? 0.18 : 0.14})`, fg: c.status.success },
-    warning: { bg: `rgba(255,149,0,${c.isDark ? 0.18 : 0.14})`, fg: c.status.warning },
-    danger: { bg: c.status.dangerWash, fg: c.status.danger },
-    ghost: { bg: 'transparent', fg: c.text.tertiary },
-  }[tone];
+  const mapped = {
+    plain: 'neutral',
+    accent: 'accent',
+    success: 'success',
+    warning: 'warning',
+    danger: 'error',
+    ghost: 'neutral',
+  }[tone] as 'neutral' | 'accent' | 'success' | 'warning' | 'error';
+
   return (
     <Box
       sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        height: 18,
-        px: '7px',
-        borderRadius: `${c.radius.xs}px`,
-        ...c.type.caption,
-        fontWeight: 500,
-        background: tones.bg,
-        color: tones.fg,
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        '& svg': { fontSize: 11 },
+        ...statusChip(c, mapped),
+        ...(tone === 'ghost' && { background: 'transparent', color: c.text.muted }),
       }}
     >
       {children}
@@ -179,7 +163,7 @@ export const Pill: React.FC<{
   );
 };
 
-/** Centred placeholder for empty, loading-failed and blank states. */
+/** Centred placeholder for empty, failed and blank states. */
 export const Placeholder: React.FC<{
   icon?: React.ReactNode;
   title: string;
@@ -195,8 +179,8 @@ export const Placeholder: React.FC<{
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 1.25,
-        py: 9,
+        gap: 2,
+        py: 10,
         px: 3,
         textAlign: 'center',
       }}
@@ -204,15 +188,15 @@ export const Placeholder: React.FC<{
       {icon && (
         <Box
           sx={{
-            width: 42,
-            height: 42,
+            width: 56,
+            height: 56,
             borderRadius: `${c.radius.xl}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: danger ? c.status.dangerWash : c.bg.fill,
-            color: danger ? c.status.danger : c.text.tertiary,
-            '& svg': { fontSize: 22 },
+            background: danger ? c.status.errorBg : c.bg.secondary,
+            color: danger ? c.status.error : c.text.tertiary,
+            '& svg': { fontSize: 26 },
           }}
         >
           {icon}
@@ -221,14 +205,21 @@ export const Placeholder: React.FC<{
       <Box
         sx={{
           ...c.type.title3,
-          fontWeight: 590,
-          color: danger ? c.status.danger : c.text.primary,
+          color: danger ? c.status.error : c.text.primary,
         }}
       >
         {title}
       </Box>
       {hint && (
-        <Box sx={{ ...c.type.callout, color: c.text.tertiary, maxWidth: 360, lineHeight: 1.5 }}>
+        <Box
+          sx={{
+            ...c.type.body,
+            color: c.text.tertiary,
+            maxWidth: 400,
+            lineHeight: 1.6,
+            mt: -0.5,
+          }}
+        >
           {hint}
         </Box>
       )}
