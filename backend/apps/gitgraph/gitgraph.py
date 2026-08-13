@@ -9,6 +9,7 @@ from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.gitgraph import github, global_ignore, magic
+from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
     discard_dirty,
@@ -93,7 +94,7 @@ async def status_all() -> dict:
         wid = entry["workspace_id"]
         path = workspace_path(wid)
         if path is None:
-            return wid, {
+            git_data = {
                 "is_repo": False,
                 "commit_count": 0,
                 "dirty_count": 0,
@@ -101,8 +102,14 @@ async def status_all() -> dict:
                 "head_subject": None,
                 "head_date": None,
             }
-        result = await asyncio.to_thread(read_status, path)
-        return wid, result
+        else:
+            git_data = await asyncio.to_thread(read_status, path)
+        # Ask the host if the preview runtime is up. Runs alongside the git
+        # probe so the batch endpoint still finishes in one round trip.
+        rt = await asyncio.to_thread(runtime_status, wid)
+        git_data["runtime_running"] = bool(rt.get("running"))
+        git_data["runtime_ready"] = bool(rt.get("ready"))
+        return wid, git_data
 
     pairs = await asyncio.gather(*(probe(e) for e in entries))
     return {"status": {wid: data for wid, data in pairs}}

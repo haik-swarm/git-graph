@@ -40,6 +40,8 @@ interface HomeMeta {
   current_branch: string | null;
   head_subject: string | null;
   head_date: string | null;
+  runtime_running?: boolean;
+  runtime_ready?: boolean;
 }
 
 interface Graph {
@@ -265,6 +267,14 @@ const Home: React.FC = () => {
     void refreshHomeMeta();
   }, [loadGraph, selected, refreshHomeMeta]);
 
+  const runningIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const [id, m] of Object.entries(homeMeta)) {
+      if (m?.runtime_running) set.add(id);
+    }
+    return set;
+  }, [homeMeta]);
+
   const rail = (
     <AppRail
       apps={apps}
@@ -272,6 +282,7 @@ const Home: React.FC = () => {
       homeActive={mode === 'home'}
       onHome={goHome}
       onSelect={openApp}
+      runningIds={runningIds}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);

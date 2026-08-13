@@ -26,6 +26,8 @@ interface Meta {
   current_branch: string | null;
   head_subject: string | null;
   head_date: string | null;
+  runtime_running?: boolean;
+  runtime_ready?: boolean;
 }
 
 interface Props {
@@ -324,7 +326,27 @@ const AppCard: React.FC<{
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-        <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={36} />
+        <Box sx={{ position: 'relative', flexShrink: 0 }}>
+          <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={36} />
+          {meta?.runtime_running && (
+            <Box
+              title={meta.runtime_ready ? 'Open in OpenSwarm' : 'Starting…'}
+              sx={{
+                position: 'absolute',
+                right: -2,
+                bottom: -2,
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                background: meta.runtime_ready ? c.status.success : c.status.warning,
+                border: `2px solid ${c.bg.raised}`,
+                boxShadow: meta.runtime_ready
+                  ? `0 0 0 3px rgba(52,199,89,0.18)`
+                  : `0 0 0 3px rgba(255,149,0,0.18)`,
+              }}
+            />
+          )}
+        </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box
             sx={{

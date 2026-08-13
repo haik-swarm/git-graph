@@ -20,6 +20,7 @@ interface Props {
   onHome: () => void;
   onSelect: (app: AppEntry) => void;
   onTracked: (app: AppEntry) => void;
+  runningIds?: Set<string>;
 }
 
 /**
@@ -35,6 +36,7 @@ const AppRail: React.FC<Props> = ({
   onHome,
   onSelect,
   onTracked,
+  runningIds,
 }) => {
   const c = useClaudeTokens();
   const [query, setQuery] = useState('');
@@ -220,6 +222,7 @@ const AppRail: React.FC<Props> = ({
                 app={app}
                 selected={selected?.workspace_id === app.workspace_id}
                 onSelect={onSelect}
+                running={runningIds?.has(app.workspace_id) ?? false}
               />
             ))}
           </>
@@ -279,7 +282,8 @@ const RailAppRow: React.FC<{
   onSelect: (app: AppEntry) => void;
   tracking?: boolean;
   onTrack?: () => void;
-}> = ({ app, selected, onSelect, tracking, onTrack }) => {
+  running?: boolean;
+}> = ({ app, selected, onSelect, tracking, onTrack, running }) => {
   const c = useClaudeTokens();
   const missing = !app.workspace_exists;
   return (
@@ -308,7 +312,24 @@ const RailAppRow: React.FC<{
       }}
     >
       {app.has_git ? (
-        <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={20} active={selected} />
+        <Box sx={{ position: 'relative', flexShrink: 0 }}>
+          <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={20} active={selected} />
+          {running && (
+            <Box
+              title="Open in OpenSwarm"
+              sx={{
+                position: 'absolute',
+                right: -1,
+                bottom: -1,
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: c.status.success,
+                border: `1.5px solid ${selected ? c.accent.wash : c.bg.raised}`,
+              }}
+            />
+          )}
+        </Box>
       ) : (
         <Box
           sx={{

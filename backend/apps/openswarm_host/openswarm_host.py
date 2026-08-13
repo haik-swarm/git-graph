@@ -38,6 +38,20 @@ def p_request(method: str, path: str, body: Optional[Dict[str, Any]] = None) -> 
 
 
 @typechecked
+def runtime_status(workspace_id: str) -> Dict[str, Any]:
+    """Whether an app's preview runtime is currently up on the dashboard.
+
+    Returns {} on any failure so a stale host or missing token doesn't take
+    the whole home grid down; the shape upstream is
+    {running, ready, port, serving_url, ...}.
+    """
+    try:
+        return p_request("GET", f"/api/outputs/workspace/{workspace_id}/runtime/status")
+    except Exception:
+        return {}
+
+
+@typechecked
 def llm(prompt: str, system: Optional[str] = None, model: Optional[str] = None, max_tokens: int = 1024) -> str:
     """One-shot completion through the user's own configured providers/subscription.
     `model` is a short name (sonnet, haiku, ...); omit for the cheap tier."""
