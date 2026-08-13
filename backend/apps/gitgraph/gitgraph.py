@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
 
-from backend.apps.gitgraph import github
+from backend.apps.gitgraph import github, magic
 from backend.apps.gitgraph.discovery import (
     commit_paths,
     list_apps,
@@ -25,6 +25,10 @@ class CommitRequest(BaseModel):
 
 class CreateRepoRequest(BaseModel):
     name: Optional[str] = None
+
+
+class MagicUpdateRequest(BaseModel):
+    push: bool = True
 
 
 @typechecked
@@ -88,6 +92,18 @@ async def create_commit(workspace_id: str, body: CommitRequest) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     return {"sha": result}
+
+
+@gitgraph.router.post("/magic-update/{workspace_id}")
+@typechecked
+async def magic_update(workspace_id: str, body: MagicUpdateRequest) -> dict:
+    path = _resolve(workspace_id)
+    try:
+        result = await magic.magic_update(path, _app_name(workspace_id), body.push)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    debug(workspace_id, result["sha"][:7], result["pushed"])
+    return result
 
 
 @gitgraph.router.get("/github/{workspace_id}")
