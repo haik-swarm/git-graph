@@ -30,6 +30,18 @@ const MagicUpdateButton: React.FC<Props> = ({ workspaceId, hasRemote, onDone }) 
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Refresh the parent (which re-renders us out of existence when dirty
+  // becomes 0) only after the user has actually dismissed the popover,
+  // so the AI's message stays visible long enough to read.
+  const closeAndNotify = () => {
+    if (busy) return;
+    const shouldNotify = result !== null;
+    setAnchor(null);
+    setResult(null);
+    setError(null);
+    if (shouldNotify) onDone();
+  };
+
   const run = async (e: React.MouseEvent<HTMLElement>) => {
     const target = e.currentTarget;
     setBusy(true);
@@ -48,7 +60,6 @@ const MagicUpdateButton: React.FC<Props> = ({ workspaceId, hasRemote, onDone }) 
       }
       const data: Result = await res.json();
       setResult(data);
-      onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Magic update failed.');
     } finally {
@@ -89,12 +100,7 @@ const MagicUpdateButton: React.FC<Props> = ({ workspaceId, hasRemote, onDone }) 
       <Popover
         open={Boolean(anchor) && (busy || result !== null || error !== null)}
         anchorEl={anchor}
-        onClose={() => {
-          if (busy) return;
-          setAnchor(null);
-          setResult(null);
-          setError(null);
-        }}
+        onClose={closeAndNotify}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, width: 380 } } }}
@@ -180,6 +186,22 @@ const MagicUpdateButton: React.FC<Props> = ({ workspaceId, hasRemote, onDone }) 
                   {result.push_error}
                 </Typography>
               )}
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: '4px' }}>
+                <ButtonBase
+                  onClick={closeAndNotify}
+                  sx={{
+                    height: 24,
+                    px: '10px',
+                    borderRadius: `${c.radius.sm}px`,
+                    ...c.type.caption,
+                    color: c.accent.base,
+                    border: `0.5px solid ${c.accent.base}`,
+                    '&:hover': { background: c.bg.fill },
+                  }}
+                >
+                  Done
+                </ButtonBase>
+              </Box>
             </>
           )}
         </Box>
