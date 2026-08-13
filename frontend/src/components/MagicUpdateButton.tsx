@@ -13,6 +13,7 @@ interface Props {
   workspaceId: string;
   hasRemote: boolean;
   onDone: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 interface Result {
@@ -23,12 +24,22 @@ interface Result {
   push_error: string;
 }
 
-const MagicUpdateButton: React.FC<Props> = ({ workspaceId, hasRemote, onDone }) => {
+const MagicUpdateButton: React.FC<Props> = ({
+  workspaceId,
+  hasRemote,
+  onDone,
+  onBusyChange,
+}) => {
   const c = useClaudeTokens();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyRaw] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const setBusy = (next: boolean) => {
+    setBusyRaw(next);
+    onBusyChange?.(next);
+  };
 
   // Refresh the parent (which re-renders us out of existence when dirty
   // becomes 0) only after the user has actually dismissed the popover,

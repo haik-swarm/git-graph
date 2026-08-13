@@ -52,6 +52,7 @@ const Home: React.FC = () => {
   const [files, setFiles] = useState<CommitFile[] | null>(null);
   const [gitHubKey, setGitHubKey] = useState(0);
   const [hasRemote, setHasRemote] = useState(false);
+  const [magicBusy, setMagicBusy] = useState(false);
 
   useEffect(() => {
     if (!selected) {
@@ -186,6 +187,7 @@ const Home: React.FC = () => {
           <MagicUpdateButton
             workspaceId={selected.workspace_id}
             hasRemote={hasRemote}
+            onBusyChange={setMagicBusy}
             onDone={() => {
               setGitHubKey(k => k + 1);
               void loadGraph(selected);
@@ -193,7 +195,7 @@ const Home: React.FC = () => {
           />
         ) : null}
 
-        {selected && graph?.dirty?.length ? (
+        {selected && graph?.dirty?.length && !magicBusy ? (
           <CommitPanel
             workspaceId={selected.workspace_id}
             dirty={graph.dirty}
