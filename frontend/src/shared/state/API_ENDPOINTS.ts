@@ -13,6 +13,8 @@ export const gitgraphCreateCommitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}`;
 export const gitgraphMagicUpdateUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/magic-update/${encodeURIComponent(workspaceId)}`;
+export const gitgraphRestoreUrl = (workspaceId: string, sha: string) =>
+  `${API_URL}/gitgraph/restore/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
 
 // GITHUB - Endpoints
 export const githubStatusUrl = (workspaceId: string) =>

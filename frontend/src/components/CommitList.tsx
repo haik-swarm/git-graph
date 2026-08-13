@@ -4,11 +4,15 @@ import Typography from '@mui/material/Typography';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { laneColor, relativeTime, type Layout } from '@/shared/graphLayout';
 import GraphRail, { ROW_HEIGHT } from './GraphRail';
+import RestoreControl from './RestoreControl';
 
 interface Props {
   layout: Layout;
   selectedSha: string | null;
+  workspaceId: string | null;
+  headSha: string | null;
   onSelect: (sha: string) => void;
+  onRestored: () => void;
 }
 
 /**
@@ -16,7 +20,14 @@ interface Props {
  * ROW_HEIGHT so a commit's dot lines up with its subject without either
  * side having to know the other's layout.
  */
-const CommitList: React.FC<Props> = ({ layout, selectedSha, onSelect }) => {
+const CommitList: React.FC<Props> = ({
+  layout,
+  selectedSha,
+  workspaceId,
+  headSha,
+  onSelect,
+  onRestored,
+}) => {
   const c = useClaudeTokens();
 
   return (
@@ -26,11 +37,13 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, onSelect }) => {
       <Box sx={{ flex: 1, minWidth: 0 }}>
         {layout.nodes.map(node => {
           const isSelected = node.sha === selectedSha;
+          const isHead = node.sha === headSha;
           return (
             <Box
               key={node.sha}
               onClick={() => onSelect(node.sha)}
               sx={{
+                position: 'relative',
                 height: ROW_HEIGHT,
                 display: 'flex',
                 alignItems: 'center',
@@ -40,7 +53,18 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, onSelect }) => {
                 borderRadius: `${c.radius.sm}px`,
                 background: isSelected ? c.accent.wash : 'transparent',
                 transition: 'background 100ms linear',
-                '&:hover': { background: isSelected ? c.accent.wash : c.bg.fill },
+                // The restore chip is hidden by default; opacity swap keeps
+                // its layout footprint out of the row so short subjects
+                // don't get truncated only when the cursor is elsewhere.
+                '& .restore-slot': { opacity: 0, pointerEvents: 'none' },
+                '&:hover': {
+                  background: isSelected ? c.accent.wash : c.bg.fill,
+                  '& .restore-slot': { opacity: 1, pointerEvents: 'auto' },
+                },
+                '&:focus-within .restore-slot': {
+                  opacity: 1,
+                  pointerEvents: 'auto',
+                },
               }}
             >
               <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -91,6 +115,31 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, onSelect }) => {
               >
                 {node.short}
               </Typography>
+
+              {workspaceId && (
+                <Box
+                  className="restore-slot"
+                  onClick={e => e.stopPropagation()}
+                  sx={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: c.bg.raised,
+                    borderRadius: `${c.radius.sm}px`,
+                    transition: 'opacity 100ms linear',
+                  }}
+                >
+                  <RestoreControl
+                    workspaceId={workspaceId}
+                    sha={node.sha}
+                    shortSha={node.short}
+                    subject={node.subject}
+                    isHead={isHead}
+                    onRestored={onRestored}
+                  />
+                </Box>
+              )}
             </Box>
           );
         })}

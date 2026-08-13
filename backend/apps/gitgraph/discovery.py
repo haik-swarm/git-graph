@@ -259,6 +259,78 @@ def commit_paths(
 
 
 @typechecked
+def restore_to(path: Path, sha: str) -> Tuple[bool, Dict[str, Any]]:
+    """Check out `sha` on a fresh branch so history stays intact.
+
+    Restoration is never a reset: the current branch is left where it
+    was, and new work lands on `restore/<short-sha>` (auto-numbered if
+    that name is already taken from a previous restore of the same
+    commit). Refuses if the working tree is dirty, so a click can't
+    silently drop uncommitted work — the user is expected to Commit or
+    Magic Update first.
+    """
+    if not (path / ".git").is_dir():
+        return False, {"detail": "This workspace isn't a git repository."}
+
+    # A single hex-string check is enough: it stops path traversal and
+    # option injection before the value reaches git, without needing to
+    # ask git first.
+    cleaned = sha.strip().lower()
+    if not cleaned or not all(ch in "0123456789abcdef" for ch in cleaned):
+        return False, {"detail": "Invalid commit id."}
+
+    resolved = _run_git(["rev-parse", "--verify", f"{cleaned}^{{commit}}"], path)
+    if not resolved:
+        return False, {"detail": "That commit isn't in this repository."}
+    full_sha = resolved.strip()
+    short_sha = full_sha[:7]
+
+    if read_dirty(path):
+        return False, {
+            "detail": (
+                "You have uncommitted changes. Commit or magic-update them "
+                "first so restoring can't lose your work."
+            )
+        }
+
+    current = (_run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], path) or "").strip()
+    head_sha = (_run_git(["rev-parse", "HEAD"], path) or "").strip()
+    if head_sha == full_sha and current:
+        return True, {
+            "branch": current,
+            "sha": full_sha,
+            "created": False,
+            "noop": True,
+        }
+
+    # Auto-suffix so the second restore of the same commit doesn't collide
+    # with the first: restore/abc1234, restore/abc1234-2, and so on.
+    base = f"restore/{short_sha}"
+    branch = base
+    existing = set(
+        line.strip().lstrip("* ").split()[0]
+        for line in (_run_git(["branch", "--format=%(refname:short)"], path) or "").splitlines()
+        if line.strip()
+    )
+    n = 2
+    while branch in existing:
+        branch = f"{base}-{n}"
+        n += 1
+
+    ok, _, err = _run_git_result(["checkout", "-b", branch, full_sha], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git checkout failed."])[0]}
+
+    return True, {
+        "branch": branch,
+        "sha": full_sha,
+        "created": True,
+        "noop": False,
+        "previous_branch": current or None,
+    }
+
+
+@typechecked
 def read_graph(path: Path) -> Dict[str, Any]:
     """Commit list plus working-tree state for one workspace.
 

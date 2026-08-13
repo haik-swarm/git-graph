@@ -13,6 +13,7 @@ from backend.apps.gitgraph.discovery import (
     list_apps,
     read_commit_detail,
     read_graph,
+    restore_to,
     workspace_path,
 )
 from backend.config.Apps import SubApp
@@ -103,6 +104,17 @@ async def magic_update(workspace_id: str, body: MagicUpdateRequest) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     debug(workspace_id, result["sha"][:7], result["pushed"])
+    return result
+
+
+@gitgraph.router.post("/restore/{workspace_id}/{sha}")
+@typechecked
+async def restore(workspace_id: str, sha: str) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = restore_to(path, sha)
+    debug(workspace_id, sha[:7], ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Restore failed."))
     return result
 
 

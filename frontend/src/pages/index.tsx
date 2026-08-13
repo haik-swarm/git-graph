@@ -258,7 +258,13 @@ const Home: React.FC = () => {
               <CommitList
                 layout={layout}
                 selectedSha={selectedSha}
+                workspaceId={selected?.workspace_id ?? null}
+                headSha={graph?.commits?.[0]?.sha ?? null}
                 onSelect={sha => setSelectedSha(prev => (prev === sha ? null : sha))}
+                onRestored={() => {
+                  setGitHubKey(k => k + 1);
+                  void loadGraph(selected);
+                }}
               />
               {graph.truncated && (
                 <Typography
