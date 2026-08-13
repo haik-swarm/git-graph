@@ -53,7 +53,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
       setState(data);
       setDraft(data.content);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load.');
+      setError(err instanceof Error ? err.message : "We couldn't load that.");
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
       setTimeout(() => setSavedFlash(false), 1400);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save.');
+      setError(err instanceof Error ? err.message : "We couldn't save that.");
     } finally {
       setSaving(false);
     }
@@ -243,12 +243,8 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           <Box sx={{ px: 2, pt: 1.25, pb: 1 }}>
             <Box
               sx={{
-                ...c.type.footnote,
-                fontWeight: 590,
-                color: c.text.tertiary,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                fontSize: '10px',
+                ...c.type.headline,
+                color: c.text.primary,
                 display: 'flex',
                 alignItems: 'baseline',
                 gap: 1,
@@ -256,7 +252,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
             >
               <Box>Applies to</Box>
               <Box sx={{ flex: 1 }} />
-              <Box sx={{ ...c.type.caption, textTransform: 'none', letterSpacing: 0, color: c.text.tertiary, fontWeight: 400 }}>
+              <Box sx={{ ...c.type.caption, color: c.text.muted, fontWeight: 400 }}>
                 {includedCount} of {state.apps.length} apps
               </Box>
             </Box>
@@ -306,7 +302,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                       }}
                     >
                       {app.included && (
-                        <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
+                        <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
                       )}
                     </Box>
                     <BrandGlyph

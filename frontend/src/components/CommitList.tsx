@@ -2,7 +2,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { laneColor, relativeTime, type Layout } from '@/shared/graphLayout';
+import { absoluteTime, laneColor, relativeTime, type Layout } from '@/shared/graphLayout';
 import { statusChip } from '@/shared/styles/ui';
 import GraphRail, { ROW_HEIGHT } from './GraphRail';
 
@@ -129,8 +129,8 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                   >
                     {node.author}
                   </Box>
-                  <Box sx={{ color: c.text.ghost }}>·</Box>
-                  <Box>{relativeTime(node.date)}</Box>
+                  <Box sx={{ color: c.text.muted }}>·</Box>
+                  <Box title={absoluteTime(node.date)}>{relativeTime(node.date)}</Box>
                 </Box>
               </Box>
 
@@ -138,7 +138,7 @@ const CommitList: React.FC<Props> = ({ layout, selectedSha, headSha, onSelect })
                 sx={{
                   ...c.type.caption,
                   fontFamily: c.font.mono,
-                  color: isSelected ? c.accent.primary : c.text.ghost,
+                  color: isSelected ? c.accent.primary : c.text.tertiary,
                   flexShrink: 0,
                   letterSpacing: '0.02em',
                 }}

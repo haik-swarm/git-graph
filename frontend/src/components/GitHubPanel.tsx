@@ -230,7 +230,7 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
                 }}
               >
                 {status.owner}/{status.repo}
-                <OpenInNewIcon sx={{ fontSize: 11, flexShrink: 0 }} />
+                <OpenInNewIcon sx={{ fontSize: 14, flexShrink: 0 }} />
               </Box>
 
               <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>

@@ -45,7 +45,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
       onTracked?.(app);
       setAnchor(null);
     } catch (err) {
-      setTrackError(err instanceof Error ? err.message : 'Failed to track.');
+      setTrackError(err instanceof Error ? err.message : "We couldn't track that app.");
     } finally {
       setTrackingId(null);
     }
@@ -60,7 +60,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
         <Typography component="span" sx={{ ...c.type.headline, color: c.text.primary }}>
           {selected ? selected.name : 'Choose an app'}
         </Typography>
-        <UnfoldMoreIcon sx={{ fontSize: 13, color: c.text.tertiary, ml: 1 }} />
+        <UnfoldMoreIcon sx={{ fontSize: 14, color: c.text.tertiary, ml: 1 }} />
       </ButtonBase>
 
       <Popover
@@ -108,7 +108,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
               >
                 <Box sx={{ width: 14, flexShrink: 0, pt: '2px' }}>
                   {isSelected && (
-                    <CheckIcon sx={{ fontSize: 12, color: c.accent.primary, display: 'block' }} />
+                    <CheckIcon sx={{ fontSize: 14, color: c.accent.primary, display: 'block' }} />
                   )}
                 </Box>
                 <Box sx={{ minWidth: 0, flex: 1 }}>

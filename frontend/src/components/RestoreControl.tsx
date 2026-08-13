@@ -79,7 +79,7 @@ const RestoreControl: React.FC<Props> = ({
       }
       setResult(await res.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Restore failed.');
+      setError(err instanceof Error ? err.message : "We couldn't restore that commit.");
     } finally {
       setBusy(false);
     }
@@ -109,7 +109,7 @@ const RestoreControl: React.FC<Props> = ({
           '&:hover': { color: c.accent.primary, borderColor: c.accent.primary, background: c.bg.secondary },
         }}
       >
-        <ChipIcon sx={{ fontSize: 12 }} />
+        <ChipIcon sx={{ fontSize: 14 }} />
         {chipLabel}
       </ButtonBase>
 
@@ -132,7 +132,7 @@ const RestoreControl: React.FC<Props> = ({
             gap: 1,
           }}
         >
-          <ChipIcon sx={{ fontSize: 13, color: c.accent.primary }} />
+          <ChipIcon sx={{ fontSize: 14, color: c.accent.primary }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             {isSwitch ? `Switch to ${switchTo}` : 'Restore'}
           </Typography>

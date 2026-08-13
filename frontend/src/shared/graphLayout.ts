@@ -128,3 +128,43 @@ export function relativeTime(iso: string): string {
   if (days < 30) return `${days}d ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
+
+/** The exact timestamp, for the tooltip behind every relative time. */
+export function absoluteTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Commits bucketed into `buckets` equal spans between the oldest and newest
+ * commit, oldest bucket first. Drives the hero sparkline — the shape of how
+ * active a repo has been, which a raw commit count can't show.
+ */
+export function commitHistogram(dates: string[], buckets = 24): number[] {
+  const times = dates
+    .map(d => new Date(d).getTime())
+    .filter(t => !Number.isNaN(t))
+    .sort((a, b) => a - b);
+  if (times.length === 0) return [];
+  const first = times[0];
+  const last = times[times.length - 1];
+  const span = last - first;
+  const out = new Array(buckets).fill(0);
+  if (span <= 0) {
+    out[buckets - 1] = times.length;
+    return out;
+  }
+  for (const t of times) {
+    const i = Math.min(buckets - 1, Math.floor(((t - first) / span) * buckets));
+    out[i] += 1;
+  }
+  return out;
+}

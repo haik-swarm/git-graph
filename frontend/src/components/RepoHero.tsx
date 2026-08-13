@@ -6,7 +6,8 @@ import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { BrandGlyph, Pill } from '@/components/Chrome';
-import { relativeTime } from '@/shared/graphLayout';
+import Sparkline from '@/components/Sparkline';
+import { absoluteTime, commitHistogram, relativeTime } from '@/shared/graphLayout';
 import { statusChip } from '@/shared/styles/ui';
 import type { AppEntry } from '@/components/AppPicker';
 
@@ -19,6 +20,7 @@ interface Props {
   headDate: string | null;
   commitCount: number;
   dirtyCount: number;
+  commitDates: string[];
 }
 
 /**
@@ -35,8 +37,10 @@ const RepoHero: React.FC<Props> = ({
   headDate,
   commitCount,
   dirtyCount,
+  commitDates,
 }) => {
   const c = useClaudeTokens();
+  const histogram = React.useMemo(() => commitHistogram(commitDates), [commitDates]);
   return (
     <Box
       sx={{
@@ -124,11 +128,17 @@ const RepoHero: React.FC<Props> = ({
             </Pill>
           )}
           {headDate && (
-            <Box sx={{ ...c.type.caption, color: c.text.tertiary, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-              <ScheduleRoundedIcon sx={{ fontSize: 11 }} />
+            <Box
+              title={absoluteTime(headDate)}
+              sx={{ ...c.type.caption, color: c.text.tertiary, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              <ScheduleRoundedIcon sx={{ fontSize: 14 }} />
               last change {relativeTime(headDate)}
             </Box>
           )}
+
+          <Box sx={{ flex: 1 }} />
+          <Sparkline values={histogram} />
         </Box>
 
         {headSubject && (

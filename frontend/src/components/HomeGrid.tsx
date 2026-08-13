@@ -13,11 +13,12 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { card, primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
-import { relativeTime } from '@/shared/graphLayout';
+import StatRow from '@/components/StatRow';
+import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
 type SortKey = 'recent' | 'name' | 'status';
-type FilterKey = 'all' | 'tracked' | 'untracked';
+type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty';
 
 interface Meta {
   is_repo: boolean;
@@ -63,6 +64,7 @@ const HomeGrid: React.FC<Props> = ({
     const base = apps.filter(a => {
       if (filter === 'tracked' && !(a.has_git && a.workspace_exists)) return false;
       if (filter === 'untracked' && a.has_git) return false;
+      if (filter === 'dirty' && !(meta[a.workspace_id]?.dirty_count)) return false;
       if (!q) return true;
       return (
         a.name.toLowerCase().includes(q) ||
@@ -158,6 +160,13 @@ const HomeGrid: React.FC<Props> = ({
           </Box>
         </Box>
 
+        <StatRow
+          apps={apps}
+          meta={meta}
+          dirtyActive={filter === 'dirty'}
+          onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
+        />
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Box
             sx={{
@@ -202,7 +211,7 @@ const HomeGrid: React.FC<Props> = ({
                   p: 0,
                   color: c.text.tertiary,
                   '&:hover': { color: c.text.primary },
-                  '& svg': { fontSize: 13 },
+                  '& svg': { fontSize: 14 },
                 }}
               >
                 <CloseRoundedIcon />
@@ -243,8 +252,20 @@ const HomeGrid: React.FC<Props> = ({
       {rows.length === 0 ? (
         <Placeholder
           icon={<SearchOffRoundedIcon />}
-          title={query ? 'No apps match that' : 'No apps in this filter'}
-          hint={query ? 'Try a shorter term or clear the search.' : 'Switch filters to see the rest of your workspace.'}
+          title={
+            query
+              ? 'No apps match that'
+              : filter === 'dirty'
+                ? 'Everything is committed'
+                : 'No apps in this filter'
+          }
+          hint={
+            query
+              ? 'Try a shorter term or clear the search.'
+              : filter === 'dirty'
+                ? 'No workspace has uncommitted changes right now.'
+                : 'Switch filters to see the rest of your workspace.'
+          }
         />
       ) : (
         <Box
@@ -352,7 +373,7 @@ const AppCard: React.FC<{
           >
             {tracked && meta?.current_branch ? (
               <>
-                <CallSplitRoundedIcon sx={{ fontSize: 11 }} />
+                <CallSplitRoundedIcon sx={{ fontSize: 14 }} />
                 <Box component="span" sx={{ fontFamily: c.font.mono }}>
                   {meta.current_branch}
                 </Box>
@@ -426,6 +447,7 @@ const AppCard: React.FC<{
             )}
             {meta?.head_date && (
               <Box
+                title={absoluteTime(meta.head_date)}
                 sx={{
                   ...c.type.caption,
                   color: c.text.tertiary,
@@ -434,7 +456,7 @@ const AppCard: React.FC<{
                   gap: '4px',
                 }}
               >
-                <ScheduleRoundedIcon sx={{ fontSize: 11 }} />
+                <ScheduleRoundedIcon sx={{ fontSize: 14 }} />
                 {relativeTime(meta.head_date)}
               </Box>
             )}

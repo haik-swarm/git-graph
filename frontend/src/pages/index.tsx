@@ -131,7 +131,7 @@ const Home: React.FC = () => {
       try {
         await refetchApps();
       } catch {
-        if (!cancelled) setError("Couldn't reach the backend.");
+        if (!cancelled) setError("We couldn't reach the backend.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -154,7 +154,7 @@ const Home: React.FC = () => {
       setGraph(data);
     } catch {
       setGraph(null);
-      setError("Couldn't read that workspace.");
+      setError("We couldn't read that workspace.");
     } finally {
       setLoading(false);
     }
@@ -235,7 +235,7 @@ const Home: React.FC = () => {
         setSelected(fresh);
         setMode('app');
       } catch (err) {
-        setInitError(err instanceof Error ? err.message : 'Failed to track.');
+        setInitError(err instanceof Error ? err.message : "We couldn't track that app.");
       } finally {
         setInitBusy(false);
         setTrackingId(null);
@@ -262,6 +262,11 @@ const Home: React.FC = () => {
   const detail = useMemo(
     () => layout.nodes.find(n => n.sha === selectedSha) ?? null,
     [layout, selectedSha],
+  );
+
+  const commitDates = useMemo(
+    () => layout.nodes.map(n => n.date),
+    [layout],
   );
 
   const headCommit = useMemo(
@@ -386,7 +391,7 @@ const Home: React.FC = () => {
                 gap: '6px',
                 color: c.accent.primary,
                 borderColor: `rgba(${c.accentRgb},0.35)`,
-                '& svg': { fontSize: 14 },
+                '& svg': { fontSize: 16 },
               }}
               aria-label="Your cloud"
             >
@@ -400,7 +405,7 @@ const Home: React.FC = () => {
               sx={{
                 ...pushButton(c),
                 gap: '6px',
-                '& svg': { fontSize: 14 },
+                '& svg': { fontSize: 16 },
               }}
               aria-label="Global .gitignore"
             >
@@ -495,7 +500,7 @@ const Home: React.FC = () => {
                 gap: '4px',
                 color: c.text.secondary,
                 '&:hover': { color: c.status.error, borderColor: c.status.error },
-                '& svg': { fontSize: 12 },
+                '& svg': { fontSize: 16 },
               }}
               aria-label="Delete app"
             >
@@ -524,7 +529,7 @@ const Home: React.FC = () => {
           <Placeholder
             danger
             icon={<CloudOffRoundedIcon />}
-            title="Couldn't reach the backend"
+            title="We couldn't load that"
             hint={error}
           />
         ) : !selected ? (
@@ -570,6 +575,7 @@ const Home: React.FC = () => {
               headDate={headCommit?.date ?? null}
               commitCount={layout.nodes.length}
               dirtyCount={graph.dirty?.length ?? 0}
+              commitDates={commitDates}
             />
 
             {graph.dirty && graph.dirty.length > 0 && (
@@ -596,20 +602,11 @@ const Home: React.FC = () => {
                 borderBottom: `1px solid ${c.border.subtle}`,
               }}
             >
-              <Box
-                sx={{
-                  ...c.type.footnote,
-                  fontWeight: 590,
-                  color: c.text.tertiary,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  fontSize: '10px',
-                }}
-              >
+              <Box sx={{ ...c.type.headline, color: c.text.primary }}>
                 History
               </Box>
               <Box sx={{ flex: 1 }} />
-              <Box sx={{ ...c.type.caption, color: c.text.ghost }}>
+              <Box sx={{ ...c.type.caption, color: c.text.muted }}>
                 Newest first
               </Box>
             </Box>
@@ -625,7 +622,7 @@ const Home: React.FC = () => {
               <Box
                 sx={{
                   ...c.type.caption,
-                  color: c.text.ghost,
+                  color: c.text.muted,
                   px: 3,
                   pb: 3,
                 }}

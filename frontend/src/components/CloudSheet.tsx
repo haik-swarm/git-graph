@@ -14,7 +14,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Placeholder } from '@/components/Chrome';
-import { relativeTime } from '@/shared/graphLayout';
+import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import {
   GITGRAPH_CLOUD_INSTALL_URL,
   GITGRAPH_CLOUD_REPOS_URL,
@@ -71,7 +71,7 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
       const data: CloudState = await res.json();
       setState(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load.');
+      setError(err instanceof Error ? err.message : "We couldn't load that.");
     } finally {
       setLoading(false);
     }
@@ -329,7 +329,7 @@ const RepoRow: React.FC<{
             {repo.app_name}
           </Box>
           {repo.private && (
-            <LockRoundedIcon sx={{ fontSize: 11, color: c.text.tertiary }} />
+            <LockRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
           )}
         </Box>
         <Box
@@ -355,7 +355,7 @@ const RepoRow: React.FC<{
               '&:hover': { color: c.accent.primary },
             }}
           >
-            <OpenInNewIcon sx={{ fontSize: 11 }} />
+            <OpenInNewIcon sx={{ fontSize: 14 }} />
           </Box>
         </Box>
         {repo.description && (
@@ -375,7 +375,10 @@ const RepoRow: React.FC<{
           </Box>
         )}
         {repo.pushed_at && (
-          <Box sx={{ ...c.type.caption, color: c.text.ghost, mt: '6px' }}>
+          <Box
+            title={absoluteTime(repo.pushed_at)}
+            sx={{ ...c.type.caption, color: c.text.muted, mt: '6px' }}
+          >
             updated {relativeTime(repo.pushed_at)}
           </Box>
         )}
@@ -394,7 +397,7 @@ const RepoRow: React.FC<{
             }}
             title="Already installed on this machine"
           >
-            <CheckRoundedIcon sx={{ fontSize: 12 }} />
+            <CheckRoundedIcon sx={{ fontSize: 14 }} />
             Installed
           </Box>
         ) : (
@@ -410,7 +413,7 @@ const RepoRow: React.FC<{
               <CircularProgress size={11} sx={{ color: "#FFFFFF" }} />
             ) : (
               <>
-                <CloudDownloadRoundedIcon sx={{ fontSize: 13 }} />
+                <CloudDownloadRoundedIcon sx={{ fontSize: 14 }} />
                 Install
               </>
             )}

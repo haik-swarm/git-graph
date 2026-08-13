@@ -103,7 +103,7 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
           sx={{
             ...primaryButton(c),
             gap: '6px',
-            '& svg': { fontSize: 13 },
+            '& svg': { fontSize: 14 },
           }}
         >
           <AutoAwesomeIcon />
@@ -311,7 +311,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
                 }}
               >
                 {isChosen && (
-                  <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
+                  <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
                 )}
               </Box>
 
@@ -381,7 +381,7 @@ const BulkPickerPopover: React.FC<PickerProps> = ({
               color: c.text.primary,
               px: 1,
               py: '6px',
-              '& textarea::placeholder': { color: c.text.ghost, opacity: 1 },
+              '& textarea::placeholder': { color: c.text.muted, opacity: 1 },
             }}
           />
         )}

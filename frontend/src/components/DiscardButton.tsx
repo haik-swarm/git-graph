@@ -45,7 +45,7 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
       setAnchor(null);
       onDiscarded();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Discard failed.');
+      setError(e instanceof Error ? e.message : "We couldn't discard those changes.");
     } finally {
       setBusy(false);
     }
@@ -72,7 +72,7 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
           },
         }}
       >
-        <RestoreIcon sx={{ fontSize: 12 }} />
+        <RestoreIcon sx={{ fontSize: 14 }} />
         Discard
       </ButtonBase>
 
@@ -94,7 +94,7 @@ const DiscardButton: React.FC<Props> = ({ workspaceId, dirtyCount, onDiscarded }
             gap: 1,
           }}
         >
-          <RestoreIcon sx={{ fontSize: 13, color: c.status.error }} />
+          <RestoreIcon sx={{ fontSize: 14, color: c.status.error }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             Discard changes
           </Typography>

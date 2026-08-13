@@ -61,7 +61,7 @@ const DirtyWorkCard: React.FC<Props> = ({
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        <Icon sx={{ fontSize: 11 }} />
+        <Icon sx={{ fontSize: 14 }} />
         {label}
       </Box>
     );

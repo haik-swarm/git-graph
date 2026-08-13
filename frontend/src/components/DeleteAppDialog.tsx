@@ -64,7 +64,7 @@ const DeleteAppDialog: React.FC<Props> = ({
       onDeleted(workspaceId);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed.');
+      setError(err instanceof Error ? err.message : "We couldn't delete that.");
     } finally {
       setBusy(false);
     }
@@ -169,7 +169,7 @@ const DeleteAppDialog: React.FC<Props> = ({
             >
               <GitHubIcon sx={{ fontSize: 16 }} />
               Delete on GitHub
-              <OpenInNewIcon sx={{ fontSize: 11 }} />
+              <OpenInNewIcon sx={{ fontSize: 14 }} />
             </Box>
           )}
 
@@ -209,7 +209,7 @@ const DeleteAppDialog: React.FC<Props> = ({
             {busy ? (
               <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
             ) : (
-              'Delete local'
+              'Delete forever'
             )}
           </ButtonBase>
         </Box>

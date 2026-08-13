@@ -65,7 +65,7 @@ const AppRail: React.FC<Props> = ({
       }
       onTracked(app);
     } catch (err) {
-      setTrackError(err instanceof Error ? err.message : 'Failed to track.');
+      setTrackError(err instanceof Error ? err.message : "We couldn't track that app.");
     } finally {
       setTrackingId(null);
     }
@@ -102,7 +102,7 @@ const AppRail: React.FC<Props> = ({
             boxShadow: c.shadow.sm,
           }}
         >
-          <CallSplitRoundedIcon sx={{ fontSize: 13 }} />
+          <CallSplitRoundedIcon sx={{ fontSize: 14 }} />
         </Box>
         <Box
           className="brand-title"
@@ -124,7 +124,7 @@ const AppRail: React.FC<Props> = ({
             '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
           }}
         >
-          <SearchRoundedIcon sx={{ fontSize: 13, color: c.text.tertiary, flexShrink: 0 }} />
+          <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
           <Box
             component="input"
             value={query}
@@ -155,7 +155,7 @@ const AppRail: React.FC<Props> = ({
                 p: 0,
                 color: c.text.tertiary,
                 '&:hover': { color: c.text.primary },
-                '& svg': { fontSize: 12 },
+                '& svg': { fontSize: 14 },
               }}
             >
               <CloseRoundedIcon />
@@ -199,7 +199,7 @@ const AppRail: React.FC<Props> = ({
               background: homeActive ? `rgba(${c.accentRgb},0.10)` : 'transparent',
             }}
           >
-            <GridViewRoundedIcon sx={{ fontSize: 13 }} />
+            <GridViewRoundedIcon sx={{ fontSize: 14 }} />
           </Box>
           <Box
             sx={{
@@ -340,14 +340,15 @@ const RailAppRow: React.FC<{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: c.text.ghost,
+            color: c.text.muted,
           }}
         >
-          <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 13 }} />
+          <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 14 }} />
         </Box>
       )}
 
       <Box
+        title={app.name}
         sx={{
           flex: 1,
           minWidth: 0,

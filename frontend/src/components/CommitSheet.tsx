@@ -9,7 +9,7 @@ import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { iconButton, slimScroll } from '@/shared/styles/ui';
 import { Pill } from '@/components/Chrome';
-import { laneColor, relativeTime, type PlacedCommit } from '@/shared/graphLayout';
+import { absoluteTime, laneColor, relativeTime, type PlacedCommit } from '@/shared/graphLayout';
 import RestoreControl from '@/components/RestoreControl';
 
 interface CommitFile {
@@ -65,12 +65,14 @@ const CommitSheet: React.FC<Props> = ({
     let added = 0;
     let removed = 0;
     let binary = 0;
+    let busiest = 0;
     for (const f of files) {
       if (f.added === null) binary += 1;
       else added += f.added;
       if (f.removed !== null) removed += f.removed;
+      busiest = Math.max(busiest, (f.added ?? 0) + (f.removed ?? 0));
     }
-    return { added, removed, binary };
+    return { added, removed, binary, busiest };
   }, [files]);
 
   const isHead = commit?.sha === headSha;
@@ -192,7 +194,7 @@ const CommitSheet: React.FC<Props> = ({
                         border: `1px solid ${laneColor(commit.lane)}`,
                       }}
                     >
-                      <CallSplitRoundedIcon sx={{ fontSize: 10 }} />
+                      <CallSplitRoundedIcon sx={{ fontSize: 14 }} />
                       {ref}
                     </Box>
                   ))}
@@ -203,7 +205,7 @@ const CommitSheet: React.FC<Props> = ({
                   <MetaRow
                     icon={<ScheduleRoundedIcon />}
                     label="Date"
-                    value={`${relativeTime(commit.date)} · ${new Date(commit.date).toLocaleString()}`}
+                    value={`${relativeTime(commit.date)} · ${absoluteTime(commit.date)}`}
                   />
                   {commit.parents.length > 0 && (
                     <MetaRow
@@ -225,9 +227,11 @@ const CommitSheet: React.FC<Props> = ({
                     gap: 1,
                   }}
                 >
-                  <DescriptionOutlinedIcon sx={{ fontSize: 13, color: c.text.tertiary }} />
+                  <DescriptionOutlinedIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
                   <Box sx={{ ...c.type.footnote, color: c.text.tertiary, flex: 1 }}>
-                    Changes
+                    {files && files.length > 0
+                      ? `${files.length} file${files.length === 1 ? '' : 's'} changed`
+                      : 'Changes'}
                   </Box>
                   {totals && (files?.length ?? 0) > 0 && (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -270,62 +274,7 @@ const CommitSheet: React.FC<Props> = ({
                     </Box>
                   ) : (
                     files.map(f => (
-                      <Box
-                        key={f.path}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          py: '6px',
-                          borderTop: `1px solid ${c.border.subtle}`,
-                          '&:first-of-type': { borderTop: 'none' },
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            ...c.type.caption,
-                            fontFamily: c.font.mono,
-                            color: c.text.primary,
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            direction: 'rtl',
-                            textAlignLast: 'left',
-                          }}
-                        >
-                          {f.path}
-                        </Box>
-                        {f.added === null ? (
-                          <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>bin</Box>
-                        ) : (
-                          <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center' }}>
-                            <Box
-                              sx={{
-                                ...c.type.caption,
-                                fontFamily: c.font.mono,
-                                color: c.status.success,
-                                fontVariantNumeric: 'tabular-nums',
-                              }}
-                            >
-                              +{f.added}
-                            </Box>
-                            {f.removed !== null && f.removed > 0 && (
-                              <Box
-                                sx={{
-                                  ...c.type.caption,
-                                  fontFamily: c.font.mono,
-                                  color: c.status.error,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                −{f.removed}
-                              </Box>
-                            )}
-                          </Box>
-                        )}
-                      </Box>
+                      <FileRow key={f.path} file={f} busiest={totals?.busiest ?? 0} />
                     ))
                   )}
                 </Box>
@@ -374,6 +323,131 @@ const CommitSheet: React.FC<Props> = ({
   );
 };
 
+/**
+ * One changed file. The bar is scaled against the busiest file in the same
+ * commit rather than an absolute line count, so a small commit still shows
+ * contrast instead of a row of near-empty slivers.
+ */
+const FileRow: React.FC<{ file: CommitFile; busiest: number }> = ({ file, busiest }) => {
+  const c = useClaudeTokens();
+  const added = file.added ?? 0;
+  const removed = file.removed ?? 0;
+  const churn = added + removed;
+  // sqrt keeps a 5-line change visible next to a 500-line one; a linear
+  // scale collapses everything small into an indistinguishable sliver.
+  const width = busiest > 0 ? Math.max(0.14, Math.sqrt(churn / busiest)) * 52 : 0;
+  const slash = file.path.lastIndexOf('/');
+  const dir = slash === -1 ? '' : file.path.slice(0, slash + 1);
+  const name = slash === -1 ? file.path : file.path.slice(slash + 1);
+
+  return (
+    <Box
+      title={file.path}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        py: '6px',
+        borderTop: `1px solid ${c.border.subtle}`,
+        '&:first-of-type': { borderTop: 'none' },
+      }}
+    >
+      {/* The filename never truncates: it's the identifier you scan for.
+          The directory is context, so it gives up its width first and
+          clips from the left, keeping the part nearest the file. */}
+      <Box
+        sx={{
+          ...c.type.caption,
+          fontFamily: c.font.mono,
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'baseline',
+          overflow: 'hidden',
+        }}
+      >
+        {dir && (
+          <Box
+            component="span"
+            sx={{
+              color: c.text.muted,
+              minWidth: 0,
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              direction: 'rtl',
+              textAlign: 'left',
+            }}
+          >
+            {dir}
+          </Box>
+        )}
+        <Box
+          component="span"
+          sx={{
+            color: c.text.primary,
+            flexShrink: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            maxWidth: '100%',
+          }}
+        >
+          {name}
+        </Box>
+      </Box>
+
+      {file.added === null ? (
+        <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>binary</Box>
+      ) : (
+        <>
+          <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexShrink: 0 }}>
+            {added > 0 && (
+              <Box
+                sx={{
+                  ...c.type.caption,
+                  fontFamily: c.font.mono,
+                  color: c.status.success,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                +{added}
+              </Box>
+            )}
+            {removed > 0 && (
+              <Box
+                sx={{
+                  ...c.type.caption,
+                  fontFamily: c.font.mono,
+                  color: c.status.error,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                −{removed}
+              </Box>
+            )}
+          </Box>
+          <Box
+            sx={{
+              width: 52,
+              height: 4,
+              flexShrink: 0,
+              borderRadius: `${c.radius.full}px`,
+              background: c.bg.secondary,
+              overflow: 'hidden',
+              display: 'flex',
+            }}
+          >
+            <Box sx={{ width, display: 'flex', height: '100%' }}>
+              <Box sx={{ flex: added, background: c.status.success }} />
+              <Box sx={{ flex: removed, background: c.status.error }} />
+            </Box>
+          </Box>
+        </>
+      )}
+    </Box>
+  );
+};
+
 const MetaRow: React.FC<{
   icon: React.ReactNode;
   label: string;
@@ -390,7 +464,7 @@ const MetaRow: React.FC<{
           flexShrink: 0,
           display: 'flex',
           justifyContent: 'flex-start',
-          '& svg': { fontSize: 12 },
+          '& svg': { fontSize: 14 },
         }}
       >
         {icon}

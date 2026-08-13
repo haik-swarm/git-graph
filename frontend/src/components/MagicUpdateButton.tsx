@@ -103,7 +103,7 @@ const MagicUpdateButton: React.FC<Props> = ({
         {busy ? (
           <CircularProgress size={10} sx={{ color: c.accent.primary }} />
         ) : (
-          <AutoAwesomeIcon sx={{ fontSize: 12 }} />
+          <AutoAwesomeIcon sx={{ fontSize: 14 }} />
         )}
         {busy ? 'Thinking…' : 'Magic update'}
       </ButtonBase>
@@ -126,7 +126,7 @@ const MagicUpdateButton: React.FC<Props> = ({
             gap: 1,
           }}
         >
-          <AutoAwesomeIcon sx={{ fontSize: 13, color: c.accent.primary }} />
+          <AutoAwesomeIcon sx={{ fontSize: 14, color: c.accent.primary }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             Magic update
           </Typography>

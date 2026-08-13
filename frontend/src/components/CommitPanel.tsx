@@ -182,7 +182,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
                   }}
                 >
                   {isChosen && (
-                    <CheckIcon sx={{ fontSize: 11, color: "#FFFFFF" }} />
+                    <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
                   )}
                 </Box>
 
@@ -240,7 +240,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
               color: c.text.primary,
               px: 1,
               py: '6px',
-              '& textarea::placeholder': { color: c.text.ghost, opacity: 1 },
+              '& textarea::placeholder': { color: c.text.muted, opacity: 1 },
             }}
           />
 
