@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
 
-from backend.apps.gitgraph import github, global_ignore, magic
+from backend.apps.gitgraph import cloud, github, global_ignore, magic
 from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
@@ -43,6 +43,12 @@ class GlobalIgnoreSaveRequest(BaseModel):
 
 class GlobalIgnoreIncludeRequest(BaseModel):
     included: bool
+
+
+class InstallRepoRequest(BaseModel):
+    clone_url: str
+    app_name: str
+    description: Optional[str] = ""
 
 
 @typechecked
@@ -264,3 +270,34 @@ async def github_disconnect(workspace_id: str) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     return {"status": result}
+
+
+@gitgraph.router.get("/cloud/repos")
+@typechecked
+async def cloud_repos() -> dict:
+    """OpenSwarm-tagged repos on the user's GitHub, ready to one-click install."""
+    data = await cloud.list_openswarm_repos()
+    debug(len(data.get("repos", [])))
+    return data
+
+
+@gitgraph.router.post("/cloud/install")
+@typechecked
+async def cloud_install(body: InstallRepoRequest) -> dict:
+    name = body.app_name.strip() or "Installed app"
+    desc = (body.description or "").strip()
+    ok, result = await cloud.install_repo(body.clone_url, name, desc)
+    debug(name, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.post("/local-delete/{workspace_id}")
+@typechecked
+async def local_delete(workspace_id: str) -> dict:
+    ok, result = cloud.delete_local(workspace_id)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
+    return result

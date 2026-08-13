@@ -35,3 +35,9 @@ export const githubPushUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/push`;
 export const githubDisconnectUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/disconnect`;
+
+// CLOUD - Endpoints (treat GitHub as the user's OpenSwarm cloud)
+export const GITGRAPH_CLOUD_REPOS_URL = API_URL + '/gitgraph/cloud/repos';
+export const GITGRAPH_CLOUD_INSTALL_URL = API_URL + '/gitgraph/cloud/install';
+export const gitgraphLocalDeleteUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/local-delete/${encodeURIComponent(workspaceId)}`;

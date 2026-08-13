@@ -244,12 +244,15 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
               </Typography>
 
               <ButtonBase
-                disabled={busy !== null}
+                disabled={busy !== null || pending === 0}
                 onClick={() => void call(githubPushUrl(workspaceId), 'push')}
+                title={pending === 0 ? 'Nothing to push — origin is up to date' : undefined}
                 sx={{ ...primaryButton(c), height: 26 }}
               >
                 {busy === 'push' ? (
                   <CircularProgress size={12} sx={{ color: c.text.onAccent }} />
+                ) : pending === 0 ? (
+                  'Up to date'
                 ) : (
                   'Push to GitHub'
                 )}

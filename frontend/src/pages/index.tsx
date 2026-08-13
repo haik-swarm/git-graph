@@ -9,6 +9,8 @@ import CloudOffRoundedIcon from '@mui/icons-material/CloudOffRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import RuleFolderRoundedIcon from '@mui/icons-material/RuleFolderRounded';
+import CloudRoundedIcon from '@mui/icons-material/CloudRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { iconButton, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
@@ -22,8 +24,10 @@ import {
 } from '@/shared/state/API_ENDPOINTS';
 import AppRail from '@/components/AppRail';
 import type { AppEntry } from '@/components/AppPicker';
+import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
 import CommitSheet from '@/components/CommitSheet';
+import DeleteAppDialog from '@/components/DeleteAppDialog';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
 import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
@@ -83,6 +87,9 @@ const Home: React.FC = () => {
   const [homeMeta, setHomeMeta] = useState<Record<string, HomeMeta>>({});
   const [metaBusy, setMetaBusy] = useState(false);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
     const res = await fetch(GITGRAPH_APPS_URL);
@@ -96,6 +103,7 @@ const Home: React.FC = () => {
   useEffect(() => {
     if (!selected) {
       setHasRemote(false);
+      setRemoteHtmlUrl(null);
       return;
     }
     let cancelled = false;
@@ -104,7 +112,10 @@ const Home: React.FC = () => {
         const res = await fetch(githubStatusUrl(selected.workspace_id));
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled) setHasRemote(Boolean(data?.has_remote));
+        if (!cancelled) {
+          setHasRemote(Boolean(data?.has_remote));
+          setRemoteHtmlUrl(typeof data?.html_url === 'string' ? data.html_url : null);
+        }
       } catch {
         /* Non-fatal: the Magic Update button just skips pushing. */
       }
@@ -299,6 +310,36 @@ const Home: React.FC = () => {
     void refreshHomeMeta();
   }, [refetchApps, refreshHomeMeta]);
 
+  const handleDeleted = useCallback(
+    (deletedId: string) => {
+      // Bounce back to home if the deleted app was the one being viewed;
+      // otherwise the app-page effect would try to reload a graph that no
+      // longer exists.
+      if (selected?.workspace_id === deletedId) {
+        setSelected(null);
+        setMode('home');
+        setSelectedSha(null);
+      }
+      void refetchApps();
+      void refreshHomeMeta();
+    },
+    [selected, refetchApps, refreshHomeMeta],
+  );
+
+  const handleInstalled = useCallback(
+    async (workspaceId: string) => {
+      const list = await refetchApps().catch(() => null);
+      void refreshHomeMeta();
+      const fresh = list?.find(a => a.workspace_id === workspaceId);
+      if (fresh) {
+        setSelected(fresh);
+        setMode('app');
+        setCloudOpen(false);
+      }
+    },
+    [refetchApps, refreshHomeMeta],
+  );
+
   const toolbarChrome = (
     <>
       <Tooltip title="Refresh">
@@ -337,6 +378,24 @@ const Home: React.FC = () => {
             {apps.length} {apps.length === 1 ? 'app' : 'apps'}
           </Box>
           <Box sx={{ flex: 1 }} />
+          <Tooltip title="Your cloud — install any OpenSwarm app you've pushed to GitHub">
+            <ButtonBase
+              onClick={() => setCloudOpen(true)}
+              sx={{
+                ...pushButton(c),
+                height: 28,
+                px: '10px',
+                gap: '6px',
+                color: c.accent.base,
+                borderColor: c.accent.edge,
+                '& svg': { fontSize: 14 },
+              }}
+              aria-label="Your cloud"
+            >
+              <CloudRoundedIcon />
+              Your cloud
+            </ButtonBase>
+          </Tooltip>
           <Tooltip title="Global .gitignore — one list, mirrored into every tracked app">
             <ButtonBase
               onClick={() => setIgnoreOpen(true)}
@@ -399,6 +458,11 @@ const Home: React.FC = () => {
           // rescan meta once the sheet reports a save.
           onSaved={() => void refreshHomeMeta()}
         />
+        <CloudSheet
+          open={cloudOpen}
+          onClose={() => setCloudOpen(false)}
+          onInstalled={id => void handleInstalled(id)}
+        />
       </Shell>
     );
   }
@@ -424,6 +488,27 @@ const Home: React.FC = () => {
             appName={selected.name}
             refreshKey={gitHubKey}
           />
+        )}
+
+        {selected && (
+          <Tooltip title="Delete this app locally (workspace + dashboard entry)">
+            <ButtonBase
+              onClick={() => setDeleteOpen(true)}
+              sx={{
+                ...pushButton(c),
+                height: 22,
+                px: '8px',
+                gap: '4px',
+                color: c.text.secondary,
+                '&:hover': { color: c.status.danger, borderColor: c.status.danger },
+                '& svg': { fontSize: 12 },
+              }}
+              aria-label="Delete app"
+            >
+              <DeleteOutlineRoundedIcon />
+              Delete
+            </ButtonBase>
+          </Tooltip>
         )}
 
         {toolbarChrome}
@@ -568,6 +653,18 @@ const Home: React.FC = () => {
         onClose={() => setSelectedSha(null)}
         onRestored={refresh}
       />
+
+      {selected && (
+        <DeleteAppDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          workspaceId={selected.workspace_id}
+          appName={selected.name}
+          hasRemote={hasRemote}
+          remoteHtmlUrl={remoteHtmlUrl}
+          onDeleted={handleDeleted}
+        />
+      )}
     </Shell>
   );
 };
