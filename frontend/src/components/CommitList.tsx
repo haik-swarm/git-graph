@@ -11,6 +11,8 @@ interface Props {
   selectedSha: string | null;
   workspaceId: string | null;
   headSha: string | null;
+  currentBranch: string | null;
+  branches: string[];
   onSelect: (sha: string) => void;
   onRestored: () => void;
 }
@@ -25,10 +27,13 @@ const CommitList: React.FC<Props> = ({
   selectedSha,
   workspaceId,
   headSha,
+  currentBranch,
+  branches,
   onSelect,
   onRestored,
 }) => {
   const c = useClaudeTokens();
+  const branchSet = React.useMemo(() => new Set(branches), [branches]);
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', px: 2, pb: 4 }}>
@@ -38,6 +43,15 @@ const CommitList: React.FC<Props> = ({
         {layout.nodes.map(node => {
           const isSelected = node.sha === selectedSha;
           const isHead = node.sha === headSha;
+          // A ref like "main" is a local branch tip; "origin/main" is a
+          // remote-tracking ref we can't check out cleanly. Prefer any
+          // non-restore branch so forward-restoring lands on `main`
+          // instead of another throwaway fork.
+          const localTips = node.refs.filter(
+            r => branchSet.has(r) && r !== currentBranch,
+          );
+          const preferred = localTips.find(r => !r.startsWith('restore/'));
+          const switchTo = preferred ?? localTips[0] ?? null;
           return (
             <Box
               key={node.sha}
@@ -80,6 +94,24 @@ const CommitList: React.FC<Props> = ({
                   >
                     {node.subject}
                   </Typography>
+
+                  {isHead && (
+                    <Box
+                      title="Your working tree is on this commit"
+                      sx={{
+                        ...c.type.caption,
+                        flexShrink: 0,
+                        px: '6px',
+                        py: '1px',
+                        borderRadius: `${c.radius.xs}px`,
+                        color: c.text.onAccent,
+                        background: c.accent.base,
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      current
+                    </Box>
+                  )}
 
                   {node.refs.map(ref => (
                     <Box
@@ -136,6 +168,7 @@ const CommitList: React.FC<Props> = ({
                     shortSha={node.short}
                     subject={node.subject}
                     isHead={isHead}
+                    switchTo={switchTo}
                     onRestored={onRestored}
                   />
                 </Box>

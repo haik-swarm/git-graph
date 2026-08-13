@@ -10,6 +10,7 @@ from typeguard import typechecked
 from backend.apps.gitgraph import github, magic
 from backend.apps.gitgraph.discovery import (
     commit_paths,
+    discard_dirty,
     list_apps,
     read_commit_detail,
     read_graph,
@@ -115,6 +116,17 @@ async def restore(workspace_id: str, sha: str) -> dict:
     debug(workspace_id, sha[:7], ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Restore failed."))
+    return result
+
+
+@gitgraph.router.post("/discard/{workspace_id}")
+@typechecked
+async def discard(workspace_id: str) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = discard_dirty(path)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Discard failed."))
     return result
 
 

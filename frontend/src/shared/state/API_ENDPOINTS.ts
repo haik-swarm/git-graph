@@ -15,6 +15,8 @@ export const gitgraphMagicUpdateUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/magic-update/${encodeURIComponent(workspaceId)}`;
 export const gitgraphRestoreUrl = (workspaceId: string, sha: string) =>
   `${API_URL}/gitgraph/restore/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
+export const gitgraphDiscardUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/discard/${encodeURIComponent(workspaceId)}`;
 
 // GITHUB - Endpoints
 export const githubStatusUrl = (workspaceId: string) =>

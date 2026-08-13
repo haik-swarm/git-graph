@@ -260,14 +260,15 @@ def commit_paths(
 
 @typechecked
 def restore_to(path: Path, sha: str) -> Tuple[bool, Dict[str, Any]]:
-    """Check out `sha` on a fresh branch so history stays intact.
+    """Move HEAD to `sha`, preferring an existing branch tip over a new fork.
 
-    Restoration is never a reset: the current branch is left where it
-    was, and new work lands on `restore/<short-sha>` (auto-numbered if
-    that name is already taken from a previous restore of the same
-    commit). Refuses if the working tree is dirty, so a click can't
-    silently drop uncommitted work — the user is expected to Commit or
-    Magic Update first.
+    If the target commit is already the tip of a local branch, that
+    branch is checked out directly — "forward restore" back to `main`
+    after wandering onto `restore/<sha>` becomes a plain switch, not
+    another fork. Only when no branch points at the commit does a
+    `restore/<sha>` branch get created (auto-numbered on collision).
+    Refuses if the working tree is dirty so a click can't silently drop
+    uncommitted work.
     """
     if not (path / ".git").is_dir():
         return False, {"detail": "This workspace isn't a git repository."}
@@ -301,6 +302,33 @@ def restore_to(path: Path, sha: str) -> Tuple[bool, Dict[str, Any]]:
             "sha": full_sha,
             "created": False,
             "noop": True,
+            "switched": False,
+            "previous_branch": current,
+        }
+
+    # Prefer switching to an existing branch that already points here.
+    # `main` beats `restore/*` so forward-restoring lands on the trunk
+    # rather than on another throwaway fork.
+    pointing_raw = _run_git(
+        ["branch", "--points-at", full_sha, "--format=%(refname:short)"], path
+    )
+    pointing = [
+        b.strip() for b in (pointing_raw or "").splitlines() if b.strip()
+    ]
+    candidates = [b for b in pointing if b != current]
+    non_restore = [b for b in candidates if not b.startswith("restore/")]
+    target = (non_restore or candidates or [None])[0]
+    if target:
+        ok, _, err = _run_git_result(["checkout", target], path)
+        if not ok:
+            return False, {"detail": (err.strip().splitlines() or ["git checkout failed."])[0]}
+        return True, {
+            "branch": target,
+            "sha": full_sha,
+            "created": False,
+            "noop": False,
+            "switched": True,
+            "previous_branch": current or None,
         }
 
     # Auto-suffix so the second restore of the same commit doesn't collide
@@ -326,8 +354,38 @@ def restore_to(path: Path, sha: str) -> Tuple[bool, Dict[str, Any]]:
         "sha": full_sha,
         "created": True,
         "noop": False,
+        "switched": False,
         "previous_branch": current or None,
     }
+
+
+@typechecked
+def discard_dirty(path: Path) -> Tuple[bool, Dict[str, Any]]:
+    """Throw away every uncommitted change: tracked, staged, and untracked.
+
+    Combines `git reset --hard HEAD` (drops tracked & staged edits) with
+    `git clean -fd` (removes new files and empty new directories). `-x`
+    is intentionally omitted so `.gitignore`-covered artifacts like
+    `node_modules` or `.openswarm/` build output don't get wiped along
+    with real user work. Returns the count of files that were affected
+    so the UI can confirm plainly.
+    """
+    if not (path / ".git").is_dir():
+        return False, {"detail": "This workspace isn't a git repository."}
+
+    dirty = read_dirty(path)
+    if not dirty:
+        return True, {"discarded": 0, "noop": True}
+
+    ok, _, err = _run_git_result(["reset", "--hard", "HEAD"], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git reset failed."])[0]}
+
+    ok, _, err = _run_git_result(["clean", "-fd"], path)
+    if not ok:
+        return False, {"detail": (err.strip().splitlines() or ["git clean failed."])[0]}
+
+    return True, {"discarded": len(dirty), "noop": False}
 
 
 @typechecked
@@ -343,6 +401,7 @@ def read_graph(path: Path) -> Dict[str, Any]:
             "commits": [],
             "branches": [],
             "current_branch": None,
+            "head_sha": None,
             "dirty": [],
             "truncated": False,
         }
@@ -388,6 +447,9 @@ def read_graph(path: Path) -> Dict[str, Any]:
     current = _run_git(["branch", "--show-current"], path)
     current_branch = (current or "").strip() or None
 
+    head_raw = _run_git(["rev-parse", "HEAD"], path)
+    head_sha = (head_raw or "").strip() or None
+
     dirty = read_dirty(path)
 
     return {
@@ -395,6 +457,7 @@ def read_graph(path: Path) -> Dict[str, Any]:
         "commits": commits,
         "branches": branches,
         "current_branch": current_branch,
+        "head_sha": head_sha,
         "dirty": dirty,
         "truncated": truncated,
     }

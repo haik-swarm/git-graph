@@ -5,6 +5,7 @@ import Popover from '@mui/material/Popover';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import HistoryIcon from '@mui/icons-material/History';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { popover, primaryButton } from '@/shared/styles/ui';
 import { gitgraphRestoreUrl } from '@/shared/state/API_ENDPOINTS';
@@ -15,6 +16,10 @@ interface Props {
   shortSha: string;
   subject: string;
   isHead: boolean;
+  // Name of an existing local branch whose tip is this commit. If set,
+  // the control is presented as "Switch to <branch>" and the backend
+  // will check that branch out directly instead of forking a new one.
+  switchTo: string | null;
   onRestored: () => void;
 }
 
@@ -23,6 +28,7 @@ interface RestoreResult {
   sha: string;
   created: boolean;
   noop: boolean;
+  switched: boolean;
   previous_branch: string | null;
 }
 
@@ -32,8 +38,13 @@ const RestoreControl: React.FC<Props> = ({
   shortSha,
   subject,
   isHead,
+  switchTo,
   onRestored,
 }) => {
+  const isSwitch = Boolean(switchTo) && !isHead;
+  const chipLabel = isSwitch ? `Switch to ${switchTo}` : 'Restore';
+  const ChipIcon = isSwitch ? CallSplitIcon : HistoryIcon;
+  const primaryLabel = isSwitch ? 'Switch' : 'Restore';
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,7 +89,13 @@ const RestoreControl: React.FC<Props> = ({
     <>
       <ButtonBase
         onClick={open}
-        title={isHead ? 'This commit is the current tip' : `Restore to ${shortSha} on a new branch`}
+        title={
+          isHead
+            ? 'This commit is the current tip'
+            : isSwitch
+              ? `Switch to ${switchTo} at ${shortSha}`
+              : `Restore to ${shortSha} on a new branch`
+        }
         sx={{
           height: 22,
           px: '8px',
@@ -92,8 +109,8 @@ const RestoreControl: React.FC<Props> = ({
           '&:hover': { color: c.accent.base, borderColor: c.accent.base, background: c.bg.fill },
         }}
       >
-        <HistoryIcon sx={{ fontSize: 12 }} />
-        Restore
+        <ChipIcon sx={{ fontSize: 12 }} />
+        {chipLabel}
       </ButtonBase>
 
       <Popover
@@ -115,9 +132,9 @@ const RestoreControl: React.FC<Props> = ({
             gap: 1,
           }}
         >
-          <HistoryIcon sx={{ fontSize: 13, color: c.accent.base }} />
+          <ChipIcon sx={{ fontSize: 13, color: c.accent.base }} />
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
-            Restore
+            {isSwitch ? `Switch to ${switchTo}` : 'Restore'}
           </Typography>
           <Typography
             sx={{ ...c.type.caption, color: c.text.tertiary, fontFamily: c.font.mono }}
@@ -133,15 +150,31 @@ const RestoreControl: React.FC<Props> = ({
                 {subject}
               </Typography>
               <Typography sx={{ ...c.type.caption, color: c.text.secondary }}>
-                Creates a new branch{' '}
-                <Box
-                  component="span"
-                  sx={{ fontFamily: c.font.mono, color: c.text.primary }}
-                >
-                  restore/{shortSha}
-                </Box>{' '}
-                at this commit and switches to it. Nothing gets rewritten, and
-                your current branch stays where it is.
+                {isSwitch ? (
+                  <>
+                    Checks out{' '}
+                    <Box
+                      component="span"
+                      sx={{ fontFamily: c.font.mono, color: c.text.primary }}
+                    >
+                      {switchTo}
+                    </Box>{' '}
+                    at this commit and updates your files to match. Nothing
+                    gets rewritten; your current branch stays where it is.
+                  </>
+                ) : (
+                  <>
+                    Creates a new branch{' '}
+                    <Box
+                      component="span"
+                      sx={{ fontFamily: c.font.mono, color: c.text.primary }}
+                    >
+                      restore/{shortSha}
+                    </Box>{' '}
+                    at this commit and switches to it. Nothing gets rewritten,
+                    and your current branch stays where it is.
+                  </>
+                )}
               </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: '4px' }}>
                 <ButtonBase
@@ -168,7 +201,7 @@ const RestoreControl: React.FC<Props> = ({
                   ) : isHead ? (
                     'Already here'
                   ) : (
-                    'Restore'
+                    primaryLabel
                   )}
                 </ButtonBase>
               </Box>
@@ -202,7 +235,11 @@ const RestoreControl: React.FC<Props> = ({
           {result && (
             <>
               <Typography sx={{ ...c.type.body, color: c.text.primary }}>
-                {result.noop ? 'Already on this commit.' : 'Restored.'}
+                {result.noop
+                  ? 'Already on this commit.'
+                  : result.switched
+                    ? 'Switched.'
+                    : 'Restored.'}
               </Typography>
               <Typography sx={{ ...c.type.caption, color: c.text.secondary }}>
                 Now on{' '}

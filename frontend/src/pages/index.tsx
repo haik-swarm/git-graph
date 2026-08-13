@@ -17,6 +17,7 @@ import {
 import AppPicker, { type AppEntry } from '@/components/AppPicker';
 import CommitList from '@/components/CommitList';
 import CommitPanel, { type DirtyFile } from '@/components/CommitPanel';
+import DiscardButton from '@/components/DiscardButton';
 import GitHubPanel from '@/components/GitHubPanel';
 import MagicUpdateButton from '@/components/MagicUpdateButton';
 import { githubStatusUrl } from '@/shared/state/API_ENDPOINTS';
@@ -26,6 +27,7 @@ interface Graph {
   commits: Commit[];
   branches: string[];
   current_branch: string | null;
+  head_sha: string | null;
   dirty: DirtyFile[];
   truncated: boolean;
 }
@@ -206,6 +208,17 @@ const Home: React.FC = () => {
           />
         ) : null}
 
+        {selected && graph?.dirty?.length && !magicBusy ? (
+          <DiscardButton
+            workspaceId={selected.workspace_id}
+            dirtyCount={graph.dirty.length}
+            onDiscarded={() => {
+              setGitHubKey(k => k + 1);
+              void loadGraph(selected);
+            }}
+          />
+        ) : null}
+
         {selected && graph?.is_repo && (
           <GitHubPanel
             workspaceId={selected.workspace_id}
@@ -261,7 +274,9 @@ const Home: React.FC = () => {
                 layout={layout}
                 selectedSha={selectedSha}
                 workspaceId={selected?.workspace_id ?? null}
-                headSha={graph?.commits?.[0]?.sha ?? null}
+                headSha={graph?.head_sha ?? null}
+                currentBranch={graph?.current_branch ?? null}
+                branches={graph?.branches ?? []}
                 onSelect={sha => setSelectedSha(prev => (prev === sha ? null : sha))}
                 onRestored={() => {
                   setGitHubKey(k => k + 1);
