@@ -1,29 +1,27 @@
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
 type Mode = 'light' | 'dark';
 
-// ---- Cross-app theme persistence helpers ------------------------------------
+// ---- Cross-app theme persistence --------------------------------------------
 //
-// The template ships with a Light/Dark toggle but each app workspace runs
-// from its own vite dev-server port, so plain localStorage won't carry the
-// user's choice over to a NEW app they spin up later. To make the override
-// sticky across every App Builder workspace we:
+// Each app workspace runs on its own vite port, so plain localStorage won't
+// carry the user's light/dark choice to a different app. The template's
+// approach is kept intact: default to the OS appearance synchronously (no
+// flash), then adopt OpenSwarm's cross-app override once it arrives.
 //
-//   1. Default to the OS appearance (`prefers-color-scheme: dark`) on
-//      first mount — synchronous, no flash.
-//   2. Persist user toggles to localStorage for instant re-render on the
-//      same app, AND to OpenSwarm's /api/settings.app_template_theme_override
-//      so future apps see it on load.
-//   3. After mount, async-fetch /api/settings; if the override there
-//      differs from the synchronous default, switch to it. Brief style
-//      flicker is preferable to either (a) an SSR injection (these are
-//      vite SPAs) or (b) blocking initial render on a network call.
-//
-// The auth token rides in the URL (the template is loaded with
-// `?token=<bearer>` by OpenSwarm's webview preload), so the fetch can hit
-// localhost:8324 cross-origin via the host's CORS allow-list.
+// What's changed from the template is the TOKEN SHAPE below, not this
+// machinery — the palette is ported from the Workflow Editor so this app
+// speaks the same macOS design language.
 
 const LOCAL_STORAGE_KEY = 'openswarm-app-theme-override';
 const OPENSWARM_BACKEND = 'http://localhost:8324';
@@ -57,131 +55,157 @@ function getInitialMode(): Mode {
   return readLocalStorageOverride() ?? detectSystemPreference();
 }
 
-// One sans family everywhere, SF first: generated apps default to an Apple
-// design language (2026-08-08), so the type stack leads with the system's own
-// SF Pro and degrades to close cousins elsewhere.
-const FONT_SANS = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, "Helvetica Neue", "Inter", Arial, sans-serif';
-// Kept under its old name so any agent-written code that already
-// references `c.font.serif` for an intentional display flourish still
-// resolves — points at the same sans stack so the visual result is
-// consistent regardless of which token a caller picked.
-const FONT_SERIF = FONT_SANS;
-const FONT_MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+// System faces only, so switching costs no network round trip.
+const FONT_SANS =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif';
+const FONT_MONO =
+  'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 
-// Apple-light: near-white grays, ink text, hairlines, system blue.
-const lightTokens = {
-  bg: {
-    page: '#F5F5F7',
-    surface: '#FFFFFF',
-    elevated: '#FBFBFD',
-    secondary: '#F2F2F7',
-    inverse: '#1D1D1F',
-  },
-  text: {
-    primary: '#1D1D1F',
-    secondary: '#48484A',
-    tertiary: '#6E6E73',
-    muted: '#86868B',
-    ghost: 'rgba(110,110,115,0.5)',
-  },
-  accent: {
-    primary: '#007AFF',
-    hover: '#0071E3',
-    pressed: '#0062CC',
-  },
-  user: { bubble: '#E9E9EB' },
-  border: {
-    subtle: 'rgba(0,0,0,0.08)',
-    medium: 'rgba(0,0,0,0.12)',
-    strong: 'rgba(0,0,0,0.20)',
-  },
-  shadow: {
-    sm: '0 1px 2px rgba(0,0,0,0.05)',
-    md: '0 4px 16px rgba(0,0,0,0.06)',
-    lg: '0 12px 32px rgba(0,0,0,0.12)',
-  },
-  status: {
-    success: '#248A3D',
-    successBg: 'rgba(52,199,89,0.10)',
-    error: '#D70015',
-    errorBg: 'rgba(255,59,48,0.08)',
-  },
+const LIGHT = {
+  window: '#FFFFFF',
+  sidebar: '#F1F1F3',
+  raised: '#FFFFFF',
+  sunken: 'rgba(120,120,128,0.10)',
+  fill: 'rgba(120,120,128,0.12)',
+  fillStrong: 'rgba(120,120,128,0.20)',
+  separator: 'rgba(0,0,0,0.10)',
+  border: 'rgba(0,0,0,0.13)',
+  textPrimary: '#1D1D1F',
+  textSecondary: 'rgba(60,60,67,0.60)',
+  textTertiary: 'rgba(60,60,67,0.42)',
+  textQuaternary: 'rgba(60,60,67,0.26)',
+  success: '#34C759',
+  danger: '#FF3B30',
+  dangerRgb: '255,59,48',
+  warning: '#FF9500',
+  controlRaised: '#FFFFFF',
+  accent: '#007AFF',
+  shadowPopover: '0 10px 34px rgba(0,0,0,0.14), 0 0 0 0.5px rgba(0,0,0,0.10)',
+  shadowControl: '0 1px 2px rgba(0,0,0,0.14), 0 0 0 0.5px rgba(0,0,0,0.06)',
 };
 
-// Apple-dark: elevated iOS grays (never pure black, apps live in windows).
-const darkTokens = {
-  bg: {
-    page: '#1C1C1E',
-    surface: '#2C2C2E',
-    elevated: '#3A3A3C',
-    secondary: '#242426',
-    inverse: '#F5F5F7',
-  },
-  text: {
-    primary: '#F5F5F7',
-    secondary: '#D1D1D6',
-    tertiary: '#98989D',
-    muted: '#8E8E93',
-    ghost: 'rgba(152,152,157,0.5)',
-  },
-  accent: {
-    primary: '#0A84FF',
-    hover: '#409CFF',
-    pressed: '#0070E0',
-  },
-  user: { bubble: '#3A3A3C' },
-  border: {
-    subtle: 'rgba(255,255,255,0.08)',
-    medium: 'rgba(255,255,255,0.12)',
-    strong: 'rgba(255,255,255,0.22)',
-  },
-  shadow: {
-    sm: '0 1px 2px rgba(0,0,0,0.20)',
-    md: '0 4px 16px rgba(0,0,0,0.28)',
-    lg: '0 12px 32px rgba(0,0,0,0.40)',
-  },
-  status: {
-    success: '#30D158',
-    successBg: 'rgba(48,209,88,0.14)',
-    error: '#FF453A',
-    errorBg: 'rgba(255,69,58,0.14)',
-  },
+const DARK: typeof LIGHT = {
+  window: '#1A1A1C',
+  sidebar: '#232326',
+  raised: '#2C2C2E',
+  sunken: 'rgba(0,0,0,0.26)',
+  fill: 'rgba(235,235,245,0.10)',
+  fillStrong: 'rgba(235,235,245,0.18)',
+  separator: 'rgba(255,255,255,0.09)',
+  border: 'rgba(255,255,255,0.14)',
+  textPrimary: '#F5F5F7',
+  textSecondary: 'rgba(235,235,245,0.62)',
+  textTertiary: 'rgba(235,235,245,0.40)',
+  textQuaternary: 'rgba(235,235,245,0.24)',
+  success: '#30D158',
+  danger: '#FF453A',
+  dangerRgb: '255,69,58',
+  warning: '#FF9F0A',
+  controlRaised: '#5E5E63',
+  accent: '#0A84FF',
+  shadowPopover: '0 12px 40px rgba(0,0,0,0.50), 0 0 0 0.5px rgba(255,255,255,0.10)',
+  shadowControl: '0 1px 2px rgba(0,0,0,0.36), 0 0 0 0.5px rgba(255,255,255,0.06)',
 };
 
-const sharedTokens = {
-  radius: {
-    xs: 5,
-    sm: 8,
-    md: 10,
-    lg: 12,
-    xl: 16,
-    full: 9999,
-  },
-  font: {
-    serif: FONT_SERIF,
-    mono: FONT_MONO,
-  },
-  transition: 'all 280ms cubic-bezier(0.32, 0.72, 0, 1)',
-};
+type Palette = typeof LIGHT;
 
-export type ClaudeTokens = typeof lightTokens & typeof sharedTokens;
-
-function buildTokens(mode: Mode): ClaudeTokens {
-  const modeTokens = mode === 'light' ? lightTokens : darkTokens;
-  return { ...modeTokens, ...sharedTokens };
+function hexToRgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
+
+// Relative luminance, so a light accent gets ink instead of white.
+function readableOn(hex: string): string {
+  const [r, g, b] = hexToRgb(hex).split(',').map(Number);
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return L > 0.6 ? '#1D1D1F' : '#FFFFFF';
+}
+
+// Hover shifts toward the surface it sits on: darker in light mode, lighter
+// in dark mode, which is what AppKit does to a filled control on hover.
+function shade(hex: string, isDark: boolean): string {
+  const [r, g, b] = hexToRgb(hex).split(',').map(Number);
+  const mix = (v: number) => Math.round(isDark ? v + (255 - v) * 0.22 : v * 0.86);
+  return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function buildTokens(p: Palette, isDark: boolean) {
+  const accentRgb = hexToRgb(p.accent);
+
+  return {
+    isDark,
+    accentRgb,
+
+    bg: {
+      window: p.window,
+      sidebar: p.sidebar,
+      raised: p.raised,
+      sunken: p.sunken,
+      fill: p.fill,
+      fillStrong: p.fillStrong,
+      controlRaised: p.controlRaised,
+    },
+    text: {
+      primary: p.textPrimary,
+      secondary: p.textSecondary,
+      tertiary: p.textTertiary,
+      quaternary: p.textQuaternary,
+      onAccent: readableOn(p.accent),
+    },
+    accent: {
+      base: p.accent,
+      hover: shade(p.accent, isDark),
+      wash: `rgba(${accentRgb},${isDark ? 0.2 : 0.12})`,
+      edge: `rgba(${accentRgb},0.45)`,
+      ring: `0 0 0 3px rgba(${accentRgb},0.35)`,
+    },
+    status: {
+      success: p.success,
+      danger: p.danger,
+      dangerWash: `rgba(${p.dangerRgb},${isDark ? 0.18 : 0.1})`,
+      warning: p.warning,
+    },
+    separator: p.separator,
+    border: p.border,
+    shadow: { popover: p.shadowPopover, control: p.shadowControl },
+
+    // Apple's control metrics: 6 for small controls, 8 for grouped rows,
+    // 10 for popovers, 12 for sheets.
+    radius: { xs: 4, sm: 6, md: 8, lg: 10, xl: 12, xxl: 16, full: 9999 },
+
+    // Mapped onto the macOS text styles rather than an invented ramp.
+    type: {
+      caption: { fontSize: '11px', letterSpacing: '0.005em', fontWeight: 400 },
+      footnote: { fontSize: '11px', letterSpacing: '0.005em', fontWeight: 590 },
+      callout: { fontSize: '12px', letterSpacing: '0em', fontWeight: 400 },
+      body: { fontSize: '13px', letterSpacing: '-0.005em', fontWeight: 400 },
+      headline: { fontSize: '13px', letterSpacing: '-0.005em', fontWeight: 590 },
+      title3: { fontSize: '15px', letterSpacing: '-0.01em', fontWeight: 590 },
+      title2: { fontSize: '17px', letterSpacing: '-0.015em', fontWeight: 600 },
+      title: { fontSize: '22px', letterSpacing: '-0.021em', fontWeight: 600 },
+    },
+    font: { sans: FONT_SANS, mono: FONT_MONO, serif: FONT_SANS },
+    ease: {
+      out: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      spring: 'cubic-bezier(0.34, 1.4, 0.64, 1)',
+    },
+    transition: 'all 160ms cubic-bezier(0.32, 0.72, 0, 1)',
+  };
+}
+
+export type SwarmTokens = ReturnType<typeof buildTokens>;
+/** Kept under the template's name so existing call sites still resolve. */
+export type ClaudeTokens = SwarmTokens;
 
 interface ThemeModeContextValue {
   mode: Mode;
   toggleMode: () => void;
 }
 
-// Default context uses the system-preference / localStorage-override at
-// module load time. Without this, the brief window before
-// ClaudeThemeProvider mounts (or any out-of-tree consumer of these
-// contexts) would render in hardcoded light and flash to the resolved
-// theme on the next commit. `getInitialMode` is synchronous and reads
-// only DOM/localStorage so it's safe to call at module init.
 const _bootMode: Mode = typeof window !== 'undefined' ? getInitialMode() : 'light';
 
 const ThemeModeContext = createContext<ThemeModeContextValue>({
@@ -189,42 +213,29 @@ const ThemeModeContext = createContext<ThemeModeContextValue>({
   toggleMode: () => {},
 });
 
-const TokensContext = createContext<ClaudeTokens>(buildTokens(_bootMode));
+const TokensContext = createContext<SwarmTokens>(
+  buildTokens(_bootMode === 'dark' ? DARK : LIGHT, _bootMode === 'dark'),
+);
 
 export function useThemeMode() {
   return useContext(ThemeModeContext);
 }
 
-export function useClaudeTokens(): ClaudeTokens {
+export function useClaudeTokens(): SwarmTokens {
   return useContext(TokensContext);
 }
 
-interface ClaudeThemeProviderProps {
-  children: React.ReactNode;
-}
-
-const ClaudeThemeProvider: React.FC<ClaudeThemeProviderProps> = ({ children }) => {
+const ClaudeThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<Mode>(getInitialMode);
-  // True once the user has explicitly toggled in this session. While
-  // false, the system-preference media-query listener is allowed to
-  // override `mode`; once the user toggles even once we stop chasing
-  // the system and respect their choice.
+  // Once the user toggles even once we stop chasing the OS setting.
   const userOverrideRef = useRef<boolean>(readLocalStorageOverride() !== null);
 
-  // (1) After mount, ask OpenSwarm whether a prior app already set a
-  // cross-app override. If so AND the user hasn't already toggled in
-  // this session AND it differs from current state, adopt it.
   useEffect(() => {
     const token = readUrlToken();
-    if (!token) return; // No token = can't auth = skip silently.
+    if (!token) return;
     let cancelled = false;
     (async () => {
       try {
-        // Use the dedicated endpoint instead of /api/settings — the
-        // generic settings PUT takes a FULL AppSettings body which
-        // defaults every unset field (api keys, subscription tokens,
-        // etc.), so PUTting just `{ app_template_theme_override }`
-        // there logs the user out. The dedicated endpoint merges.
         const res = await fetch(`${OPENSWARM_BACKEND}/api/settings/app-theme-override`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -232,20 +243,20 @@ const ClaudeThemeProvider: React.FC<ClaudeThemeProviderProps> = ({ children }) =
         const data = await res.json();
         const remote = data?.mode;
         if (remote !== 'light' && remote !== 'dark') return;
-        // localStorage wins for this app — the user toggled here, that's
-        // the latest signal. Otherwise adopt the remote preference.
+        // localStorage wins here — the user toggled in this app, which is
+        // the more recent signal than the cross-app default.
         if (readLocalStorageOverride() !== null) return;
         userOverrideRef.current = true;
         setMode(remote);
       } catch {
-        /* offline / cross-origin blocked / etc — keep the system default */
+        /* offline or blocked — the system default stands */
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // (2) If the user hasn't pinned a choice yet, follow the OS as it
-  // changes (e.g. macOS auto light-at-day-dark-at-night).
   useEffect(() => {
     if (userOverrideRef.current) return;
     let mq: MediaQueryList;
@@ -260,26 +271,27 @@ const ClaudeThemeProvider: React.FC<ClaudeThemeProviderProps> = ({ children }) =
     };
     mq.addEventListener?.('change', onChange);
     return () => {
-      try { mq.removeEventListener?.('change', onChange); } catch {}
+      try {
+        mq.removeEventListener?.('change', onChange);
+      } catch {
+        /* listener already gone */
+      }
     };
   }, []);
 
   const toggleMode = useCallback(() => {
-    setMode((prev) => {
+    setMode(prev => {
       const next: Mode = prev === 'light' ? 'dark' : 'light';
       userOverrideRef.current = true;
-      // (a) Local fast path so subsequent reloads of THIS app don't
-      // flash the wrong theme.
       try {
         window.localStorage.setItem(LOCAL_STORAGE_KEY, next);
-      } catch { /* private mode etc. — fine, the remote PUT still carries it */ }
-      // (b) Cross-app persistence: push to OpenSwarm's dedicated
-      // theme-override endpoint (NOT the generic /api/settings PUT,
-      // which expects a full AppSettings body and would default every
-      // unspecified field — wiping api keys / subscription tokens and
-      // popping the SignInGate). Fire-and-forget — best effort.
+      } catch {
+        /* private mode — the remote PUT still carries it */
+      }
       const token = readUrlToken();
       if (token) {
+        // The dedicated endpoint merges; the generic /api/settings PUT
+        // expects a full body and would blank every unset field.
         fetch(`${OPENSWARM_BACKEND}/api/settings/app-theme-override`, {
           method: 'PUT',
           headers: {
@@ -287,35 +299,60 @@ const ClaudeThemeProvider: React.FC<ClaudeThemeProviderProps> = ({ children }) =
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ mode: next }),
-        }).catch(() => { /* offline / blocked — local override still holds */ });
+        }).catch(() => {
+          /* offline — the local override still holds */
+        });
       }
       return next;
     });
   }, []);
 
-  const tokens = useMemo(() => buildTokens(mode), [mode]);
+  const isDark = mode === 'dark';
+  const tokens = useMemo(() => buildTokens(isDark ? DARK : LIGHT, isDark), [isDark]);
 
   const muiTheme = useMemo(
     () =>
       createTheme({
-        palette: { mode },
+        palette: {
+          mode,
+          primary: { main: tokens.accent.base },
+          background: { default: tokens.bg.window, paper: tokens.bg.raised },
+          text: { primary: tokens.text.primary, secondary: tokens.text.secondary },
+        },
         typography: {
           fontFamily: FONT_SANS,
-          button: { textTransform: 'none' as const },
+          button: { textTransform: 'none' as const, fontWeight: 590 },
         },
         components: {
           MuiCssBaseline: {
             styleOverrides: {
               body: {
-                backgroundColor: tokens.bg.page,
+                backgroundColor: tokens.bg.window,
                 color: tokens.text.primary,
-                transition: 'background-color 300ms ease, color 300ms ease',
+                overflow: 'hidden',
+                WebkitFontSmoothing: 'antialiased',
+              },
+              '*::selection': { background: `rgba(${tokens.accentRgb},0.28)` },
+            },
+          },
+          MuiTooltip: {
+            defaultProps: { enterDelay: 500, enterNextDelay: 300 },
+            styleOverrides: {
+              tooltip: {
+                background: isDark ? '#38383C' : '#FFFFFF',
+                color: tokens.text.primary,
+                border: `0.5px solid ${tokens.border}`,
+                boxShadow: tokens.shadow.popover,
+                fontSize: 11,
+                fontWeight: 400,
+                padding: '3px 7px',
+                borderRadius: 5,
               },
             },
           },
         },
       }),
-    [mode, tokens],
+    [mode, isDark, tokens],
   );
 
   const modeValue = useMemo(() => ({ mode, toggleMode }), [mode, toggleMode]);
