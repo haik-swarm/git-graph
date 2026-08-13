@@ -115,11 +115,17 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
         ? `Push ${pending}`
         : 'Synced';
   const highlight = status.connected && (pending > 0 || !status.has_remote);
+  // Nothing to push means nothing for the popover to do; leaving it
+  // clickable was misleading. The commit link stays reachable via the
+  // repo row inside the popover only when there's a reason to open it.
+  const isInert = label === 'Synced';
 
   return (
     <>
       <ButtonBase
         onClick={e => setAnchor(e.currentTarget)}
+        disabled={isInert}
+        title={isInert ? 'Up to date with GitHub' : undefined}
         sx={{
           ...pushButton(c),
           height: 22,
@@ -127,6 +133,12 @@ const GitHubPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
           ...c.type.caption,
           color: highlight ? c.accent.base : c.text.secondary,
           borderColor: highlight ? c.accent.base : c.border,
+          '&:disabled': {
+            opacity: 0.5,
+            cursor: 'default',
+            color: c.text.tertiary,
+            borderColor: c.border,
+          },
         }}
       >
         <GitHubIcon sx={{ fontSize: 12 }} />
