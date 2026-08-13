@@ -11,6 +11,8 @@ export const gitgraphCommitUrl = (workspaceId: string, sha: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
 export const gitgraphCreateCommitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}`;
+export const gitgraphMagicUpdateUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/magic-update/${encodeURIComponent(workspaceId)}`;
 
 // GITHUB - Endpoints
 export const githubStatusUrl = (workspaceId: string) =>

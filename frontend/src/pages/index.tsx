@@ -18,6 +18,8 @@ import AppPicker, { type AppEntry } from '@/components/AppPicker';
 import CommitList from '@/components/CommitList';
 import CommitPanel, { type DirtyFile } from '@/components/CommitPanel';
 import GitHubPanel from '@/components/GitHubPanel';
+import MagicUpdateButton from '@/components/MagicUpdateButton';
+import { githubStatusUrl } from '@/shared/state/API_ENDPOINTS';
 
 interface Graph {
   is_repo: boolean;
@@ -49,6 +51,28 @@ const Home: React.FC = () => {
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [files, setFiles] = useState<CommitFile[] | null>(null);
   const [gitHubKey, setGitHubKey] = useState(0);
+  const [hasRemote, setHasRemote] = useState(false);
+
+  useEffect(() => {
+    if (!selected) {
+      setHasRemote(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(githubStatusUrl(selected.workspace_id));
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setHasRemote(Boolean(data?.has_remote));
+      } catch {
+        // Non-fatal: the Magic Update button just skips pushing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, gitHubKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +181,17 @@ const Home: React.FC = () => {
         )}
 
         <Box sx={{ flex: 1 }} />
+
+        {selected && graph?.dirty?.length ? (
+          <MagicUpdateButton
+            workspaceId={selected.workspace_id}
+            hasRemote={hasRemote}
+            onDone={() => {
+              setGitHubKey(k => k + 1);
+              void loadGraph(selected);
+            }}
+          />
+        ) : null}
 
         {selected && graph?.dirty?.length ? (
           <CommitPanel
