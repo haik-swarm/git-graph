@@ -28,54 +28,21 @@ interface Props {
   onDone: (workspaceIds: string[]) => void;
 }
 
-type RunState =
-  | { kind: 'idle' }
-  | { kind: 'running'; done: number; total: number; currentName: string }
-  | { kind: 'finished'; ok: string[]; failed: { name: string; error: string }[] };
+type Mode = 'magic' | 'commit';
 
 const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
   const c = useClaudeTokens();
-  const [magic, setMagic] = useState<RunState>({ kind: 'idle' });
-  const [commitAnchor, setCommitAnchor] = useState<HTMLElement | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [mode, setMode] = useState<Mode>('magic');
 
   const totalDirty = useMemo(
     () => dirtyApps.reduce((sum, d) => sum + d.dirtyCount, 0),
     [dirtyApps],
   );
 
-  const magicBusy = magic.kind === 'running';
-
-  const runMagicAll = async () => {
-    if (magicBusy || dirtyApps.length === 0) return;
-    const total = dirtyApps.length;
-    const ok: string[] = [];
-    const failed: { name: string; error: string }[] = [];
-    setMagic({ kind: 'running', done: 0, total, currentName: dirtyApps[0].app.name });
-    for (let i = 0; i < dirtyApps.length; i++) {
-      const { app } = dirtyApps[i];
-      setMagic({ kind: 'running', done: i, total, currentName: app.name });
-      try {
-        const res = await fetch(gitgraphMagicUpdateUrl(app.workspace_id), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // Push status varies per app; keep bulk mode commit-only and let the
-          // user push from an app's page if they want to publish.
-          body: JSON.stringify({ push: false }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => null);
-          throw new Error(data?.detail ?? `magic-update ${res.status}`);
-        }
-        ok.push(app.workspace_id);
-      } catch (err) {
-        failed.push({
-          name: app.name,
-          error: err instanceof Error ? err.message : 'failed',
-        });
-      }
-    }
-    setMagic({ kind: 'finished', ok, failed });
-    onDone(dirtyApps.map(d => d.app.workspace_id));
+  const open = (m: Mode) => (e: React.MouseEvent<HTMLElement>) => {
+    setMode(m);
+    setAnchor(e.currentTarget);
   };
 
   return (
@@ -124,30 +91,15 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
           {dirtyApps.length} app{dirtyApps.length === 1 ? '' : 's'}
         </Box>
         <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: '2px' }}>
-          {magic.kind === 'running' ? (
-            <>
-              Magic update <b>{magic.done + 1}</b>/{magic.total}: {magic.currentName}…
-            </>
-          ) : magic.kind === 'finished' ? (
-            <>
-              {magic.ok.length} committed
-              {magic.failed.length > 0
-                ? `, ${magic.failed.length} failed (${magic.failed
-                    .map(f => f.name)
-                    .join(', ')})`
-                : ''}
-            </>
-          ) : (
-            'Handle every dirty workspace in one shot, without opening each app.'
-          )}
+          Handle every dirty workspace in one shot, or pick which ones.
         </Box>
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
         <ButtonBase
-          onClick={runMagicAll}
-          disabled={magicBusy || dirtyApps.length === 0}
-          title="Draft a commit for every dirty app in one shot"
+          onClick={open('magic')}
+          disabled={dirtyApps.length === 0}
+          title="Draft AI commit messages across apps"
           sx={{
             ...primaryButton(c),
             height: 30,
@@ -156,29 +108,25 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
             '& svg': { fontSize: 13 },
           }}
         >
-          {magicBusy ? (
-            <CircularProgress size={11} sx={{ color: c.text.onAccent }} />
-          ) : (
-            <AutoAwesomeIcon />
-          )}
-          {magicBusy ? 'Updating…' : 'Magic update all'}
+          <AutoAwesomeIcon />
+          Magic update…
         </ButtonBase>
 
         <ButtonBase
-          onClick={e => setCommitAnchor(e.currentTarget)}
-          disabled={magicBusy}
+          onClick={open('commit')}
+          disabled={dirtyApps.length === 0}
           sx={{ ...pushButton(c), height: 30, px: '12px' }}
         >
           Commit all…
         </ButtonBase>
       </Box>
 
-      <BulkCommitPopover
-        anchor={commitAnchor}
-        onClose={() => setCommitAnchor(null)}
+      <BulkPickerPopover
+        anchor={anchor}
+        mode={mode}
+        onClose={() => setAnchor(null)}
         dirtyApps={dirtyApps}
         onDone={ids => {
-          setCommitAnchor(null);
           onDone(ids);
         }}
       />
@@ -186,15 +134,17 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, onDone }) => {
   );
 };
 
-interface BulkCommitProps {
+interface PickerProps {
   anchor: HTMLElement | null;
+  mode: Mode;
   onClose: () => void;
   dirtyApps: DirtyApp[];
   onDone: (workspaceIds: string[]) => void;
 }
 
-const BulkCommitPopover: React.FC<BulkCommitProps> = ({
+const BulkPickerPopover: React.FC<PickerProps> = ({
   anchor,
+  mode,
   onClose,
   dirtyApps,
   onDone,
@@ -213,7 +163,6 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
     failed: { name: string; error: string }[];
   } | null>(null);
 
-  // Reset selection every time the popover opens with a fresh dirty set.
   React.useEffect(() => {
     if (!anchor) return;
     setChosen(new Set(dirtyApps.map(d => d.app.workspace_id)));
@@ -231,7 +180,9 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
   };
 
   const allChosen = chosen.size === dirtyApps.length && dirtyApps.length > 0;
-  const canCommit = chosen.size > 0 && message.trim().length > 0 && !busy;
+  const needsMessage = mode === 'commit';
+  const canRun =
+    chosen.size > 0 && !busy && (!needsMessage || message.trim().length > 0);
 
   const run = async () => {
     const targets = dirtyApps.filter(d => chosen.has(d.app.workspace_id));
@@ -244,15 +195,23 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
       const { app } = targets[i];
       setProgress({ done: i, total: targets.length, currentName: app.name });
       try {
-        const res = await fetch(gitgraphCreateCommitUrl(app.workspace_id), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // Empty paths → backend commits every dirty file for that app.
-          body: JSON.stringify({ message: message.trim(), paths: [] }),
-        });
+        const res =
+          mode === 'magic'
+            ? await fetch(gitgraphMagicUpdateUrl(app.workspace_id), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ push: false }),
+              })
+            : await fetch(gitgraphCreateCommitUrl(app.workspace_id), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: message.trim(), paths: [] }),
+              });
         if (!res.ok) {
           const data = await res.json().catch(() => null);
-          throw new Error(data?.detail ?? `commit ${res.status}`);
+          throw new Error(
+            data?.detail ?? `${mode === 'magic' ? 'magic-update' : 'commit'} ${res.status}`,
+          );
         }
         ok.push(app.workspace_id);
       } catch (err) {
@@ -273,6 +232,17 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
     onClose();
   };
 
+  const title = mode === 'magic' ? 'Magic update across apps' : 'Commit across apps';
+  const hint =
+    mode === 'magic'
+      ? 'AI drafts a commit message per app, using every dirty file.'
+      : 'One message, one commit per app, every dirty file in each.';
+  const runLabel = (n: number) =>
+    mode === 'magic'
+      ? `Magic update ${n} app${n === 1 ? '' : 's'}`
+      : `Commit ${n} app${n === 1 ? '' : 's'}`;
+  const progressVerb = mode === 'magic' ? 'Updating' : 'Committing';
+
   return (
     <Popover
       open={Boolean(anchor)}
@@ -289,15 +259,18 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
           borderBottom: `0.5px solid ${c.separator}`,
         }}
       >
-        <Box sx={{ ...c.type.headline, color: c.text.primary }}>Commit across apps</Box>
-        <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: '2px' }}>
-          One message, one commit per app, every dirty file in each.
-        </Box>
+        <Box sx={{ ...c.type.headline, color: c.text.primary }}>{title}</Box>
+        <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: '2px' }}>{hint}</Box>
       </Box>
 
       <Box sx={{ maxHeight: 220, overflowY: 'auto', p: '4px', ...slimScroll(c) }}>
         {dirtyApps.map(({ app, dirtyCount }) => {
           const isChosen = chosen.has(app.workspace_id);
+          const isCurrent =
+            busy &&
+            progress?.currentName === app.name &&
+            !result?.ok.includes(app.workspace_id) &&
+            !result?.failed.find(f => f.name === app.name);
           const status = result
             ? result.ok.includes(app.workspace_id)
               ? 'ok'
@@ -367,6 +340,9 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
                 </Box>
               </Box>
 
+              {isCurrent && (
+                <CircularProgress size={12} sx={{ color: c.text.tertiary }} />
+              )}
               {status === 'ok' && (
                 <CheckRoundedIcon sx={{ fontSize: 14, color: c.status.success }} />
               )}
@@ -387,32 +363,34 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
           gap: 1,
         }}
       >
-        <InputBase
-          multiline
-          minRows={2}
-          maxRows={5}
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          placeholder="Commit message (used for every selected app)"
-          disabled={busy}
-          onKeyDown={e => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canCommit) {
-              void run();
-            }
-          }}
-          sx={{
-            ...sunkenField(c),
-            ...c.type.body,
-            color: c.text.primary,
-            px: 1,
-            py: '6px',
-            '& textarea::placeholder': { color: c.text.quaternary, opacity: 1 },
-          }}
-        />
+        {needsMessage && (
+          <InputBase
+            multiline
+            minRows={2}
+            maxRows={5}
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            placeholder="Commit message (used for every selected app)"
+            disabled={busy}
+            onKeyDown={e => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canRun) {
+                void run();
+              }
+            }}
+            sx={{
+              ...sunkenField(c),
+              ...c.type.body,
+              color: c.text.primary,
+              px: 1,
+              py: '6px',
+              '& textarea::placeholder': { color: c.text.quaternary, opacity: 1 },
+            }}
+          />
+        )}
 
         {progress && (
           <Box sx={{ ...c.type.caption, color: c.text.secondary }}>
-            Committing <b>{progress.done + 1}</b>/{progress.total}: {progress.currentName}…
+            {progressVerb} <b>{progress.done + 1}</b>/{progress.total}: {progress.currentName}…
           </Box>
         )}
 
@@ -443,12 +421,30 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
                   p: 0,
                 }}
               >
-                Select all
+                All
+              </Box>
+            )}
+            {chosen.size > 0 && (
+              <Box
+                component="button"
+                onClick={() => setChosen(new Set())}
+                disabled={busy}
+                sx={{
+                  ml: '6px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: c.accent.base,
+                  cursor: 'pointer',
+                  ...c.type.caption,
+                  p: 0,
+                }}
+              >
+                None
               </Box>
             )}
           </Box>
           <ButtonBase
-            disabled={busy || (!!result && result.failed.length === 0)}
+            disabled={result ? false : !canRun}
             onClick={result ? closeIfIdle : () => void run()}
             sx={{ ...primaryButton(c), height: 28 }}
           >
@@ -457,7 +453,7 @@ const BulkCommitPopover: React.FC<BulkCommitProps> = ({
             ) : result ? (
               'Done'
             ) : (
-              `Commit ${chosen.size} app${chosen.size === 1 ? '' : 's'}`
+              runLabel(chosen.size)
             )}
           </ButtonBase>
         </Box>

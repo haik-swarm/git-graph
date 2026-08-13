@@ -68,17 +68,22 @@ const HomeGrid: React.FC<Props> = ({
       );
     });
     const scored = base.slice();
+    // Dirty apps always float first, most-changes-first, no matter which
+    // sort is picked — the whole point of Home is "who needs my attention?".
+    // Within the dirty group and within the clean group the chosen sort
+    // still applies as a secondary key.
+    const dirtyCount = (a: AppEntry) => meta[a.workspace_id]?.dirty_count ?? 0;
+
+    let secondary: (a: AppEntry, b: AppEntry) => number;
     if (sort === 'name') {
-      scored.sort((a, b) => a.name.localeCompare(b.name));
+      secondary = (a, b) => a.name.localeCompare(b.name);
     } else if (sort === 'status') {
       const rank = (a: AppEntry) => {
-        const m = meta[a.workspace_id];
-        if (m?.dirty_count) return 0;
-        if (a.has_git) return 1;
-        if (a.workspace_exists) return 2;
-        return 3;
+        if (a.has_git) return 0;
+        if (a.workspace_exists) return 1;
+        return 2;
       };
-      scored.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+      secondary = (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name);
     } else {
       // Recent: prefer HEAD commit date, fall back to updated_at, then name.
       const stamp = (a: AppEntry) => {
@@ -87,8 +92,18 @@ const HomeGrid: React.FC<Props> = ({
         const t = new Date(iso).getTime();
         return Number.isNaN(t) ? 0 : t;
       };
-      scored.sort((a, b) => stamp(b) - stamp(a) || a.name.localeCompare(b.name));
+      secondary = (a, b) => stamp(b) - stamp(a) || a.name.localeCompare(b.name);
     }
+
+    scored.sort((a, b) => {
+      const da = dirtyCount(a);
+      const db = dirtyCount(b);
+      const aDirty = da > 0;
+      const bDirty = db > 0;
+      if (aDirty !== bDirty) return aDirty ? -1 : 1;
+      if (aDirty && bDirty && da !== db) return db - da;
+      return secondary(a, b);
+    });
     return scored;
   }, [apps, meta, filter, sort, query]);
 
