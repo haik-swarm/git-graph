@@ -2,6 +2,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -12,6 +13,8 @@ interface Meta {
   is_repo: boolean;
   commit_count: number;
   dirty_count: number;
+  has_remote?: boolean;
+  unpushed?: number;
 }
 
 interface Props {
@@ -19,6 +22,8 @@ interface Props {
   meta: Record<string, Meta>;
   onFocusDirty: () => void;
   dirtyActive: boolean;
+  onFocusUnpushed: () => void;
+  unpushedActive: boolean;
 }
 
 /**
@@ -26,7 +31,14 @@ interface Props {
  * state of the whole account before the per-item list, so "how much is
  * uncommitted right now" is answerable without reading 20 cards.
  */
-const StatRow: React.FC<Props> = ({ apps, meta, onFocusDirty, dirtyActive }) => {
+const StatRow: React.FC<Props> = ({
+  apps,
+  meta,
+  onFocusDirty,
+  dirtyActive,
+  onFocusUnpushed,
+  unpushedActive,
+}) => {
   const c = useClaudeTokens();
 
   const stats = React.useMemo(() => {
@@ -34,6 +46,8 @@ const StatRow: React.FC<Props> = ({ apps, meta, onFocusDirty, dirtyActive }) => 
     let commits = 0;
     let dirtyFiles = 0;
     let dirtyApps = 0;
+    let unpushedCommits = 0;
+    let unpushedApps = 0;
     for (const a of apps) {
       const m = meta[a.workspace_id];
       if (a.has_git && a.workspace_exists) tracked += 1;
@@ -43,8 +57,21 @@ const StatRow: React.FC<Props> = ({ apps, meta, onFocusDirty, dirtyActive }) => 
         dirtyFiles += m.dirty_count;
         dirtyApps += 1;
       }
+      const ahead = m.unpushed ?? 0;
+      if (ahead > 0) {
+        unpushedCommits += ahead;
+        unpushedApps += 1;
+      }
     }
-    return { tracked, commits, dirtyFiles, dirtyApps, total: apps.length };
+    return {
+      tracked,
+      commits,
+      dirtyFiles,
+      dirtyApps,
+      unpushedCommits,
+      unpushedApps,
+      total: apps.length,
+    };
   }, [apps, meta]);
 
   const cells: {
@@ -85,6 +112,18 @@ const StatRow: React.FC<Props> = ({ apps, meta, onFocusDirty, dirtyActive }) => 
       tone: stats.dirtyFiles > 0 ? 'warning' : undefined,
       onClick: stats.dirtyFiles > 0 ? onFocusDirty : undefined,
       active: dirtyActive,
+    },
+    {
+      key: 'unpushed',
+      icon: <CloudUploadRoundedIcon />,
+      value: stats.unpushedCommits.toLocaleString(),
+      label:
+        stats.unpushedApps === 0
+          ? 'all pushed'
+          : `to push in ${stats.unpushedApps} app${stats.unpushedApps === 1 ? '' : 's'}`,
+      tone: stats.unpushedCommits > 0 ? 'warning' : undefined,
+      onClick: stats.unpushedCommits > 0 ? onFocusUnpushed : undefined,
+      active: unpushedActive,
     },
   ];
 

@@ -107,6 +107,8 @@ async def status_all() -> dict:
                 "current_branch": None,
                 "head_subject": None,
                 "head_date": None,
+                "has_remote": False,
+                "unpushed": 0,
             }
         else:
             git_data = await asyncio.to_thread(read_status, path)

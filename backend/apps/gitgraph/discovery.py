@@ -563,6 +563,34 @@ def read_graph(path: Path) -> Dict[str, Any]:
 
 
 @typechecked
+def _read_unpushed(
+    path: Path, branch: Optional[str], commit_count: int
+) -> Tuple[bool, int]:
+    """(has_remote, commits origin doesn't have yet) for the home grid.
+
+    Counted against the local remote-tracking ref without fetching, because
+    this runs for every app on every window focus and a network round trip
+    per app would stall the whole grid.
+
+    A branch with no `origin/<branch>` ref has never been pushed, so every
+    commit on it is outstanding; that reads as `commit_count` rather than a
+    misleading 0. Mirrors `github._unpushed_count`, which can't be imported
+    here since github.py already imports this module.
+    """
+    if _run_git(["remote", "get-url", "origin"], path) is None:
+        return False, 0
+    if not branch:
+        return True, commit_count
+    if _run_git(["rev-parse", "--verify", f"refs/remotes/origin/{branch}"], path) is None:
+        return True, commit_count
+    raw = _run_git(["rev-list", "--count", f"origin/{branch}..HEAD"], path)
+    try:
+        return True, int((raw or "0").strip())
+    except ValueError:
+        return True, 0
+
+
+@typechecked
 def read_status(path: Path) -> Dict[str, Any]:
     """Cheap per-app summary for the home grid.
 
@@ -579,6 +607,8 @@ def read_status(path: Path) -> Dict[str, Any]:
             "current_branch": None,
             "head_subject": None,
             "head_date": None,
+            "has_remote": False,
+            "unpushed": 0,
         }
 
     current = _run_git(["branch", "--show-current"], path)
@@ -591,6 +621,8 @@ def read_status(path: Path) -> Dict[str, Any]:
         commit_count = int((count_raw or "0").strip())
     except ValueError:
         commit_count = 0
+
+    has_remote, unpushed = _read_unpushed(path, current_branch, commit_count)
 
     head_raw = _run_git(
         ["log", "-1", f"--pretty=format:%s{_SEP}%aI", "HEAD"], path
@@ -611,6 +643,8 @@ def read_status(path: Path) -> Dict[str, Any]:
         "current_branch": current_branch,
         "head_subject": head_subject,
         "head_date": head_date,
+        "has_remote": has_remote,
+        "unpushed": unpushed,
     }
 
 

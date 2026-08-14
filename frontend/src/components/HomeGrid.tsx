@@ -5,6 +5,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
@@ -18,7 +19,7 @@ import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
 type SortKey = 'recent' | 'name' | 'status';
-type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty';
+type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty' | 'unpushed';
 
 interface Meta {
   is_repo: boolean;
@@ -27,6 +28,8 @@ interface Meta {
   current_branch: string | null;
   head_subject: string | null;
   head_date: string | null;
+  has_remote?: boolean;
+  unpushed?: number;
   runtime_running?: boolean;
   runtime_ready?: boolean;
 }
@@ -65,6 +68,7 @@ const HomeGrid: React.FC<Props> = ({
       if (filter === 'tracked' && !(a.has_git && a.workspace_exists)) return false;
       if (filter === 'untracked' && a.has_git) return false;
       if (filter === 'dirty' && !(meta[a.workspace_id]?.dirty_count)) return false;
+      if (filter === 'unpushed' && !(meta[a.workspace_id]?.unpushed)) return false;
       if (!q) return true;
       return (
         a.name.toLowerCase().includes(q) ||
@@ -165,6 +169,8 @@ const HomeGrid: React.FC<Props> = ({
           meta={meta}
           dirtyActive={filter === 'dirty'}
           onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
+          unpushedActive={filter === 'unpushed'}
+          onFocusUnpushed={() => setFilter(f => (f === 'unpushed' ? 'all' : 'unpushed'))}
         />
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -257,14 +263,18 @@ const HomeGrid: React.FC<Props> = ({
               ? 'No apps match that'
               : filter === 'dirty'
                 ? 'Everything is committed'
-                : 'No apps in this filter'
+                : filter === 'unpushed'
+                  ? 'Everything is pushed'
+                  : 'No apps in this filter'
           }
           hint={
             query
               ? 'Try a shorter term or clear the search.'
               : filter === 'dirty'
                 ? 'No workspace has uncommitted changes right now.'
-                : 'Switch filters to see the rest of your workspace.'
+                : filter === 'unpushed'
+                  ? 'Every tracked app is up to date with its remote.'
+                  : 'Switch filters to see the rest of your workspace.'
           }
         />
       ) : (
@@ -305,6 +315,7 @@ const AppCard: React.FC<{
   const tracked = app.has_git && !missing;
   const dirty = meta?.dirty_count ?? 0;
   const commits = meta?.commit_count ?? 0;
+  const unpushed = meta?.unpushed ?? 0;
 
   return (
     <Box
@@ -443,6 +454,12 @@ const AppCard: React.FC<{
               <Pill tone="warning">
                 <RadioButtonCheckedRoundedIcon />
                 {dirty} uncommitted
+              </Pill>
+            )}
+            {unpushed > 0 && (
+              <Pill tone="warning">
+                <CloudUploadRoundedIcon />
+                {unpushed} to push
               </Pill>
             )}
             {meta?.head_date && (
