@@ -123,6 +123,42 @@ async def status_all() -> dict:
     return {"status": {wid: data for wid, data in pairs}}
 
 
+@gitgraph.router.post("/sync-remotes")
+@typechecked
+async def sync_remotes() -> dict:
+    """Fetch every remote-backed app, then re-read status.
+
+    `/status` stays local-only and instant; this is the network half, run
+    in the background by the home grid so a slow or unreachable remote
+    delays only the freshness badge and never the grid itself. Each fetch
+    is capped and failures are per-app, so one dead remote can't sink the
+    sweep.
+    """
+    entries = list_apps()
+
+    async def sync(entry: Dict) -> tuple:
+        wid = entry["workspace_id"]
+        path = workspace_path(wid)
+        if path is None:
+            return wid, None, None
+        ok, detail = await asyncio.to_thread(github.fetch_remote, path)
+        # Re-read after the fetch so the caller gets the corrected count in
+        # the same round trip rather than racing a second /status call.
+        data = await asyncio.to_thread(read_status, path)
+        return wid, data, (None if ok else str(detail))
+
+    results = await asyncio.gather(*(sync(e) for e in entries))
+    status: Dict[str, Dict] = {}
+    errors: Dict[str, str] = {}
+    for wid, data, err in results:
+        if data is not None:
+            status[wid] = data
+        if err:
+            errors[wid] = err
+    debug(len(status), len(errors))
+    return {"status": status, "errors": errors}
+
+
 @gitgraph.router.get("/graph/{workspace_id}")
 @typechecked
 async def graph(workspace_id: str) -> dict:

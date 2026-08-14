@@ -14,6 +14,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { card, primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
+import type { BulkEntry } from '@/components/BulkActionBar';
 import StatRow from '@/components/StatRow';
 import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
@@ -41,6 +42,9 @@ interface Props {
   onOpen: (app: AppEntry) => void;
   onTrack: (app: AppEntry) => Promise<void> | void;
   trackingId: string | null;
+  syncing: boolean;
+  syncedAt: string | null;
+  onSyncRemotes: () => void;
   onBulkDone: (workspaceIds: string[]) => void;
 }
 
@@ -55,6 +59,9 @@ const HomeGrid: React.FC<Props> = ({
   onOpen,
   onTrack,
   trackingId,
+  syncing,
+  syncedAt,
+  onSyncRemotes,
   onBulkDone,
 }) => {
   const c = useClaudeTokens();
@@ -124,15 +131,27 @@ const HomeGrid: React.FC<Props> = ({
   }, [apps]);
 
   const dirtyApps = React.useMemo(() => {
-    const rows: { app: AppEntry; dirtyCount: number }[] = [];
+    const rows: BulkEntry[] = [];
     for (const a of apps) {
       const m = meta[a.workspace_id];
       if (a.has_git && a.workspace_exists && m?.dirty_count) {
-        rows.push({ app: a, dirtyCount: m.dirty_count });
+        rows.push({ app: a, count: m.dirty_count, hasRemote: Boolean(m.has_remote) });
       }
     }
     // Most changes first so the "who needs attention" order is obvious.
-    rows.sort((a, b) => b.dirtyCount - a.dirtyCount);
+    rows.sort((a, b) => b.count - a.count);
+    return rows;
+  }, [apps, meta]);
+
+  const unpushedApps = React.useMemo(() => {
+    const rows: BulkEntry[] = [];
+    for (const a of apps) {
+      const m = meta[a.workspace_id];
+      if (a.has_git && a.workspace_exists && m?.has_remote && m?.unpushed) {
+        rows.push({ app: a, count: m.unpushed, hasRemote: true });
+      }
+    }
+    rows.sort((a, b) => b.count - a.count);
     return rows;
   }, [apps, meta]);
 
@@ -171,6 +190,9 @@ const HomeGrid: React.FC<Props> = ({
           onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
           unpushedActive={filter === 'unpushed'}
           onFocusUnpushed={() => setFilter(f => (f === 'unpushed' ? 'all' : 'unpushed'))}
+          syncing={syncing}
+          syncedAt={syncedAt}
+          onSyncRemotes={onSyncRemotes}
         />
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -249,9 +271,13 @@ const HomeGrid: React.FC<Props> = ({
         </Box>
       </Box>
 
-      {dirtyApps.length > 0 && (
+      {(dirtyApps.length > 0 || unpushedApps.length > 0) && (
         <Box sx={{ mb: 2 }}>
-          <BulkActionBar dirtyApps={dirtyApps} onDone={onBulkDone} />
+          <BulkActionBar
+            dirtyApps={dirtyApps}
+            unpushedApps={unpushedApps}
+            onDone={onBulkDone}
+          />
         </Box>
       )}
 

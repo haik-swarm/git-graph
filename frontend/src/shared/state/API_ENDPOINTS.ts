@@ -6,6 +6,9 @@ export const HEALTH_CHECK_URL = API_URL + '/health/check';
 // GIT GRAPH - Endpoints
 export const GITGRAPH_APPS_URL = API_URL + '/gitgraph/apps';
 export const GITGRAPH_STATUS_URL = API_URL + '/gitgraph/status';
+// The network half of status: fetches every remote, then re-reads. Slow by
+// nature, so it runs in the background rather than blocking the grid.
+export const GITGRAPH_SYNC_REMOTES_URL = API_URL + '/gitgraph/sync-remotes';
 export const gitgraphGraphUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/graph/${encodeURIComponent(workspaceId)}`;
 export const gitgraphCommitUrl = (workspaceId: string, sha: string) =>

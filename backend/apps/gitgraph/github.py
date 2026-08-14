@@ -24,6 +24,10 @@ from backend.apps.gitgraph.discovery import (
 API_ROOT = "https://api.github.com"
 _HTTP_TIMEOUT = 20
 
+# A background sync touches every app at once, so one unreachable remote
+# must not hold the whole sweep open for the full network budget.
+_FETCH_TIMEOUT = 25
+
 # git asks the helper for credentials on stdin/stdout rather than reading a
 # file, so the token reaches git through the environment and never lands on
 # disk or in a command line that `ps` would show.
@@ -296,6 +300,37 @@ def push(path: Path) -> Tuple[bool, Any]:
         "branch": branch,
         "html_url": f"https://github.com/{parsed[0]}/{parsed[1]}" if parsed else url,
     }
+
+
+@typechecked
+def fetch_remote(path: Path) -> Tuple[bool, str]:
+    """Update origin's remote-tracking refs so `unpushed` reflects reality.
+
+    Every other read in this module counts against the local
+    `refs/remotes/origin/*`, which only moves when something fetches. Push
+    or pull from another machine (or the terminal) and the local ref stays
+    behind, so the grid reports commits as outstanding that GitHub already
+    has. This is the only call here that touches the network on a read
+    path, which is why it is deliberately NOT part of `status`.
+    """
+    if not (path / ".git").is_dir():
+        return False, "Not a git repository."
+    token = read_token()
+    if not token:
+        return False, "GitHub isn't connected."
+    if not remote_url(path):
+        return False, "This workspace has no GitHub repo yet."
+
+    ok, _, err = _run_git_result(
+        [*_credential_args(), "fetch", "--prune", "--quiet", "origin"],
+        path,
+        env={"GITGRAPH_GITHUB_TOKEN": token, "GIT_TERMINAL_PROMPT": "0"},
+        timeout=_FETCH_TIMEOUT,
+    )
+    if not ok:
+        lines = [ln for ln in err.strip().splitlines() if ln.strip()]
+        return False, lines[-1] if lines else "git fetch failed."
+    return True, "ok"
 
 
 @typechecked

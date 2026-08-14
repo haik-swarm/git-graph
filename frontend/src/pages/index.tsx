@@ -18,6 +18,7 @@ import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
   GITGRAPH_STATUS_URL,
+  GITGRAPH_SYNC_REMOTES_URL,
   gitgraphCommitUrl,
   gitgraphGraphUrl,
   gitgraphInitUrl,
@@ -88,6 +89,10 @@ const Home: React.FC = () => {
 
   const [homeMeta, setHomeMeta] = useState<Record<string, HomeMeta>>({});
   const [metaBusy, setMetaBusy] = useState(false);
+  // Remote-tracking refs only move when something fetches, so until the
+  // background sync lands, every unpushed count is a local-only guess.
+  const [syncing, setSyncing] = useState(false);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -186,11 +191,33 @@ const Home: React.FC = () => {
     }
   }, []);
 
+  // The network half. Fires after the local read has already painted, so a
+  // slow remote costs freshness rather than time-to-first-render. Merged
+  // per app instead of replacing wholesale: a fetch that failed for one app
+  // leaves that app's local numbers alone rather than blanking the grid.
+  const syncRemotes = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(GITGRAPH_SYNC_REMOTES_URL, { method: 'POST' });
+      if (!res.ok) throw new Error(`sync ${res.status}`);
+      const data = await res.json();
+      const fresh = (data?.status ?? {}) as Record<string, HomeMeta>;
+      setHomeMeta(prev => ({ ...prev, ...fresh }));
+      setSyncedAt(new Date().toISOString());
+    } catch {
+      /* Offline or no GitHub: the local counts stay, the badge stays "local". */
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   // Re-scan every time the user lands on Home so returning from an app
   // page (or from another window entirely) doesn't leave stale numbers.
   useEffect(() => {
     if (mode !== 'home') return;
-    void refreshHomeMeta();
+    // Local first so the grid paints immediately, then the network pass
+    // corrects the unpushed counts once it lands.
+    void refreshHomeMeta().then(() => syncRemotes());
     const onFocus = () => {
       if (document.visibilityState === 'visible') void refreshHomeMeta();
     };
@@ -200,7 +227,7 @@ const Home: React.FC = () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [mode, refreshHomeMeta, apps.length]);
+  }, [mode, refreshHomeMeta, syncRemotes, apps.length]);
 
   useEffect(() => {
     if (!selected || !selectedSha) return;
@@ -450,7 +477,12 @@ const Home: React.FC = () => {
               onOpen={openApp}
               onTrack={trackApp}
               trackingId={trackingId}
-              onBulkDone={() => void refreshHomeMeta()}
+              syncing={syncing}
+              syncedAt={syncedAt}
+              onSyncRemotes={() => void syncRemotes()}
+              onBulkDone={() =>
+                void refreshHomeMeta().then(() => syncRemotes())
+              }
             />
           )}
         </Scroller>

@@ -1,5 +1,7 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
+import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
@@ -7,6 +9,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { card } from '@/shared/styles/ui';
+import { relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
 interface Meta {
@@ -24,6 +27,10 @@ interface Props {
   dirtyActive: boolean;
   onFocusUnpushed: () => void;
   unpushedActive: boolean;
+  syncing: boolean;
+  /** ISO time of the last successful remote fetch; null means never. */
+  syncedAt: string | null;
+  onSyncRemotes: () => void;
 }
 
 /**
@@ -38,6 +45,9 @@ const StatRow: React.FC<Props> = ({
   dirtyActive,
   onFocusUnpushed,
   unpushedActive,
+  syncing,
+  syncedAt,
+  onSyncRemotes,
 }) => {
   const c = useClaudeTokens();
 
@@ -74,6 +84,11 @@ const StatRow: React.FC<Props> = ({
     };
   }, [apps, meta]);
 
+  // Until a fetch lands, `unpushed` is counted against a remote-tracking ref
+  // that nothing has moved, so the number is local-only and can be wrong in
+  // either direction. Saying so is better than quietly showing a stale 0.
+  const stale = !syncedAt;
+
   const cells: {
     key: string;
     icon: React.ReactNode;
@@ -82,6 +97,7 @@ const StatRow: React.FC<Props> = ({
     tone?: 'warning';
     onClick?: () => void;
     active?: boolean;
+    footnote?: React.ReactNode;
   }[] = [
     {
       key: 'apps',
@@ -124,6 +140,19 @@ const StatRow: React.FC<Props> = ({
       tone: stats.unpushedCommits > 0 ? 'warning' : undefined,
       onClick: stats.unpushedCommits > 0 ? onFocusUnpushed : undefined,
       active: unpushedActive,
+      footnote: syncing ? (
+        <SyncNote c={c} spinning>
+          syncing with remote…
+        </SyncNote>
+      ) : stale ? (
+        <SyncNote c={c} onClick={onSyncRemotes}>
+          local only · sync
+        </SyncNote>
+      ) : (
+        <SyncNote c={c} onClick={onSyncRemotes}>
+          synced {relativeTime(syncedAt)}
+        </SyncNote>
+      ),
     },
   ];
 
@@ -190,11 +219,60 @@ const StatRow: React.FC<Props> = ({
             >
               {cell.value}
             </Box>
+            {cell.footnote}
           </Box>
         );
       })}
     </Box>
   );
 };
+
+/**
+ * The provenance line under the unpushed count. Clickable so a user who
+ * doesn't trust the number can force the fetch instead of guessing when
+ * the next background pass runs.
+ */
+const SyncNote: React.FC<{
+  c: ReturnType<typeof useClaudeTokens>;
+  spinning?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}> = ({ c, spinning, onClick, children }) => (
+  <Box
+    component={onClick ? 'button' : 'div'}
+    onClick={
+      onClick
+        ? (e: React.MouseEvent) => {
+            // The parent cell is itself a filter button.
+            e.stopPropagation();
+            onClick();
+          }
+        : undefined
+    }
+    sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      mt: '2px',
+      p: 0,
+      border: 'none',
+      background: 'transparent',
+      textAlign: 'left',
+      cursor: onClick ? 'pointer' : 'default',
+      ...c.type.caption,
+      color: c.text.muted,
+      transition: c.transition,
+      ...(onClick && { '&:hover': { color: c.text.secondary } }),
+      '& svg': { fontSize: 11 },
+    }}
+  >
+    {spinning ? (
+      <CircularProgress size={9} sx={{ color: c.text.muted }} />
+    ) : (
+      <CloudSyncRoundedIcon />
+    )}
+    {children}
+  </Box>
+);
 
 export default StatRow;
