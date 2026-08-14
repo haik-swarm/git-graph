@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Tuple
 from typeguard import typechecked
 
 from backend.apps.gitgraph.discovery import (
+    _run_git_result,
     list_apps,
     openswarm_data_dir,
     workspace_path,
@@ -146,9 +147,75 @@ def _compose(existing: str, block_body: str) -> str:
     stripped = _strip_managed(existing)
     body = block_body.strip("\n")
     block = f"{_HEAD}\n{body}\n{_TAIL}\n"
-    if stripped.strip():
-        return f"{block}\n{stripped.lstrip()}"
-    return block
+    if not stripped.strip():
+        return block
+    # `_strip_managed` rebuilds the tail by joining lines, which loses the
+    # final newline. Reproduce whichever state the file was already in rather
+    # than imposing one: either choice is a byte of difference from what the
+    # user committed, so a sync would leave `.gitignore` modified forever.
+    tail = stripped.lstrip().rstrip()
+    ending = "\n" if existing.endswith("\n") else ""
+    return f"{block}\n{tail}{ending}"
+
+
+@typechecked
+def _commit_untracking(path: Path, freed: List[str]) -> bool:
+    """Commit the index as it stands, right after the entries were removed.
+
+    Porcelain `git commit --only <paths>` cannot express this: it rebuilds the
+    given paths from the working tree, which re-adds the very files we just
+    dropped. Plumbing writes a tree straight from the index instead, so the
+    deletions stick. Called immediately after `rm --cached`, so the only
+    difference from HEAD is those removals plus whatever the user had already
+    staged, which is committed here rather than silently discarded.
+    """
+    ok, tree, _ = _run_git_result(["write-tree"], path)
+    if not ok or not tree.strip():
+        return False
+    ok, head, _ = _run_git_result(["rev-parse", "HEAD"], path)
+    if not ok or not head.strip():
+        return False
+    listed = ", ".join(freed[:3]) + (f" (+{len(freed) - 3} more)" if len(freed) > 3 else "")
+    ok, commit, _ = _run_git_result(
+        [
+            "commit-tree",
+            tree.strip(),
+            "-p",
+            head.strip(),
+            "-m",
+            f"Stop tracking files covered by .gitignore: {listed}",
+        ],
+        path,
+    )
+    if not ok or not commit.strip():
+        return False
+    ok, _, _ = _run_git_result(
+        ["update-ref", "HEAD", commit.strip(), head.strip()], path
+    )
+    return ok
+
+
+@typechecked
+def _untrack_now_ignored(path: Path) -> List[str]:
+    """Drop files from the index that the ignore rules now cover.
+
+    A .gitignore only governs UNtracked files, so a file already in the index
+    when a rule arrives keeps showing up as an uncommitted change forever. Only
+    the index entry is removed (`--cached`); the file itself stays on disk.
+    """
+    ok, out, _ = _run_git_result(
+        ["ls-files", "-i", "-c", "--exclude-standard"], path
+    )
+    if not ok:
+        return []
+    stale = [line for line in out.splitlines() if line.strip()]
+    if not stale:
+        return []
+    ok, _, _ = _run_git_result(["rm", "--cached", "--quiet", "--", *stale], path)
+    if not ok:
+        return []
+    _commit_untracking(path, stale)
+    return stale
 
 
 @typechecked
@@ -169,13 +236,19 @@ def _write_ignore(workspace_id: str, want_block: bool) -> Tuple[bool, str]:
         if not new_content.endswith("\n") and new_content:
             new_content += "\n"
 
+    if new_content != existing:
+        try:
+            ignore.write_text(new_content, encoding="utf-8")
+        except OSError as exc:
+            return False, str(exc)
+
+    # Runs even when the text was already correct: the rules may have landed on
+    # an earlier sync while the offending files stayed in the index.
+    freed = _untrack_now_ignored(path) if (path / ".git").is_dir() else []
+
     if new_content == existing:
-        return True, "unchanged"
-    try:
-        ignore.write_text(new_content, encoding="utf-8")
-    except OSError as exc:
-        return False, str(exc)
-    return True, "written"
+        return True, f"untracked {len(freed)}" if freed else "unchanged"
+    return True, f"written, untracked {len(freed)}" if freed else "written"
 
 
 @typechecked
