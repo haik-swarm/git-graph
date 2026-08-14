@@ -278,15 +278,27 @@ def _host_create_output(
 
     Returns (ok, output_id, err). On success the host owns the registry
     JSON going forward.
+
+    Two host quirks are handled here, and getting either wrong produced a
+    duplicate app on every install:
+      - The id comes back nested under "output", not at the top level.
+        Reading it from the top level yielded None, the caller treated
+        that as a failed host call, and wrote a SECOND registry entry of
+        its own on the fallback path.
+      - POST /create accepts workspace_id in its body schema and then
+        drops it on the floor (it never reaches the Output constructor),
+        so the host's record points at no workspace. We PUT it back
+        immediately; the host's update path honours it.
     """
     token = host_token()
     if not token:
         return False, None, "no host token"
+    auth = {"Authorization": f"Bearer {token}"}
     try:
         with httpx.Client(timeout=15.0) as client:
             res = client.post(
                 f"{HOST}/api/outputs/create",
-                headers={"Authorization": f"Bearer {token}"},
+                headers=auth,
                 json={
                     "name": name,
                     "description": description,
@@ -296,18 +308,54 @@ def _host_create_output(
                     "workspace_id": workspace_id,
                 },
             )
+            if res.status_code >= 400:
+                return False, None, f"{res.status_code}: {res.text[:200]}"
+            try:
+                data = res.json()
+            except ValueError:
+                return False, None, "host returned non-JSON"
+
+            output_id = _output_id_from_create(data)
+            if not output_id:
+                # No id means we cannot repair or later delete this record,
+                # and falling through would duplicate it. Treat as failure.
+                return False, None, "host response carried no output id"
+
+            # Repair the dropped workspace_id. Without this the record is a
+            # husk: it shows on the dashboard, opens nothing, and is
+            # invisible to a delete that matches on workspace_id.
+            put = client.put(
+                f"{HOST}/api/outputs/{output_id}",
+                headers=auth,
+                json={"workspace_id": workspace_id, "icon": "cloud_download"},
+            )
+            if put.status_code >= 400:
+                return False, None, f"link workspace failed {put.status_code}: {put.text[:200]}"
     except (httpx.HTTPError, OSError) as exc:
         return False, None, str(exc)
-    if res.status_code >= 400:
-        return False, None, f"{res.status_code}: {res.text[:200]}"
-    try:
-        data = res.json()
-    except ValueError:
-        return False, None, "host returned non-JSON"
-    output_id = None
-    if isinstance(data, dict):
-        output_id = data.get("id") or data.get("output_id")
-    return True, (output_id if isinstance(output_id, str) else None), None
+    return True, output_id, None
+
+
+@typechecked
+def _output_id_from_create(data: Any) -> Optional[str]:
+    """Pull the new output id out of the host's create response.
+
+    Current shape is {"ok": true, "output": {"id": ...}}; the flat
+    variants are accepted so a host change doesn't silently resurrect the
+    duplicate-install bug.
+    """
+    if not isinstance(data, dict):
+        return None
+    nested = data.get("output")
+    if isinstance(nested, dict):
+        candidate = nested.get("id")
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    for key in ("id", "output_id"):
+        candidate = data.get(key)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
 
 
 @typechecked
@@ -321,23 +369,71 @@ def _self_workspace_id() -> Optional[str]:
 
 
 @typechecked
-def _entry_paths_for(workspace_id: str) -> List[Path]:
-    """Every registry file that points at `workspace_id`.
+def _workspace_identity(workspace_id: str) -> Tuple[Optional[str], Optional[str]]:
+    """(origin slug, app name) for a workspace, read off disk.
 
-    Almost always one, but we scan to be safe: a hand-edited outputs/
-    directory could technically have duplicates and we want to remove
-    every reference so the app doesn't reappear.
+    Used to recognise husk records that describe this same app but carry
+    no workspace_id to match on.
+    """
+    ws = openswarm_data_dir() / "outputs_workspace" / workspace_id
+    slug = None
+    ok, out, _ = _run_git_result(["remote", "get-url", "origin"], ws)
+    if ok:
+        slug = _slug_from_url(out.strip())
+    name = None
+    meta_path = ws / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if isinstance(meta, dict) and isinstance(meta.get("name"), str):
+            name = meta["name"].strip() or None
+    except (OSError, json.JSONDecodeError):
+        pass
+    return slug, name
+
+
+@typechecked
+def _entry_paths_for(workspace_id: str) -> List[Path]:
+    """Every registry file that refers to this app, husks included.
+
+    A record matches if it points at `workspace_id` directly, OR if it is
+    a husk: no usable workspace of its own, but the same origin slug or
+    the same name as this workspace. Husks are what a failed install
+    leaves behind (the host's POST /create drops workspace_id), and
+    matching only on workspace_id meant delete could never see them, so
+    one copy always survived and could not be removed from the UI at all.
+
+    The husk test deliberately requires a DEAD workspace pointer. A live
+    record belonging to a different app is never in scope, so this cannot
+    take an unrelated app down with it.
     """
     outputs = openswarm_data_dir() / "outputs"
     if not outputs.is_dir():
         return []
+
+    slug, name = _workspace_identity(workspace_id)
+    workspaces = openswarm_data_dir() / "outputs_workspace"
+
     matches: List[Path] = []
     for entry in outputs.glob("*.json"):
         try:
             meta = json.loads(entry.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(meta, dict) and meta.get("workspace_id") == workspace_id:
+        if not isinstance(meta, dict):
+            continue
+
+        if meta.get("workspace_id") == workspace_id:
+            matches.append(entry)
+            continue
+
+        other_wid = meta.get("workspace_id")
+        if isinstance(other_wid, str) and other_wid and (workspaces / other_wid).is_dir():
+            continue  # a healthy record for some other app
+
+        installed_from = meta.get("installed_from")
+        husk_slug = installed_from.get("slug") if isinstance(installed_from, dict) else None
+        husk_name = meta.get("name") if isinstance(meta.get("name"), str) else None
+        if (slug and husk_slug == slug) or (name and husk_name == name):
             matches.append(entry)
     return matches
 
@@ -387,6 +483,48 @@ def _host_delete_output(output_id: str) -> Tuple[bool, str]:
 
 
 @typechecked
+def delete_orphan_record(output_id: str) -> Tuple[bool, Dict[str, Any]]:
+    """Delete a registry record that has no workspace behind it.
+
+    `delete_local` keys everything on workspace_id, which is exactly what
+    a husk does not have, so these were unreachable: visible on the
+    dashboard, backed by nothing, and permanent. Here the output id is
+    the handle. Refuses anything that still owns a real workspace so this
+    can never be pointed at a healthy app.
+    """
+    outputs = openswarm_data_dir() / "outputs"
+    entry = outputs / f"{output_id}.json"
+    if not entry.is_file():
+        return False, {"detail": "No such app record."}
+
+    try:
+        meta = json.loads(entry.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, {"detail": f"Couldn't read that record: {exc}"}
+
+    wid = meta.get("workspace_id") if isinstance(meta, dict) else None
+    if isinstance(wid, str) and wid and workspace_path(wid) is not None:
+        return False, {"detail": "That app still has a workspace; delete it normally."}
+
+    ok_host, msg = _host_delete_output(output_id)
+    if ok_host and not entry.exists():
+        return True, {"output_id": output_id, "via_host": True}
+
+    try:
+        entry.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        return False, {"detail": f"Couldn't remove registry entry: {exc}"}
+
+    return True, {
+        "output_id": output_id,
+        "via_host": ok_host,
+        "host_error": None if ok_host else msg,
+    }
+
+
+@typechecked
 def delete_local(workspace_id: str) -> Tuple[bool, Dict[str, Any]]:
     """Remove an app end-to-end: dashboard entry, registry JSON, workspace.
 
@@ -413,8 +551,16 @@ def delete_local(workspace_id: str) -> Tuple[bool, Dict[str, Any]]:
             host_errors.append(f"{output_id}: {msg}")
 
     # If the host cleared everything, we're done — it already removed the
-    # workspace and the registry entry as part of that call.
-    if host_deleted and not host_errors and not workspace_path(workspace_id):
+    # workspace and the registry entry as part of that call. Re-scan the
+    # registry rather than trusting the delete count: a husk the host
+    # refused to drop must still fall to the filesystem pass below, or it
+    # comes back on the next dashboard load.
+    if (
+        host_deleted
+        and not host_errors
+        and not workspace_path(workspace_id)
+        and not _entry_paths_for(workspace_id)
+    ):
         return True, {
             "workspace_id": workspace_id,
             "via_host": True,

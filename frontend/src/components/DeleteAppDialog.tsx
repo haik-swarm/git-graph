@@ -9,7 +9,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { pushButton, sunkenField } from '@/shared/styles/ui';
-import { gitgraphLocalDeleteUrl } from '@/shared/state/API_ENDPOINTS';
+import { gitgraphLocalDeleteUrl, gitgraphOrphanDeleteUrl } from '@/shared/state/API_ENDPOINTS';
 
 interface Props {
   open: boolean;
@@ -18,6 +18,8 @@ interface Props {
   appName: string;
   hasRemote: boolean;
   remoteHtmlUrl: string | null;
+  /** Set when the record has no workspace at all; delete then goes by output id. */
+  orphanOutputId?: string | null;
   onDeleted: (workspaceId: string) => void;
 }
 
@@ -34,6 +36,7 @@ const DeleteAppDialog: React.FC<Props> = ({
   appName,
   hasRemote,
   remoteHtmlUrl,
+  orphanOutputId,
   onDeleted,
 }) => {
   const c = useClaudeTokens();
@@ -56,12 +59,13 @@ const DeleteAppDialog: React.FC<Props> = ({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(gitgraphLocalDeleteUrl(workspaceId), {
-        method: 'POST',
-      });
+      const url = orphanOutputId
+        ? gitgraphOrphanDeleteUrl(orphanOutputId)
+        : gitgraphLocalDeleteUrl(workspaceId);
+      const res = await fetch(url, { method: 'POST' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || `delete ${res.status}`);
-      onDeleted(workspaceId);
+      onDeleted(workspaceId || (orphanOutputId ?? ''));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't delete that.");

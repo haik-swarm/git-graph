@@ -14,9 +14,12 @@ export interface AppEntry {
   id: string;
   name: string;
   description: string;
+  /** Empty string when the record has no workspace behind it. */
   workspace_id: string;
   workspace_exists: boolean;
   has_git: boolean;
+  /** The dashboard record id: the only handle a workspace-less app has. */
+  output_id?: string | null;
   updated_at: string;
 }
 

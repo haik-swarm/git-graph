@@ -653,6 +653,7 @@ const Home: React.FC = () => {
           appName={selected.name}
           hasRemote={hasRemote}
           remoteHtmlUrl={remoteHtmlUrl}
+          orphanOutputId={selected.workspace_id ? null : selected.output_id ?? selected.id}
           onDeleted={handleDeleted}
         />
       )}

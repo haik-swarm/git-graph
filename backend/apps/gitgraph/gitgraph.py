@@ -301,3 +301,18 @@ async def local_delete(workspace_id: str) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
     return result
+
+
+@gitgraph.router.post("/orphan-delete/{output_id}")
+@typechecked
+async def orphan_delete(output_id: str) -> dict:
+    """Remove a dashboard record that has no workspace behind it.
+
+    Separate from local-delete because a husk has no workspace id to key
+    on; without this there is no way to get rid of one at all.
+    """
+    ok, result = cloud.delete_orphan_record(output_id)
+    debug(output_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
+    return result

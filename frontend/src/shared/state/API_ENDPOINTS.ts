@@ -41,3 +41,7 @@ export const GITGRAPH_CLOUD_REPOS_URL = API_URL + '/gitgraph/cloud/repos';
 export const GITGRAPH_CLOUD_INSTALL_URL = API_URL + '/gitgraph/cloud/install';
 export const gitgraphLocalDeleteUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/local-delete/${encodeURIComponent(workspaceId)}`;
+// Records with no workspace behind them (what a half-failed cloud install
+// leaves): no workspace id to key on, so these delete by output id.
+export const gitgraphOrphanDeleteUrl = (outputId: string) =>
+  `${API_URL}/gitgraph/orphan-delete/${encodeURIComponent(outputId)}`;

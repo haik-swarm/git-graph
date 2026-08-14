@@ -112,21 +112,32 @@ def list_apps() -> List[Dict[str, Any]]:
 
         workspace_id = meta.get("workspace_id")
         if not isinstance(workspace_id, str) or not workspace_id:
-            continue
+            # A record pointing at no workspace: the husk a half-failed
+            # cloud install leaves behind. Skipping it hid the one thing
+            # the user most needs to remove — it shows as a card on the
+            # OpenSwarm dashboard but was invisible here, so nothing in
+            # this app could ever delete it. List it as broken instead.
+            workspace_id = ""
+            exists = False
+            has_git = False
+        else:
+            ws_path = workspaces / workspace_id
+            exists = ws_path.is_dir()
+            has_git = exists and (ws_path / ".git").is_dir()
 
-        ws_path = workspaces / workspace_id
-        exists = ws_path.is_dir()
-        has_git = exists and (ws_path / ".git").is_dir()
-
+        output_id = meta.get("id")
         apps.append(
             {
-                "id": meta.get("id") or workspace_id,
+                "id": output_id or workspace_id,
                 "name": meta.get("name") or "Untitled app",
                 "description": meta.get("description") or "",
                 "icon": meta.get("icon") or "",
                 "workspace_id": workspace_id,
                 "workspace_exists": exists,
                 "has_git": has_git,
+                # Delete needs the output id when there is no workspace to
+                # key on; it is the only handle a husk still has.
+                "output_id": output_id if isinstance(output_id, str) else None,
                 "updated_at": meta.get("updated_at") or "",
             }
         )
