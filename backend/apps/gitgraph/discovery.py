@@ -28,6 +28,10 @@ MAX_COMMITS = 500
 
 _GIT_TIMEOUT = 15
 
+# The first `add -A` hashes every file in the workspace at once, which the
+# 15s budget cannot cover on a large app even after ignore rules apply.
+_GIT_FIRST_ADD_TIMEOUT = 120
+
 # Pushing waits on the network and on GitHub's side of the handshake, which
 # a local-only budget would cut off mid-transfer.
 _GIT_NETWORK_TIMEOUT = 120
@@ -46,8 +50,29 @@ def openswarm_data_dir() -> Path:
 
 
 @typechecked
+def _clear_own_index_lock(cwd: Path) -> bool:
+    """Remove an index.lock left by a git process we just timed out.
+
+    Only an EMPTY lock is removed. git creates the file and then streams the
+    new index into it, so zero bytes means it died before writing anything
+    and the lock protects nothing. A non-empty lock may hold a complete
+    index that another process is about to rename into place, and deleting
+    that would corrupt a write that is still perfectly healthy.
+    """
+    lock = cwd / ".git" / "index.lock"
+    try:
+        if lock.is_file() and lock.stat().st_size == 0:
+            lock.unlink()
+            return True
+    except OSError:
+        pass
+    return False
+
+
+@typechecked
 def _run_git_result(
-    args: List[str], cwd: Path, env: Optional[Dict[str, str]] = None
+    args: List[str], cwd: Path, env: Optional[Dict[str, str]] = None,
+    timeout: Optional[int] = None,
 ) -> Tuple[bool, str, str]:
     """Run git and return (succeeded, stdout, stderr).
 
@@ -56,14 +81,27 @@ def _run_git_result(
     `env` is merged over the inherited environment, which is how a token
     reaches a credential helper without appearing in the command line.
     """
+    if timeout is None:
+        timeout = _GIT_TIMEOUT if env is None else _GIT_NETWORK_TIMEOUT
     try:
         proc = subprocess.run(
             ["git", *args],
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=_GIT_TIMEOUT if env is None else _GIT_NETWORK_TIMEOUT,
+            timeout=timeout,
             env={**os.environ, **env} if env else None,
+        )
+    except subprocess.TimeoutExpired:
+        # We killed git mid-write, so the lock it left is ours to clean up.
+        # git creates index.lock, writes the new index into it, then renames
+        # it over index; killed before the rename, the lock survives and
+        # every later write fails with "Another git process seems to be
+        # running" until someone deletes it by hand.
+        _clear_own_index_lock(cwd)
+        return False, "", (
+            f"git {args[0]} timed out after {timeout}s "
+            "(the workspace may contain very large files)"
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, "", str(exc)
@@ -177,9 +215,24 @@ def init_repo(path: Path) -> Tuple[bool, Dict[str, Any]]:
     if not ok:
         return False, {"detail": (err.strip().splitlines() or ["git init failed."])[0]}
 
-    ok, _, err = _run_git_result(["add", "-A"], path)
+    # Seed the ignore rules BEFORE the first `add`, not after. Tracking used
+    # to write them once init succeeded, which left this very first `add -A`
+    # unprotected: it walked build output, virtualenvs and databases that
+    # every later commit would correctly skip. One workspace held a 3.2GB
+    # SQLite file and its WAL, and hashing those blew the timeout.
+    # Deferred import: global_ignore imports this module.
+    from backend.apps.gitgraph import global_ignore
+
+    global_ignore.ensure_synced_for_new_repo(path.name)
+
+    # A first `add -A` hashes the entire workspace, so it gets a longer
+    # budget than an incremental one. Still bounded: without a ceiling a
+    # pathological workspace would hang the request instead of failing with
+    # something the user can act on.
+    ok, _, err = _run_git_result(["add", "-A"], path, timeout=_GIT_FIRST_ADD_TIMEOUT)
     if not ok:
-        return False, {"detail": (err.strip().splitlines() or ["git add failed."])[0]}
+        detail = (err.strip().splitlines() or ["git add failed."])[0]
+        return False, {"detail": detail}
 
     # An empty repo (say, the workspace only contains .gitignored files) still
     # gets to the graph view; the empty-state banner just stays instead of

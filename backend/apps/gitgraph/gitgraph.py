@@ -171,9 +171,8 @@ async def init(workspace_id: str) -> dict:
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Init failed."))
-    # New repos inherit the global .gitignore block by default; user can
-    # opt this workspace out from the global sheet after the fact.
-    global_ignore.ensure_synced_for_new_repo(workspace_id)
+    # The global .gitignore block is applied inside init_repo, before its
+    # first `add`, so there is nothing left to sync here.
     return result
 
 

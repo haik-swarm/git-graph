@@ -57,6 +57,16 @@ def _default_content() -> str:
         "\n"
         ".env\n"
         ".env.local\n"
+        "\n"
+        # A live SQLite file and its WAL are not consistent on disk without a
+        # checkpoint, so a commit of the pair can capture a torn database.
+        # These also grow without bound: one app reached 3.2GB here, which
+        # timed out `git add` and left a stale index.lock behind.
+        "*.db\n"
+        "*.db-wal\n"
+        "*.db-shm\n"
+        "*.sqlite\n"
+        "*.sqlite3\n"
     )
 
 
