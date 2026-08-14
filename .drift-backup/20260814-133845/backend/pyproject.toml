@@ -7,7 +7,6 @@ dependencies = [
     "fastapi[standard]",
     "typeguard==4.4.2",
     "swarm-debug",
-    "httpx",
 ]
 
 [tool.setuptools]

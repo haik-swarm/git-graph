@@ -42,18 +42,8 @@ esac
 # Windows machine with no system Python still works). Fall back to PATH
 # probing for dev. `python` is first on Windows since python3.x aliases
 # usually don't exist there.
-# A candidate is only usable if it can actually BUILD a venv, which means importing ensurepip.
-# The bundled interpreter ships without ensurepip, so `python3 -m venv` leaves a hollow venv with
-# no pip and the install below dies on "No module named pip". Version-checking alone accepts it.
-py_usable() {
-    [[ -n "$1" ]] || return 1
-    "$1" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null || return 1
-    "$1" -c "import ensurepip" &>/dev/null || return 1
-    return 0
-}
-
 PYTHON=""
-if py_usable "${OPENSWARM_PYTHON:-}"; then
+if [[ -n "${OPENSWARM_PYTHON:-}" ]] && "${OPENSWARM_PYTHON}" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null; then
     PYTHON="${OPENSWARM_PYTHON}"
 else
     if [[ "$IS_WIN" == "1" ]]; then
@@ -62,15 +52,14 @@ else
         CANDIDATES="python3.13 python3.12 python3.11 python3.10 python3 python"
     fi
     for candidate in $CANDIDATES; do
-        if command -v "$candidate" &>/dev/null && py_usable "$candidate"; then
+        if command -v "$candidate" &>/dev/null && "$candidate" -c "import sys; sys.exit(0 if sys.version_info[0]==3 else 1)" &>/dev/null; then
             PYTHON="$candidate"
             break
         fi
     done
 fi
 if [[ -z "$PYTHON" ]]; then
-    echo "Error: No Python 3 capable of creating a virtual environment was found."
-    echo "       (candidates must provide 'ensurepip'; the bundled interpreter does not)"
+    echo "Error: No working Python 3 found."
     exit 1
 fi
 echo "Using Python: $PYTHON ($("$PYTHON" --version 2>&1))"
@@ -95,28 +84,9 @@ fi
 # sentinel gets touched at the end of the install block; if any step
 # failed we never wrote it, so the next run takes the slow path again
 # and retries.
-# OpenSwarm exports a PYTHONPATH pointing at the app bundle's own site-packages, which shadows
-# this venv, so pip "succeeds" while silently no-opping deps. Everything below runs clean.
-venv_py() { env -u PYTHONPATH "$VENV_PY" "$@"; }
-
-# A venv is only trustworthy if its interpreter exists AND has pip. A venv built by an
-# ensurepip-less interpreter satisfies `-d $VENV_DIR` but can never install anything.
-venv_healthy() {
-    [[ -x "$VENV_PY" ]] || return 1
-    venv_py -m pip --version &>/dev/null || return 1
-    return 0
-}
-
-if [[ -f "$SENTINEL" ]] && venv_healthy; then
+if [[ -d "$VENV_DIR" && -f "$SENTINEL" ]]; then
     echo "Dependencies already installed — skipping venv create + pip install."
 else
-    # Drop a venv that exists but is unusable (e.g. copied in from a warm cache built without
-    # pip); otherwise the install below fails on every boot with no way to self-heal.
-    if [[ -d "$VENV_DIR" ]] && ! venv_healthy; then
-        echo "Existing .venv has no usable pip — rebuilding it from scratch."
-        rm -rf "$VENV_DIR"
-    fi
-
     if [[ ! -d "$VENV_DIR" ]]; then
         echo "Creating virtual environment..."
         "$PYTHON" -m venv "$VENV_DIR"

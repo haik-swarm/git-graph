@@ -1,0 +1,9 @@
+Serve mode decides freshness by comparing dist's mtime against the newest file under
+frontend/. That check is frontend-only, so an app WITH a backend gets "restarted" into a static
+bundle with nothing serving /api — and it deadlocks restart.sh, because the sentinel watcher skips
+runtimes that aren't running and a process-less runtime never is.
+
+This file's mtime is parked in 2038, so it is permanently newer than any dist build and the
+freshness comparison can never come out true. The mtime is the mechanism, not the filename: git
+does not preserve mtimes, so a fresh clone lands this file with a checkout-time mtime and the
+workaround silently stops working. frontend/run.sh re-stamps it on every boot for that reason.

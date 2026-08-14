@@ -63,23 +63,8 @@ chmod +x ./backend/run.sh
 # is already satisfied. After we cp -aR the cache into the workspace,
 # the activate script's VIRTUAL_ENV path is rewritten so `source
 # .venv/bin/activate` resolves to the correct workspace path.
-# The cache builder writes a `.populated` sentinel next to .venv only after pip-install succeeds.
-# A crashed build still leaves the half-made .venv directory behind, so `-d` alone will happily
-# copy in a venv with no pip and no site-packages. Require the sentinel, and require a real pip.
-CACHE_ROOT="${OPENSWARM_BACKEND_VENV_CACHE:-}"
-CACHE_VENV="$CACHE_ROOT/.venv"
-cache_usable() {
-    [[ -n "$CACHE_ROOT" ]] || return 1
-    [[ -f "$CACHE_ROOT/.populated" ]] || return 1
-    [[ -x "$CACHE_VENV/bin/python" || -x "$CACHE_VENV/Scripts/python.exe" ]] || return 1
-    return 0
-}
-
-if [[ -d "$CACHE_VENV" ]] && ! cache_usable; then
-    echo "Warm venv cache at $CACHE_VENV is incomplete (no .populated sentinel);" >&2
-    echo "ignoring it. backend/run.sh will build the venv on first boot." >&2
-fi
-if cache_usable; then
+CACHE_VENV="${OPENSWARM_BACKEND_VENV_CACHE:-}/.venv"
+if [[ -d "$CACHE_VENV" ]]; then
     echo "Reusing warm backend venv from $CACHE_VENV..."
     cp -aR "$CACHE_VENV" ./backend/.venv
     NEW_VENV_ABS="$HERE/backend/.venv"
