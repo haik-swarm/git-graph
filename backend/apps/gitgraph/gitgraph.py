@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
 
-from backend.apps.gitgraph import cloud, github, global_ignore, magic, restart_notice
+from backend.apps.gitgraph import cloud, github, global_ignore, magic, restart_app, restart_notice
 from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
@@ -373,3 +373,19 @@ async def restart_notice_state() -> dict:
 @typechecked
 async def restart_notice_dismiss() -> dict:
     return await asyncio.to_thread(restart_notice.dismiss)
+
+
+@gitgraph.router.post("/restart-app")
+@typechecked
+async def reload_app_now() -> dict:
+    """Reload the OpenSwarm window so it re-reads the installed app list.
+
+    Clears the notice explicitly on success: a reload leaves the host process
+    up, so its boot time never changes and the self-clearing path would keep
+    the banner on screen forever.
+    """
+    result = await asyncio.to_thread(restart_app.reload_app)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("detail", "Reload failed."))
+    await asyncio.to_thread(restart_notice.dismiss)
+    return result

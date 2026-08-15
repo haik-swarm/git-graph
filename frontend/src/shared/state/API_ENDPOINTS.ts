@@ -54,3 +54,6 @@ export const gitgraphOrphanDeleteUrl = (outputId: string) =>
 export const GITGRAPH_RESTART_NOTICE_URL = API_URL + '/gitgraph/restart-notice';
 export const GITGRAPH_RESTART_NOTICE_DISMISS_URL =
   API_URL + '/gitgraph/restart-notice/dismiss';
+// Quits and relaunches OpenSwarm. The backend goes down with it, so this
+// request is expected to fail in transit on success.
+export const GITGRAPH_RESTART_APP_URL = API_URL + '/gitgraph/restart-app';

@@ -3,8 +3,11 @@ import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
+import CircularProgress from '@mui/material/CircularProgress';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { pushButton } from '@/shared/styles/ui';
 import {
+  GITGRAPH_RESTART_APP_URL,
   GITGRAPH_RESTART_NOTICE_DISMISS_URL,
   GITGRAPH_RESTART_NOTICE_URL,
 } from '@/shared/state/API_ENDPOINTS';
@@ -22,13 +25,19 @@ interface NoticeEvent {
  * true until the user acts on it, so it has to survive navigation and
  * reloads. It clears itself once OpenSwarm actually restarts (the backend
  * compares the host's boot time against the one recorded when the change
- * happened), which is why there's no restart button here — this app doesn't
- * touch the host, it only reports what's owed.
+ * happened).
+ *
+ * "Reload now" sends Cmd+R to the OpenSwarm window, which is enough because
+ * the host reads the app records off disk on every request and caches nothing;
+ * only the renderer holds the stale list. No confirmation step: a reload
+ * doesn't close anything or lose work.
  */
 export const RestartNotice: React.FC<{ refreshKey: number }> = ({ refreshKey }) => {
   const c = useClaudeTokens();
   const [pending, setPending] = useState(false);
   const [events, setEvents] = useState<NoticeEvent[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -53,6 +62,23 @@ export const RestartNotice: React.FC<{ refreshKey: number }> = ({ refreshKey }) 
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [load]);
+
+  const reload = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(GITGRAPH_RESTART_APP_URL, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.detail || 'Reload failed.');
+      } else {
+        setPending(false);
+      }
+    } catch {
+      setError('Could not reach the backend.');
+    }
+    setBusy(false);
+  }, []);
 
   const dismiss = useCallback(async () => {
     setPending(false);
@@ -87,37 +113,63 @@ export const RestartNotice: React.FC<{ refreshKey: number }> = ({ refreshKey }) 
       <RestartAltRoundedIcon sx={{ fontSize: 18, color: c.status.warning, flexShrink: 0 }} />
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Box sx={{ fontSize: 13, fontWeight: 600, color: c.text.primary }}>
-          Restart OpenSwarm for these changes to take effect
+          Reload OpenSwarm for these changes to take effect
         </Box>
-        {detail && (
+        {(error || detail) && (
           <Box
             sx={{
               fontSize: 12,
-              color: c.text.secondary,
+              color: error ? c.status.error : c.text.secondary,
               mt: 0.25,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
           >
-            {detail}
+            {error || detail}
           </Box>
         )}
       </Box>
-      <ButtonBase
-        onClick={() => void dismiss()}
-        aria-label="Dismiss restart notice"
-        sx={{
-          width: 28,
-          height: 28,
-          borderRadius: '8px',
-          flexShrink: 0,
-          color: c.text.tertiary,
-          '&:hover': { background: c.border.subtle, color: c.text.primary },
-        }}
-      >
-        <CloseRoundedIcon sx={{ fontSize: 16 }} />
-      </ButtonBase>
+
+      {busy ? (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flexShrink: 0,
+            fontSize: 12,
+            color: c.text.secondary,
+          }}
+        >
+          <CircularProgress size={13} sx={{ color: c.text.tertiary }} />
+          Reloading
+        </Box>
+      ) : (
+        <ButtonBase
+          onClick={() => void reload()}
+          sx={{ ...pushButton(c), flexShrink: 0, fontWeight: 600 }}
+        >
+          Reload now
+        </ButtonBase>
+      )}
+
+      {!busy && (
+        <ButtonBase
+          onClick={() => void dismiss()}
+          aria-label="Dismiss restart notice"
+          sx={{
+            width: 28,
+            height: 28,
+            borderRadius: '8px',
+            flexShrink: 0,
+            color: c.text.tertiary,
+            '&:hover': { background: c.border.subtle, color: c.text.primary },
+          }}
+        >
+          <CloseRoundedIcon sx={{ fontSize: 16 }} />
+        </ButtonBase>
+      )}
     </Box>
   );
 };
