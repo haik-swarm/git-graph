@@ -483,6 +483,18 @@ def _host_delete_output(output_id: str) -> Tuple[bool, str]:
 
 
 @typechecked
+def orphan_record_name(output_id: str) -> str:
+    """Display name on an app record, or a generic label if it can't be read."""
+    entry = openswarm_data_dir() / "outputs" / f"{output_id}.json"
+    try:
+        meta = json.loads(entry.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "An app"
+    name = meta.get("name") if isinstance(meta, dict) else None
+    return str(name) if name else "An app"
+
+
+@typechecked
 def delete_orphan_record(output_id: str) -> Tuple[bool, Dict[str, Any]]:
     """Delete a registry record that has no workspace behind it.
 

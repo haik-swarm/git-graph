@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
 
-from backend.apps.gitgraph import cloud, github, global_ignore, magic
+from backend.apps.gitgraph import cloud, github, global_ignore, magic, restart_notice
 from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
@@ -327,16 +327,20 @@ async def cloud_install(body: InstallRepoRequest) -> dict:
     debug(name, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result)
+    restart_notice.mark_pending("installed", name)
     return result
 
 
 @gitgraph.router.post("/local-delete/{workspace_id}")
 @typechecked
 async def local_delete(workspace_id: str) -> dict:
+    # Resolve the name before the delete; afterwards there's no record to read it from.
+    name = _app_name(workspace_id)
     ok, result = cloud.delete_local(workspace_id)
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
+    restart_notice.mark_pending("deleted", name)
     return result
 
 
@@ -348,8 +352,24 @@ async def orphan_delete(output_id: str) -> dict:
     Separate from local-delete because a husk has no workspace id to key
     on; without this there is no way to get rid of one at all.
     """
+    # Read the display name off the record first; the delete removes the only copy.
+    name = cloud.orphan_record_name(output_id)
     ok, result = cloud.delete_orphan_record(output_id)
     debug(output_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
+    restart_notice.mark_pending("deleted", name)
     return result
+
+
+@gitgraph.router.get("/restart-notice")
+@typechecked
+async def restart_notice_state() -> dict:
+    """Whether installs/deletes are waiting on an OpenSwarm restart."""
+    return await asyncio.to_thread(restart_notice.get_state)
+
+
+@gitgraph.router.post("/restart-notice/dismiss")
+@typechecked
+async def restart_notice_dismiss() -> dict:
+    return await asyncio.to_thread(restart_notice.dismiss)

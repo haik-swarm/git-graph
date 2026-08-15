@@ -48,3 +48,9 @@ export const gitgraphLocalDeleteUrl = (workspaceId: string) =>
 // leaves): no workspace id to key on, so these delete by output id.
 export const gitgraphOrphanDeleteUrl = (outputId: string) =>
   `${API_URL}/gitgraph/orphan-delete/${encodeURIComponent(outputId)}`;
+
+// Installs and deletes only reach the dashboard after OpenSwarm restarts, so
+// the app tracks that debt and reports whether one is still owed.
+export const GITGRAPH_RESTART_NOTICE_URL = API_URL + '/gitgraph/restart-notice';
+export const GITGRAPH_RESTART_NOTICE_DISMISS_URL =
+  API_URL + '/gitgraph/restart-notice/dismiss';

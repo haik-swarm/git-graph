@@ -34,6 +34,7 @@ import GitHubPanel from '@/components/GitHubPanel';
 import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
 import HomeGrid from '@/components/HomeGrid';
 import RepoHero from '@/components/RepoHero';
+import { RestartNotice } from '@/components/RestartNotice';
 import { Placeholder, Scroller, Shell, Toolbar } from '@/components/Chrome';
 import { githubStatusUrl } from '@/shared/state/API_ENDPOINTS';
 import type { DirtyFile } from '@/components/CommitPanel';
@@ -95,6 +96,8 @@ const Home: React.FC = () => {
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  // Bumped after an install/delete to re-poll the restart notice immediately.
+  const [noticeKey, setNoticeKey] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
@@ -346,6 +349,7 @@ const Home: React.FC = () => {
 
   const handleDeleted = useCallback(
     (deletedId: string) => {
+      setNoticeKey(k => k + 1);
       // Bounce back to home if the deleted app was the one being viewed;
       // otherwise the app-page effect would try to reload a graph that no
       // longer exists.
@@ -362,6 +366,7 @@ const Home: React.FC = () => {
 
   const handleInstalled = useCallback(
     async (workspaceId: string) => {
+      setNoticeKey(k => k + 1);
       const list = await refetchApps().catch(() => null);
       void refreshHomeMeta();
       const fresh = list?.find(a => a.workspace_id === workspaceId);
@@ -444,6 +449,7 @@ const Home: React.FC = () => {
           </Tooltip>
           {toolbarChrome}
         </Toolbar>
+        <RestartNotice refreshKey={noticeKey} />
         <Scroller>
           {loading && apps.length === 0 ? (
             <Box
@@ -546,6 +552,8 @@ const Home: React.FC = () => {
 
         {toolbarChrome}
       </Toolbar>
+
+      <RestartNotice refreshKey={noticeKey} />
 
       <Scroller>
         {loading ? (
