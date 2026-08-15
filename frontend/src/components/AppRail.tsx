@@ -8,6 +8,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
+import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, RailLabel } from '@/components/Chrome';
@@ -25,6 +26,14 @@ export interface Sharing {
   pending: number;
 }
 
+/** An app of the user's that's live in the marketplace org. */
+export interface Published {
+  name: string;
+  full_name: string;
+  html_url: string;
+  stars: number;
+}
+
 /** How much the rail is allowed to claim about who can see each app. */
 export type SharingPhase =
   /** Sweep still in flight: grouping is unknown, so it isn't drawn yet. */
@@ -38,12 +47,15 @@ interface Props {
   apps: AppEntry[];
   selected: AppEntry | null;
   homeActive: boolean;
+  marketplaceActive: boolean;
+  onMarketplace: () => void;
   onHome: () => void;
   onSelect: (app: AppEntry) => void;
   onTracked: (app: AppEntry) => void;
   runningIds?: Set<string>;
   sharing?: Record<string, Sharing>;
   sharingPhase?: SharingPhase;
+  published?: Record<string, Published>;
 }
 
 /**
@@ -63,31 +75,40 @@ const AppRail: React.FC<Props> = ({
   apps,
   selected,
   homeActive,
+  marketplaceActive,
+  onMarketplace,
   onHome,
   onSelect,
   onTracked,
   runningIds,
   sharing,
   sharingPhase = 'ready',
+  published,
 }) => {
   const c = useClaudeTokens();
   const [query, setQuery] = useState('');
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
 
-  const { tracked, privateApps, sharedApps, untracked } = useMemo(() => {
+  const { tracked, publishedApps, privateApps, sharedApps, untracked } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? apps.filter(a => a.name.toLowerCase().includes(q))
       : apps;
     const trackedApps = filtered.filter(a => a.has_git && a.workspace_exists);
+    // Published wins over the sharing split: an app in the marketplace is
+    // readable by everyone, so filing it under Private or Shared would be
+    // the misleading half of the truth.
+    const live = trackedApps.filter(a => published?.[a.workspace_id]);
+    const rest = trackedApps.filter(a => !published?.[a.workspace_id]);
     return {
       tracked: trackedApps,
-      privateApps: trackedApps.filter(a => !sharing?.[a.workspace_id]?.shared),
-      sharedApps: trackedApps.filter(a => sharing?.[a.workspace_id]?.shared),
+      publishedApps: live,
+      privateApps: rest.filter(a => !sharing?.[a.workspace_id]?.shared),
+      sharedApps: rest.filter(a => sharing?.[a.workspace_id]?.shared),
       untracked: filtered.filter(a => !a.has_git || !a.workspace_exists),
     };
-  }, [apps, query, sharing]);
+  }, [apps, query, sharing, published]);
 
   const track = async (app: AppEntry) => {
     setTrackingId(app.workspace_id);
@@ -248,6 +269,15 @@ const AppRail: React.FC<Props> = ({
           </Box>
         </Box>
 
+        <Box sx={{ px: '2px', mb: '4px' }}>
+          <NavRow
+            icon={<StorefrontRoundedIcon sx={{ fontSize: 15 }} />}
+            label="Marketplace"
+            active={marketplaceActive}
+            onClick={onMarketplace}
+          />
+        </Box>
+
         {/* Sharing unknown: show the apps, withhold the split. */}
         {sharingPhase === 'loading' && tracked.length > 0 && (
           <>
@@ -275,6 +305,23 @@ const AppRail: React.FC<Props> = ({
                 selected={selected?.workspace_id === app.workspace_id}
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
+              />
+            ))}
+          </>
+        )}
+
+        {sharingPhase === 'ready' && publishedApps.length > 0 && (
+          <>
+            <RailLabel>Published · {publishedApps.length}</RailLabel>
+            {publishedApps.map(app => (
+              <RailAppRow
+                key={app.workspace_id}
+                app={app}
+                selected={selected?.workspace_id === app.workspace_id}
+                onSelect={onSelect}
+                running={runningIds?.has(app.workspace_id) ?? false}
+                sharing={sharing?.[app.workspace_id]}
+                published={published?.[app.workspace_id]}
               />
             ))}
           </>
@@ -361,6 +408,44 @@ const AppRail: React.FC<Props> = ({
 };
 
 /**
+ * A destination in the rail that isn't one of the user's apps. Styled to
+ * match an app row so the rail reads as one list of places to go.
+ */
+const NavRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}> = ({ icon, label, active, onClick }) => {
+  const c = useClaudeTokens();
+  return (
+    <ButtonBase
+      onClick={onClick}
+      sx={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        gap: '8px',
+        height: 30,
+        px: '8px',
+        borderRadius: `${c.radius.sm}px`,
+        color: active ? c.accent.primary : c.text.secondary,
+        background: active ? `rgba(${c.accentRgb},0.10)` : 'transparent',
+        transition: c.transition,
+        '&:hover': {
+          background: active ? `rgba(${c.accentRgb},0.14)` : c.bg.secondary,
+          color: active ? c.accent.primary : c.text.primary,
+        },
+      }}
+    >
+      {icon}
+      <Box sx={{ ...c.type.callout, fontWeight: active ? 600 : 500 }}>{label}</Box>
+    </ButtonBase>
+  );
+};
+
+/**
  * Stands in for the "Shared · n" / "Private · n" heading while the sweep
  * runs. Same height as a real label so the list below it doesn't shift
  * down when the heading resolves.
@@ -388,7 +473,18 @@ const RailAppRow: React.FC<{
   sharing?: Sharing;
   /** Sweep still running: hold a placeholder where the count will go. */
   sharingPending?: boolean;
-}> = ({ app, selected, onSelect, tracking, onTrack, running, sharing, sharingPending }) => {
+  published?: Published;
+}> = ({
+  app,
+  selected,
+  onSelect,
+  tracking,
+  onTrack,
+  running,
+  sharing,
+  sharingPending,
+  published,
+}) => {
   const c = useClaudeTokens();
   const missing = !app.workspace_exists;
   const people = sharing?.people ?? [];
@@ -478,7 +574,24 @@ const RailAppRow: React.FC<{
         <Box sx={{ ...skeleton(c), width: 22, height: 8, flexShrink: 0 }} />
       )}
 
-      {sharing?.shared && !missing && (
+      {published && !missing && (
+        <Box
+          title={`Live in the marketplace as ${published.full_name}`}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            flexShrink: 0,
+            ...c.type.caption,
+            color: c.text.tertiary,
+          }}
+        >
+          <StorefrontRoundedIcon sx={{ fontSize: 12 }} />
+          {published.stars > 0 ? published.stars : ''}
+        </Box>
+      )}
+
+      {sharing?.shared && !missing && !published && (
         <Box
           title={shareTitle}
           sx={{

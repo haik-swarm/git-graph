@@ -18,13 +18,20 @@ import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
   GITGRAPH_COLLAB_SWEEP_URL,
+  GITGRAPH_MARKETPLACE_PUBLISHED_URL,
   GITGRAPH_STATUS_URL,
   GITGRAPH_SYNC_REMOTES_URL,
   gitgraphCommitUrl,
   gitgraphGraphUrl,
   gitgraphInitUrl,
 } from '@/shared/state/API_ENDPOINTS';
-import AppRail, { type Sharing, type SharingPhase } from '@/components/AppRail';
+import AppRail, {
+  type Published,
+  type Sharing,
+  type SharingPhase,
+} from '@/components/AppRail';
+import Marketplace from '@/components/Marketplace';
+import PublishPanel from '@/components/PublishPanel';
 import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
@@ -76,7 +83,7 @@ const Home: React.FC = () => {
 
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
-  const [mode, setMode] = useState<'home' | 'app'>('home');
+  const [mode, setMode] = useState<'home' | 'app' | 'marketplace'>('home');
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +103,9 @@ const Home: React.FC = () => {
   // Private/Shared split until this lands rather than guessing.
   const [sharing, setSharing] = useState<Record<string, Sharing>>({});
   const [sharingPhase, setSharingPhase] = useState<SharingPhase>('loading');
+  // Apps of the user's that are live in the marketplace org. Grouped apart
+  // from Private/Shared, since a published app is readable by everyone.
+  const [published, setPublished] = useState<Record<string, Published>>({});
   // Remote-tracking refs only move when something fetches, so until the
   // background sync lands, every unpushed count is a local-only guess.
   const [syncing, setSyncing] = useState(false);
@@ -205,9 +215,19 @@ const Home: React.FC = () => {
   // back to private and making the rail jump.
   const refreshSharing = useCallback(async () => {
     try {
-      const res = await fetch(GITGRAPH_COLLAB_SWEEP_URL);
-      if (!res.ok) throw new Error(`collab-sweep ${res.status}`);
-      const data = await res.json();
+      // Both sweeps feed the same grouping, so they resolve together: the
+      // rail would otherwise paint an app as Private and then move it to
+      // Published a moment later, which is the jump the phase gate exists
+      // to prevent. A failed published sweep is survivable, so it never
+      // fails the pair.
+      const [collabRes, publishedData] = await Promise.all([
+        fetch(GITGRAPH_COLLAB_SWEEP_URL),
+        fetch(GITGRAPH_MARKETPLACE_PUBLISHED_URL)
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      if (!collabRes.ok) throw new Error(`collab-sweep ${collabRes.status}`);
+      const data = await collabRes.json();
       const fresh = (data?.sharing ?? {}) as Record<string, Sharing>;
       setSharing(prev => {
         const next = { ...prev };
@@ -216,6 +236,7 @@ const Home: React.FC = () => {
         }
         return next;
       });
+      setPublished((publishedData?.published ?? {}) as Record<string, Published>);
       // No GitHub connected means sharing isn't just unread, it's
       // unknowable; the rail says so instead of spinning forever.
       setSharingPhase(data?.connected ? 'ready' : 'unavailable');
@@ -324,6 +345,11 @@ const Home: React.FC = () => {
     setSelectedSha(null);
   }, []);
 
+  const goMarketplace = useCallback(() => {
+    setMode('marketplace');
+    setSelectedSha(null);
+  }, []);
+
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
     [graph],
@@ -366,11 +392,14 @@ const Home: React.FC = () => {
       apps={apps}
       selected={mode === 'app' ? selected : null}
       homeActive={mode === 'home'}
+      marketplaceActive={mode === 'marketplace'}
+      onMarketplace={goMarketplace}
       onHome={goHome}
       onSelect={openApp}
       runningIds={runningIds}
       sharing={sharing}
       sharingPhase={sharingPhase}
+      published={published}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);
@@ -445,6 +474,19 @@ const Home: React.FC = () => {
       </Tooltip>
     </>
   );
+
+  if (mode === 'marketplace') {
+    return (
+      <Shell rail={rail}>
+        <Marketplace
+          onInstalled={() => {
+            void refetchApps();
+            setNoticeKey(k => k + 1);
+          }}
+        />
+      </Shell>
+    );
+  }
 
   if (mode === 'home') {
     return (
@@ -568,6 +610,14 @@ const Home: React.FC = () => {
             workspaceId={selected.workspace_id}
             refreshKey={gitHubKey}
             onRosterChanged={refreshSharing}
+          />
+        )}
+
+        {selected && graph?.is_repo && (
+          <PublishPanel
+            workspaceId={selected.workspace_id}
+            appName={selected.name}
+            refreshKey={gitHubKey}
           />
         )}
 

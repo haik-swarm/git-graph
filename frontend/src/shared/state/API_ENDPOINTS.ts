@@ -69,6 +69,22 @@ export const gitgraphLocalDeleteUrl = (workspaceId: string) =>
 export const gitgraphOrphanDeleteUrl = (outputId: string) =>
   `${API_URL}/gitgraph/orphan-delete/${encodeURIComponent(outputId)}`;
 
+// MARKETPLACE - Endpoints (a public GitHub org IS the marketplace)
+export const GITGRAPH_MARKETPLACE_LISTINGS_URL =
+  API_URL + '/gitgraph/marketplace/listings';
+// The reverse of `installed_workspace_id`: which of *my* apps are live in
+// the org, so the rail can group them apart from private and shared.
+export const GITGRAPH_MARKETPLACE_PUBLISHED_URL =
+  API_URL + '/gitgraph/marketplace/published';
+// GET asks whether this app may be submitted; POST files the request.
+// Approving happens in a different app holding a different credential.
+export const marketplacePublishUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/marketplace/publish/${encodeURIComponent(workspaceId)}`;
+// Taking an app down is also only a request: the listing is a fork the org
+// owns, so the author's token can read it and nothing else.
+export const marketplaceTakedownUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/marketplace/takedown/${encodeURIComponent(workspaceId)}`;
+
 // Installs and deletes only reach the dashboard after OpenSwarm restarts, so
 // the app tracks that debt and reports whether one is still owed.
 export const GITGRAPH_RESTART_NOTICE_URL = API_URL + '/gitgraph/restart-notice';

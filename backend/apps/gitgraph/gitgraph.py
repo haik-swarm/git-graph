@@ -14,6 +14,7 @@ from backend.apps.gitgraph import (
     github,
     global_ignore,
     magic,
+    marketplace,
     restart_app,
     restart_notice,
 )
@@ -62,6 +63,16 @@ class InstallRepoRequest(BaseModel):
 class InviteRequest(BaseModel):
     username: str
     permission: str = "push"
+
+
+class SubmitRequest(BaseModel):
+    app_name: str
+    pitch: str = ""
+
+
+class TakedownRequest(BaseModel):
+    app_name: str
+    reason: str = ""
 
 
 @typechecked
@@ -437,6 +448,68 @@ async def cloud_install(body: InstallRepoRequest) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     restart_notice.mark_pending("installed", name)
+    return result
+
+
+@gitgraph.router.get("/marketplace/listings")
+@typechecked
+async def marketplace_listings() -> dict:
+    """Every public app in the marketplace org."""
+    data = await marketplace.list_listings()
+    debug(len(data.get("listings", [])), data.get("ok"))
+    return data
+
+
+@gitgraph.router.get("/marketplace/published")
+@typechecked
+async def marketplace_published() -> dict:
+    """Which local apps are live in the marketplace, keyed by workspace."""
+    data = await marketplace.published_sweep()
+    debug(len(data.get("published", {})))
+    return data
+
+
+@gitgraph.router.get("/marketplace/publish/{workspace_id}")
+@typechecked
+async def marketplace_publish_status(workspace_id: str) -> dict:
+    """Whether this app can be submitted, and whether it already was."""
+    path = _resolve(workspace_id)
+    result = await marketplace.publish_status(path)
+    debug(workspace_id, result.get("eligible"), result.get("reason"))
+    return result
+
+
+@gitgraph.router.post("/marketplace/publish/{workspace_id}")
+@typechecked
+async def marketplace_publish(workspace_id: str, body: SubmitRequest) -> dict:
+    """Make the app's repo public and file a submission for review.
+
+    This can only ask. Approving lives in the management app, behind a
+    credential this one doesn't have.
+    """
+    path = _resolve(workspace_id)
+    name = body.app_name.strip() or _app_name(workspace_id)
+    ok, result = await marketplace.submit(path, name, body.pitch.strip())
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.post("/marketplace/takedown/{workspace_id}")
+@typechecked
+async def marketplace_takedown(workspace_id: str, body: TakedownRequest) -> dict:
+    """Ask for this app to be pulled from the marketplace.
+
+    Also only asks. The listing is a fork the org owns, so the author's
+    token can read it and nothing else; archiving it is the other app's job.
+    """
+    path = _resolve(workspace_id)
+    name = body.app_name.strip() or _app_name(workspace_id)
+    ok, result = await marketplace.request_takedown(path, name, body.reason.strip())
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
     return result
 
 
