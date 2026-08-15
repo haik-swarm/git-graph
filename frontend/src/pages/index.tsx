@@ -618,6 +618,9 @@ const Home: React.FC = () => {
             workspaceId={selected.workspace_id}
             appName={selected.name}
             refreshKey={gitHubKey}
+            // Auto-fixing leaves edits uncommitted, so the graph redraws
+            // to show the newly dirty files.
+            onFilesChanged={refresh}
           />
         )}
 

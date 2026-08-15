@@ -22,6 +22,7 @@ import {
   marketplacePublishUrl,
   marketplaceTakedownUrl,
 } from '@/shared/state/API_ENDPOINTS';
+import AuditSection, { AuditResult } from '@/components/AuditSection';
 
 interface IssueRef {
   number: number;
@@ -45,6 +46,8 @@ interface Props {
   appName: string;
   /** Bumped by the parent after a push, since eligibility depends on the remote. */
   refreshKey: number;
+  /** Auto-fixing rewrites files, so the graph behind this popover goes stale. */
+  onFilesChanged: () => void;
 }
 
 /**
@@ -55,7 +58,12 @@ interface Props {
  * app is in (listed, awaiting review, submittable, or ineligible) rather
  * than to promise the app will appear.
  */
-const PublishPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => {
+const PublishPanel: React.FC<Props> = ({
+  workspaceId,
+  appName,
+  refreshKey,
+  onFilesChanged,
+}) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [state, setState] = useState<PublishState | null>(null);
@@ -66,6 +74,13 @@ const PublishPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => 
   const [done, setDone] = useState<{ url: string } | null>(null);
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState('');
+  const [audit, setAudit] = useState<AuditResult | null>(null);
+  const [overridden, setOverridden] = useState(false);
+
+  // A high-severity finding is a credential that would be public the
+  // moment Submit flips the repo, so it holds the button until it's
+  // fixed or the user explicitly overrides. Medium and low only warn.
+  const blocked = Boolean(audit && audit.blocking > 0 && !overridden);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,6 +105,10 @@ const PublishPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => 
     setPitch('');
     setAsking(false);
     setReason('');
+    // A scan describes one app's files; carrying it to the next app would
+    // report the wrong findings, or clear a gate that was never checked.
+    setAudit(null);
+    setOverridden(false);
   }, [workspaceId]);
 
   const submit = async () => {
@@ -318,10 +337,27 @@ const PublishPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => 
               }}
             />
 
+            <AuditSection
+              workspaceId={workspaceId}
+              result={audit}
+              onResult={next => {
+                setAudit(next);
+                // A fresh scan re-arms the gate: an override was granted
+                // for findings that no longer describe the current files.
+                setOverridden(false);
+              }}
+              onFilesChanged={onFilesChanged}
+            />
+
             <ButtonBase
               onClick={() => void submit()}
-              disabled={busy}
-              sx={{ ...primaryButton(c), mt: 1.5, width: '100%' }}
+              disabled={busy || blocked}
+              sx={{
+                ...primaryButton(c),
+                mt: 1.5,
+                width: '100%',
+                '&.Mui-disabled': { opacity: 0.4 },
+              }}
             >
               {busy ? (
                 <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
@@ -330,6 +366,28 @@ const PublishPanel: React.FC<Props> = ({ workspaceId, appName, refreshKey }) => 
               )}
               {busy ? 'Submitting' : 'Submit for review'}
             </ButtonBase>
+
+            {blocked && (
+              <>
+                <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: 1 }}>
+                  {audit!.blocking === 1
+                    ? 'One finding would be public the moment this repo flips.'
+                    : `${audit!.blocking} findings would be public the moment this repo flips.`}
+                </Box>
+                <ButtonBase
+                  onClick={() => setOverridden(true)}
+                  sx={{ ...pushButton(c), mt: 1, width: '100%' }}
+                >
+                  Submit anyway
+                </ButtonBase>
+              </>
+            )}
+
+            {overridden && audit && audit.blocking > 0 && (
+              <Box sx={{ ...c.type.caption, color: c.status.warning, mt: 1 }}>
+                Gate overridden. Submitting publishes these as they are.
+              </Box>
+            )}
           </>
         )}
 

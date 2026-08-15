@@ -9,6 +9,7 @@ from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.gitgraph import (
+    audit,
     cloud,
     collab,
     github,
@@ -73,6 +74,10 @@ class SubmitRequest(BaseModel):
 class TakedownRequest(BaseModel):
     app_name: str
     reason: str = ""
+
+
+class AutofixRequest(BaseModel):
+    max_rounds: int = 3
 
 
 @typechecked
@@ -467,6 +472,37 @@ async def marketplace_published() -> dict:
     data = await marketplace.published_sweep()
     debug(len(data.get("published", {})))
     return data
+
+
+@gitgraph.router.post("/marketplace/audit/{workspace_id}")
+@typechecked
+async def marketplace_audit(workspace_id: str) -> dict:
+    """Scan what publishing would expose, before it's exposed."""
+    path = _resolve(workspace_id)
+    try:
+        result = await audit.scan(path)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    debug(workspace_id, result["counts"])
+    return result
+
+
+@gitgraph.router.post("/marketplace/audit/{workspace_id}/fix")
+@typechecked
+async def marketplace_audit_fix(workspace_id: str, body: AutofixRequest) -> dict:
+    """Let the model resolve the findings, rescanning after each round.
+
+    Edits land in the working tree uncommitted, so the diff shows up in
+    the graph the user already has open.
+    """
+    path = _resolve(workspace_id)
+    rounds = max(1, min(5, body.max_rounds))
+    try:
+        result = await audit.autofix(path, rounds)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    debug(workspace_id, len(result["rounds"]), result["scan"]["counts"])
+    return result
 
 
 @gitgraph.router.get("/marketplace/publish/{workspace_id}")

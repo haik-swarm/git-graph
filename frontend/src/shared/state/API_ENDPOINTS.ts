@@ -76,6 +76,13 @@ export const GITGRAPH_MARKETPLACE_LISTINGS_URL =
 // the org, so the rail can group them apart from private and shared.
 export const GITGRAPH_MARKETPLACE_PUBLISHED_URL =
   API_URL + '/gitgraph/marketplace/published';
+// Scans what publishing would expose. Tracked files only, since that is
+// exactly what turns public, and the LLM loop that fixes what it finds.
+// Fixes land uncommitted, so the diff shows up in the graph.
+export const marketplaceAuditUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/marketplace/audit/${encodeURIComponent(workspaceId)}`;
+export const marketplaceAuditFixUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/marketplace/audit/${encodeURIComponent(workspaceId)}/fix`;
 // GET asks whether this app may be submitted; POST files the request.
 // Approving happens in a different app holding a different credential.
 export const marketplacePublishUrl = (workspaceId: string) =>
