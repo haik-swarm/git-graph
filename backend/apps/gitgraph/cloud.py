@@ -113,6 +113,10 @@ async def list_openswarm_repos() -> Dict[str, Any]:
 
     repos: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        # Who we are, so a shared app can be labelled with whose it is.
+        me = await client.get(f"{API_ROOT}/user", headers=_headers(token))
+        viewer = me.json().get("login") if me.status_code == 200 else None
+
         page = 1
         # 500 repos worth of pages is a reasonable ceiling; anything more
         # and the picker becomes unusable anyway.
@@ -124,7 +128,10 @@ async def list_openswarm_repos() -> Dict[str, Any]:
                     "per_page": 100,
                     "page": page,
                     "sort": "updated",
-                    "affiliation": "owner",
+                    # Collaborator repos included deliberately: an app someone
+                    # shared with you is invisible under owner-only, so
+                    # accepting their invite appeared to do nothing at all.
+                    "affiliation": "owner,collaborator,organization_member",
                 },
             )
             if res.status_code != 200:
@@ -153,13 +160,17 @@ async def list_openswarm_repos() -> Dict[str, Any]:
                         "pushed_at": repo.get("pushed_at"),
                         "default_branch": repo.get("default_branch"),
                         "installed_workspace_id": installed.get(slug),
+                        "owner_avatar_url": (repo.get("owner") or {}).get("avatar_url"),
+                        "shared_with_me": bool(
+                            viewer and (repo.get("owner") or {}).get("login") != viewer
+                        ),
                     }
                 )
             if len(batch) < 100:
                 break
             page += 1
 
-    return {"connected": True, "repos": repos, "installed": installed}
+    return {"connected": True, "repos": repos, "installed": installed, "viewer": viewer}
 
 
 @typechecked

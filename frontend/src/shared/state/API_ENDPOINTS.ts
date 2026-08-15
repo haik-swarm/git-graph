@@ -38,6 +38,23 @@ export const githubPushUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/push`;
 export const githubDisconnectUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/disconnect`;
+// Rebases local commits onto whatever collaborators pushed. Answers 409
+// (not 400) when it stops on a conflict, so the UI can offer Abort.
+export const githubPullUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/pull`;
+export const githubAbortRebaseUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/abort-rebase`;
+
+// COLLABORATORS - Endpoints
+export const collabListUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/collab/${encodeURIComponent(workspaceId)}`;
+export const collabInviteUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/collab/${encodeURIComponent(workspaceId)}/invite`;
+export const collabRemoveUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/collab/${encodeURIComponent(workspaceId)}/remove`;
+// Pending invites aren't collaborators yet, so they're keyed by invite id.
+export const collabRevokeUrl = (workspaceId: string, invitationId: number) =>
+  `${API_URL}/gitgraph/collab/${encodeURIComponent(workspaceId)}/revoke/${invitationId}`;
 
 // CLOUD - Endpoints (treat GitHub as the user's OpenSwarm cloud)
 export const GITGRAPH_CLOUD_REPOS_URL = API_URL + '/gitgraph/cloud/repos';

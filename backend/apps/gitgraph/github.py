@@ -164,6 +164,45 @@ def _local_commit_count(path: Path) -> int:
 
 
 @typechecked
+def _behind_count(path: Path, branch: Optional[str]) -> Optional[int]:
+    """Commits origin has that we don't, counted without fetching.
+
+    Same no-network rule as `_unpushed_count`: this feeds a badge that
+    renders on every app switch. `fetch_remote` is what makes it current.
+    """
+    if not branch:
+        return None
+    if _run_git(["rev-parse", "--verify", f"refs/remotes/origin/{branch}"], path) is None:
+        return None
+    raw = _run_git(["rev-list", "--count", f"HEAD..origin/{branch}"], path)
+    if raw is None:
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+@typechecked
+def rebase_in_progress(path: Path) -> bool:
+    """Whether a rebase is stopped partway, waiting on the user.
+
+    git uses one of two state directories depending on which rebase
+    backend ran, and checking only one of them reports a repo mid-conflict
+    as clean, which would let the UI offer a pull that cannot start.
+    """
+    git_dir = path / ".git"
+    return (git_dir / "rebase-merge").is_dir() or (git_dir / "rebase-apply").is_dir()
+
+
+@typechecked
+def _conflicted_paths(path: Path) -> List[str]:
+    """Files with unresolved conflict markers, as git reports them."""
+    raw = _run_git(["diff", "--name-only", "--diff-filter=U"], path)
+    return [line for line in (raw or "").splitlines() if line.strip()]
+
+
+@typechecked
 def status(path: Path, app_name: str) -> Dict[str, Any]:
     """Everything the push UI needs for one workspace, in one call."""
     token = read_token()
@@ -173,6 +212,7 @@ def status(path: Path, app_name: str) -> Dict[str, Any]:
     parsed = parse_remote(url) if url else None
     commits = _local_commit_count(path) if is_repo else 0
     unpushed = _unpushed_count(path, branch) if url else None
+    behind = _behind_count(path, branch) if url else None
 
     return {
         "connected": bool(token),
@@ -187,7 +227,10 @@ def status(path: Path, app_name: str) -> Dict[str, Any]:
         # None means origin has never been seen locally, so every commit is
         # new to it; the UI says "push" rather than a misleading "0 to push".
         "unpushed": commits if url and unpushed is None else unpushed,
+        "behind": behind or 0,
         "has_remote": bool(url),
+        "rebase_in_progress": rebase_in_progress(path) if is_repo else False,
+        "conflicts": _conflicted_paths(path) if is_repo else [],
     }
 
 
@@ -300,6 +343,94 @@ def push(path: Path) -> Tuple[bool, Any]:
         "branch": branch,
         "html_url": f"https://github.com/{parsed[0]}/{parsed[1]}" if parsed else url,
     }
+
+
+@typechecked
+def pull(path: Path) -> Tuple[bool, Any]:
+    """Fetch origin and replay local commits on top of it.
+
+    Rebase rather than merge so a shared app's history stays a straight
+    line instead of accumulating a merge commit every time two people
+    touch it.
+
+    Refuses to start on a dirty worktree. Rebase aborts on unstaged
+    changes anyway, but its own error is opaque, and auto-stashing here
+    would silently move work the user never asked us to touch. The UI
+    turns this into "commit or discard first", which keeps the choice
+    theirs.
+
+    A conflict is NOT a failure: git stops with the rebase half-applied
+    and the conflicted files marked, which is a state the user can
+    legitimately finish by hand. That comes back as ok=False with
+    `conflicts` populated so the UI can offer Abort rather than pretending
+    the pull merely errored.
+    """
+    if not (path / ".git").is_dir():
+        return False, "Not a git repository."
+    token = read_token()
+    if not token:
+        return False, "Connect the GitHub integration in OpenSwarm settings first."
+    url = remote_url(path)
+    if not url:
+        return False, "This workspace has no GitHub repo yet."
+
+    if rebase_in_progress(path):
+        return False, {
+            "detail": "A rebase is already in progress here.",
+            "conflicts": _conflicted_paths(path),
+            "rebase_in_progress": True,
+        }
+
+    branch = (_run_git(["branch", "--show-current"], path) or "").strip()
+    if not branch:
+        return False, "No branch is checked out."
+
+    dirty = _run_git(["status", "--porcelain"], path)
+    if (dirty or "").strip():
+        return False, "You have uncommitted changes. Commit or discard them first."
+
+    ok, _, err = _run_git_result(
+        [*_credential_args(), "fetch", "--prune", "--quiet", "origin"],
+        path,
+        env={"GITGRAPH_GITHUB_TOKEN": token, "GIT_TERMINAL_PROMPT": "0"},
+        timeout=_FETCH_TIMEOUT,
+    )
+    if not ok:
+        lines = [ln for ln in err.strip().splitlines() if ln.strip()]
+        return False, lines[-1] if lines else "git fetch failed."
+
+    if _run_git(["rev-parse", "--verify", f"refs/remotes/origin/{branch}"], path) is None:
+        return False, f"origin has no branch called {branch} yet."
+
+    behind = _behind_count(path, branch) or 0
+    if behind == 0:
+        return True, {"branch": branch, "applied": 0, "already_current": True}
+
+    ok, _, err = _run_git_result(["rebase", f"origin/{branch}"], path)
+    if not ok:
+        conflicts = _conflicted_paths(path)
+        if conflicts or rebase_in_progress(path):
+            return False, {
+                "detail": "This app changed in the same places on both sides.",
+                "conflicts": conflicts,
+                "rebase_in_progress": True,
+            }
+        lines = [ln for ln in err.strip().splitlines() if ln.strip()]
+        return False, lines[-1] if lines else "git rebase failed."
+
+    return True, {"branch": branch, "applied": behind, "already_current": False}
+
+
+@typechecked
+def abort_rebase(path: Path) -> Tuple[bool, Any]:
+    """Unwind a conflicted rebase, putting the branch back where it was."""
+    if not rebase_in_progress(path):
+        return False, "No rebase is in progress."
+    ok, _, err = _run_git_result(["rebase", "--abort"], path)
+    if not ok:
+        lines = [ln for ln in err.strip().splitlines() if ln.strip()]
+        return False, lines[-1] if lines else "Couldn't abort the rebase."
+    return True, {"status": "aborted"}
 
 
 @typechecked

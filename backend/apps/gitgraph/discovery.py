@@ -565,8 +565,8 @@ def read_graph(path: Path) -> Dict[str, Any]:
 @typechecked
 def _read_unpushed(
     path: Path, branch: Optional[str], commit_count: int
-) -> Tuple[bool, int]:
-    """(has_remote, commits origin doesn't have yet) for the home grid.
+) -> Tuple[bool, int, int]:
+    """(has_remote, ours origin lacks, theirs we lack) for the home grid.
 
     Counted against the local remote-tracking ref without fetching, because
     this runs for every app on every window focus and a network round trip
@@ -576,18 +576,29 @@ def _read_unpushed(
     commit on it is outstanding; that reads as `commit_count` rather than a
     misleading 0. Mirrors `github._unpushed_count`, which can't be imported
     here since github.py already imports this module.
+
+    Both directions come from one `--left-right` walk rather than two
+    separate counts, so adding the collaborator-facing "behind" badge
+    didn't double the git invocations on a path that already runs once
+    per app per refresh.
     """
     if _run_git(["remote", "get-url", "origin"], path) is None:
-        return False, 0
+        return False, 0, 0
     if not branch:
-        return True, commit_count
+        return True, commit_count, 0
     if _run_git(["rev-parse", "--verify", f"refs/remotes/origin/{branch}"], path) is None:
-        return True, commit_count
-    raw = _run_git(["rev-list", "--count", f"origin/{branch}..HEAD"], path)
+        return True, commit_count, 0
+    raw = _run_git(
+        ["rev-list", "--left-right", "--count", f"origin/{branch}...HEAD"], path
+    )
+    # Output is "<behind>\t<ahead>": left side is origin-only, right is ours.
+    parts = (raw or "").split()
+    if len(parts) != 2:
+        return True, 0, 0
     try:
-        return True, int((raw or "0").strip())
+        return True, int(parts[1]), int(parts[0])
     except ValueError:
-        return True, 0
+        return True, 0, 0
 
 
 @typechecked
@@ -609,6 +620,7 @@ def read_status(path: Path) -> Dict[str, Any]:
             "head_date": None,
             "has_remote": False,
             "unpushed": 0,
+            "behind": 0,
         }
 
     current = _run_git(["branch", "--show-current"], path)
@@ -622,7 +634,7 @@ def read_status(path: Path) -> Dict[str, Any]:
     except ValueError:
         commit_count = 0
 
-    has_remote, unpushed = _read_unpushed(path, current_branch, commit_count)
+    has_remote, unpushed, behind = _read_unpushed(path, current_branch, commit_count)
 
     head_raw = _run_git(
         ["log", "-1", f"--pretty=format:%s{_SEP}%aI", "HEAD"], path
@@ -645,6 +657,7 @@ def read_status(path: Path) -> Dict[str, Any]:
         "head_date": head_date,
         "has_remote": has_remote,
         "unpushed": unpushed,
+        "behind": behind,
     }
 
 

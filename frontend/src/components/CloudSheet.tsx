@@ -12,7 +12,13 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
+import {
+  primaryButton,
+  pushButton,
+  slimScroll,
+  statusChip,
+  sunkenField,
+} from '@/shared/styles/ui';
 import { BrandGlyph, Placeholder } from '@/components/Chrome';
 import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import {
@@ -33,6 +39,8 @@ interface CloudRepo {
   pushed_at: string | null;
   default_branch: string | null;
   installed_workspace_id: string | null;
+  owner_avatar_url: string | null;
+  shared_with_me: boolean;
 }
 
 interface CloudState {
@@ -330,6 +338,19 @@ const RepoRow: React.FC<{
           </Box>
           {repo.private && (
             <LockRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary }} />
+          )}
+          {repo.shared_with_me && (
+            <Box sx={{ ...statusChip(c, 'accent') }}>
+              {repo.owner_avatar_url && (
+                <Box
+                  component="img"
+                  src={repo.owner_avatar_url}
+                  alt=""
+                  sx={{ width: 12, height: 12, borderRadius: '50%' }}
+                />
+              )}
+              {repo.owner}
+            </Box>
           )}
         </Box>
         <Box

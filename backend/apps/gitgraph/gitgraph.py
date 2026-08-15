@@ -8,7 +8,15 @@ from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
 
-from backend.apps.gitgraph import cloud, github, global_ignore, magic, restart_app, restart_notice
+from backend.apps.gitgraph import (
+    cloud,
+    collab,
+    github,
+    global_ignore,
+    magic,
+    restart_app,
+    restart_notice,
+)
 from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
@@ -49,6 +57,11 @@ class InstallRepoRequest(BaseModel):
     clone_url: str
     app_name: str
     description: Optional[str] = ""
+
+
+class InviteRequest(BaseModel):
+    username: str
+    permission: str = "push"
 
 
 @typechecked
@@ -109,6 +122,7 @@ async def status_all() -> dict:
                 "head_date": None,
                 "has_remote": False,
                 "unpushed": 0,
+                "behind": 0,
             }
         else:
             git_data = await asyncio.to_thread(read_status, path)
@@ -307,6 +321,80 @@ async def github_disconnect(workspace_id: str) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     return {"status": result}
+
+
+@gitgraph.router.post("/github/{workspace_id}/pull")
+@typechecked
+async def github_pull(workspace_id: str) -> dict:
+    """Rebase this app onto whatever collaborators have pushed.
+
+    A conflict comes back as 409 with the file list rather than 400: it
+    isn't a bad request, it's a state the user has to resolve, and the UI
+    keys its Abort affordance off that distinction.
+    """
+    path = _resolve(workspace_id)
+    ok, result = await asyncio.to_thread(github.pull, path)
+    debug(workspace_id, ok, result)
+    if not ok:
+        if isinstance(result, dict) and result.get("rebase_in_progress"):
+            raise HTTPException(status_code=409, detail=result)
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.post("/github/{workspace_id}/abort-rebase")
+@typechecked
+async def github_abort_rebase(workspace_id: str) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = await asyncio.to_thread(github.abort_rebase, path)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.get("/collab/{workspace_id}")
+@typechecked
+async def collab_list(workspace_id: str) -> dict:
+    """Everyone with access to this app, accepted invites and pending both."""
+    path = _resolve(workspace_id)
+    result = await collab.list_people(path)
+    debug(workspace_id, len(result.get("people", [])))
+    return result
+
+
+@gitgraph.router.post("/collab/{workspace_id}/invite")
+@typechecked
+async def collab_invite(workspace_id: str, body: InviteRequest) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = await collab.invite(path, body.username, body.permission)
+    debug(workspace_id, body.username, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.post("/collab/{workspace_id}/remove")
+@typechecked
+async def collab_remove(workspace_id: str, body: InviteRequest) -> dict:
+    path = _resolve(workspace_id)
+    ok, result = await collab.remove_person(path, body.username)
+    debug(workspace_id, body.username, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.post("/collab/{workspace_id}/revoke/{invitation_id}")
+@typechecked
+async def collab_revoke(workspace_id: str, invitation_id: int) -> dict:
+    """Cancel an invite nobody accepted; those aren't collaborators yet."""
+    path = _resolve(workspace_id)
+    ok, result = await collab.revoke_invitation(path, invitation_id)
+    debug(workspace_id, invitation_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
 
 @gitgraph.router.get("/cloud/repos")

@@ -31,6 +31,7 @@ import CommitSheet from '@/components/CommitSheet';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
+import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
 import HomeGrid from '@/components/HomeGrid';
 import RepoHero from '@/components/RepoHero';
@@ -524,10 +525,19 @@ const Home: React.FC = () => {
         <Box sx={{ flex: 1 }} />
 
         {selected && graph?.is_repo && (
+          <CollaboratorsPanel
+            workspaceId={selected.workspace_id}
+            refreshKey={gitHubKey}
+          />
+        )}
+
+        {selected && graph?.is_repo && (
           <GitHubPanel
             workspaceId={selected.workspace_id}
             appName={selected.name}
             refreshKey={gitHubKey}
+            // A pull rewrites local history, so the graph has to redraw.
+            onSynced={refresh}
           />
         )}
 
