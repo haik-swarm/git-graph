@@ -46,6 +46,9 @@ export const githubAbortRebaseUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/abort-rebase`;
 
 // COLLABORATORS - Endpoints
+// Batch sharing state for the rail's Private/Shared split. Network-bound,
+// so the rail paints ungrouped first and regroups once this lands.
+export const GITGRAPH_COLLAB_SWEEP_URL = API_URL + '/gitgraph/collab-sweep';
 export const collabListUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/collab/${encodeURIComponent(workspaceId)}`;
 export const collabInviteUrl = (workspaceId: string) =>

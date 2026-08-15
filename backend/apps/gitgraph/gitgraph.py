@@ -363,6 +363,27 @@ async def collab_list(workspace_id: str) -> dict:
     return result
 
 
+@gitgraph.router.get("/collab-sweep")
+@typechecked
+async def collab_sweep() -> dict:
+    """Sharing state for every tracked app, for the rail's Private/Shared split.
+
+    Separate from `/status` on purpose: that one stays local-only and
+    instant, this one is network-bound. The rail can't group its tracked
+    apps until this answers, so it holds placeholders until then rather
+    than guessing and reshuffling.
+    """
+    paths: Dict[str, Path] = {}
+    for entry in list_apps():
+        wid = entry["workspace_id"]
+        path = workspace_path(wid)
+        if path is not None and (path / ".git").is_dir():
+            paths[wid] = path
+    result = await collab.sharing_all(paths)
+    debug(len(paths), result.get("connected"))
+    return result
+
+
 @gitgraph.router.post("/collab/{workspace_id}/invite")
 @typechecked
 async def collab_invite(workspace_id: str, body: InviteRequest) -> dict:

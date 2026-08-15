@@ -17,13 +17,14 @@ import { iconButton, primaryButton, pushButton, slimScroll } from '@/shared/styl
 import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
+  GITGRAPH_COLLAB_SWEEP_URL,
   GITGRAPH_STATUS_URL,
   GITGRAPH_SYNC_REMOTES_URL,
   gitgraphCommitUrl,
   gitgraphGraphUrl,
   gitgraphInitUrl,
 } from '@/shared/state/API_ENDPOINTS';
-import AppRail from '@/components/AppRail';
+import AppRail, { type Sharing, type SharingPhase } from '@/components/AppRail';
 import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
@@ -91,6 +92,10 @@ const Home: React.FC = () => {
 
   const [homeMeta, setHomeMeta] = useState<Record<string, HomeMeta>>({});
   const [metaBusy, setMetaBusy] = useState(false);
+  // Who else is on each app. Only GitHub knows, so the rail withholds its
+  // Private/Shared split until this lands rather than guessing.
+  const [sharing, setSharing] = useState<Record<string, Sharing>>({});
+  const [sharingPhase, setSharingPhase] = useState<SharingPhase>('loading');
   // Remote-tracking refs only move when something fetches, so until the
   // background sync lands, every unpushed count is a local-only guess.
   const [syncing, setSyncing] = useState(false);
@@ -195,6 +200,31 @@ const Home: React.FC = () => {
     }
   }, []);
 
+  // Who each app is shared with. Merged rather than replaced so an app the
+  // sweep couldn't read keeps whatever it last knew instead of dropping
+  // back to private and making the rail jump.
+  const refreshSharing = useCallback(async () => {
+    try {
+      const res = await fetch(GITGRAPH_COLLAB_SWEEP_URL);
+      if (!res.ok) throw new Error(`collab-sweep ${res.status}`);
+      const data = await res.json();
+      const fresh = (data?.sharing ?? {}) as Record<string, Sharing>;
+      setSharing(prev => {
+        const next = { ...prev };
+        for (const [id, s] of Object.entries(fresh)) {
+          if (s?.known) next[id] = s;
+        }
+        return next;
+      });
+      // No GitHub connected means sharing isn't just unread, it's
+      // unknowable; the rail says so instead of spinning forever.
+      setSharingPhase(data?.connected ? 'ready' : 'unavailable');
+    } catch {
+      // Offline or the sweep failed: don't strand the rail in a skeleton.
+      setSharingPhase('unavailable');
+    }
+  }, []);
+
   // The network half. Fires after the local read has already painted, so a
   // slow remote costs freshness rather than time-to-first-render. Merged
   // per app instead of replacing wholesale: a fetch that failed for one app
@@ -214,6 +244,13 @@ const Home: React.FC = () => {
       setSyncing(false);
     }
   }, []);
+
+  // The rail is on screen in every mode, not just Home, so its grouping is
+  // swept once the app list is known rather than on Home entry.
+  useEffect(() => {
+    if (apps.length === 0) return;
+    void refreshSharing();
+  }, [apps.length, refreshSharing]);
 
   // Re-scan every time the user lands on Home so returning from an app
   // page (or from another window entirely) doesn't leave stale numbers.
@@ -332,6 +369,8 @@ const Home: React.FC = () => {
       onHome={goHome}
       onSelect={openApp}
       runningIds={runningIds}
+      sharing={sharing}
+      sharingPhase={sharingPhase}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);
@@ -528,6 +567,7 @@ const Home: React.FC = () => {
           <CollaboratorsPanel
             workspaceId={selected.workspace_id}
             refreshKey={gitHubKey}
+            onRosterChanged={refreshSharing}
           />
         )}
 

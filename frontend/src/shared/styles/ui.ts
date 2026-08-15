@@ -231,3 +231,27 @@ export function focusRing(c: SwarmTokens) {
     },
   } as const;
 }
+
+/**
+ * Placeholder block for content that can't be shown yet.
+ *
+ * Deliberately a sweep rather than a spinner: it occupies the shape the
+ * real row will take, so the panel doesn't resize when the data lands.
+ * Honours reduced-motion by holding still instead of animating.
+ */
+export function skeleton(c: SwarmTokens) {
+  return {
+    borderRadius: `${c.radius.sm}px`,
+    background: `linear-gradient(90deg, ${c.bg.secondary} 25%, ${c.border.subtle} 37%, ${c.bg.secondary} 63%)`,
+    backgroundSize: '400% 100%',
+    animation: 'swarm-skeleton 1.4s ease-in-out infinite',
+    '@keyframes swarm-skeleton': {
+      '0%': { backgroundPosition: '100% 50%' },
+      '100%': { backgroundPosition: '0% 50%' },
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      background: c.bg.secondary,
+    },
+  } as const;
+}

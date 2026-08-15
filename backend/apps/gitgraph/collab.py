@@ -16,6 +16,7 @@ everywhere else in this app; nothing is stored in the workspace.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -154,6 +155,123 @@ async def list_people(path: Path) -> Dict[str, Any]:
         "viewer": viewer,
         "can_manage": can_manage,
     }
+
+
+@typechecked
+async def _repo_sharing(
+    client: httpx.AsyncClient, token: str, viewer: Optional[str], owner: str, repo: str
+) -> Dict[str, Any]:
+    """Sharing summary for one repo: who else is on it, and whose it is.
+
+    Pending invites count as shared. Someone invited but not yet accepted
+    is intent to share, and hiding those would make an app flip groups
+    only once the other person got round to clicking accept.
+    """
+    others: List[str] = []
+    pending = 0
+
+    res = await client.get(
+        f"{API_ROOT}/repos/{owner}/{repo}/collaborators",
+        headers=_headers(token),
+        params={"per_page": 100},
+    )
+    if res.status_code != 200:
+        return {"known": False, "shared": False, "owner": owner, "theirs": False, "people": [], "pending": 0}
+
+    for user in res.json() if isinstance(res.json(), list) else []:
+        if not isinstance(user, dict):
+            continue
+        login = user.get("login")
+        if login and login != viewer:
+            others.append(login)
+
+    inv = await client.get(
+        f"{API_ROOT}/repos/{owner}/{repo}/invitations",
+        headers=_headers(token),
+        params={"per_page": 100},
+    )
+    if inv.status_code == 200 and isinstance(inv.json(), list):
+        for invite_row in inv.json():
+            if not isinstance(invite_row, dict):
+                continue
+            login = (invite_row.get("invitee") or {}).get("login")
+            if login and login != viewer:
+                others.append(login)
+                pending += 1
+
+    # Dedupe while keeping order: a person can appear as both a collaborator
+    # and a leftover invitation row.
+    seen: Dict[str, None] = {}
+    for login in others:
+        seen.setdefault(login, None)
+    people = list(seen)
+
+    return {
+        "known": True,
+        "shared": bool(people),
+        "owner": owner,
+        "theirs": bool(viewer and owner != viewer),
+        "people": people,
+        "pending": pending,
+    }
+
+
+@typechecked
+async def sharing_all(paths: Dict[str, Path]) -> Dict[str, Any]:
+    """Batch sharing state for every tracked app, keyed by workspace id.
+
+    The rail groups Private vs Shared, which is a property of the GitHub
+    repo rather than of the workspace, so it can only be read over the
+    network. One client and one viewer lookup are shared across all apps
+    and the per-repo reads run concurrently, since doing this serially for
+    N apps would take longer than the user is willing to watch the rail
+    sit ungrouped.
+
+    Apps with no remote are answered locally as private without spending a
+    request. Failures are per-app: an app whose read fails comes back
+    `known: false` and the rail leaves it where it was rather than
+    misfiling it as private.
+    """
+    token = read_token()
+    if not token:
+        return {"connected": False, "sharing": {}, "viewer": None}
+
+    slugs: Dict[str, Optional[Tuple[str, str]]] = {
+        wid: _repo_slug(path) for wid, path in paths.items()
+    }
+    # No remote means nobody else can be on it: private, no request needed.
+    result: Dict[str, Any] = {
+        wid: {"known": True, "shared": False, "owner": None, "theirs": False, "people": [], "pending": 0}
+        for wid, slug in slugs.items()
+        if slug is None
+    }
+    remote_apps = {wid: slug for wid, slug in slugs.items() if slug is not None}
+    if not remote_apps:
+        return {"connected": True, "sharing": result, "viewer": None}
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        viewer = await _viewer_login(client, token)
+
+        async def one(wid: str, slug: Tuple[str, str]) -> Tuple[str, Dict[str, Any]]:
+            owner, repo = slug
+            try:
+                return wid, await _repo_sharing(client, token, viewer, owner, repo)
+            except httpx.HTTPError:
+                # Unreachable or slow: unknown, not "private".
+                return wid, {
+                    "known": False,
+                    "shared": False,
+                    "owner": owner,
+                    "theirs": False,
+                    "people": [],
+                    "pending": 0,
+                }
+
+        pairs = await asyncio.gather(*(one(wid, slug) for wid, slug in remote_apps.items()))
+
+    for wid, data in pairs:
+        result[wid] = data
+    return {"connected": True, "sharing": result, "viewer": viewer}
 
 
 @typechecked

@@ -54,6 +54,8 @@ interface Props {
   workspaceId: string;
   /** Bumped by the parent after a push/pull, so the roster re-reads. */
   refreshKey: number;
+  /** Fired after an invite or removal, so the rail can regroup this app. */
+  onRosterChanged?: () => void;
 }
 
 const Avatar: React.FC<{ person: Person; size?: number }> = ({ person, size = 24 }) => {
@@ -98,7 +100,7 @@ const Avatar: React.FC<{ person: Person; size?: number }> = ({ person, size = 24
  * the person accepts on GitHub and the repo then appears in their own
  * Cloud sheet ready to install.
  */
-const CollaboratorsPanel: React.FC<Props> = ({ workspaceId, refreshKey }) => {
+const CollaboratorsPanel: React.FC<Props> = ({ workspaceId, refreshKey, onRosterChanged }) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [state, setState] = useState<CollabState | null>(null);
@@ -144,6 +146,7 @@ const CollaboratorsPanel: React.FC<Props> = ({ workspaceId, refreshKey }) => {
       );
       setHandle('');
       await load();
+      onRosterChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {
@@ -171,6 +174,7 @@ const CollaboratorsPanel: React.FC<Props> = ({ workspaceId, refreshKey }) => {
       if (!res.ok) throw new Error(data?.detail ?? `Failed (${res.status})`);
       setDone(person.pending ? 'Invite cancelled.' : `Removed ${person.login}.`);
       await load();
+      onRosterChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {
