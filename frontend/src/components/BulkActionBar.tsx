@@ -281,10 +281,10 @@ const BulkPicker: React.FC<PickerProps> = ({
   // Keyed by workspace id rather than held per row: the review step edits
   // these while the rows re-render underneath from fresh status.
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  // Landing a commit and publishing it are separate decisions: a message can
-  // be good enough to keep locally while the user isn't ready to push it.
-  // Only consulted in magic mode, where there's a review step to set it in.
-  const [pushChosen, setPushChosen] = useState<Set<string>>(new Set());
+  // Which reviewed apps are still in. Unticking one drops it entirely: no
+  // commit, no push, working tree untouched. Separate from `chosen` so backing
+  // out of review returns the original selection rather than the pruned one.
+  const [included, setIncluded] = useState<Set<string>>(new Set());
   // Set while drafting so Cancel can abort in-flight requests instead of
   // letting them land on a panel the user already backed out of.
   const abortRef = React.useRef<AbortController | null>(null);
@@ -305,7 +305,7 @@ const BulkPicker: React.FC<PickerProps> = ({
     // no longer matches what's on disk.
     abortRef.current?.abort();
     setDrafts({});
-    setPushChosen(new Set());
+    setIncluded(new Set());
     setPhase('select');
   }, [mode, entryKey]);
 
@@ -327,8 +327,8 @@ const BulkPicker: React.FC<PickerProps> = ({
     });
   };
 
-  const togglePush = (id: string) => {
-    setPushChosen(prev => {
+  const toggleInclude = (id: string) => {
+    setIncluded(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -360,11 +360,9 @@ const BulkPicker: React.FC<PickerProps> = ({
         targets.map(t => [t.app.workspace_id, { message: '', error: null, writing: true }]),
       ),
     );
-    // Push stays opt-out, the way it was when it was implicit. An app with no
-    // remote can't be in the set at all, so its toggle has nothing to say.
-    setPushChosen(
-      new Set(targets.filter(t => t.hasRemote).map(t => t.app.workspace_id)),
-    );
+    // Everything starts in, matching what selecting it in the previous step
+    // already asked for. The toggle narrows that set, it doesn't build it up.
+    setIncluded(new Set(targets.map(t => t.app.workspace_id)));
 
     for (let i = 0; i < targets.length; i++) {
       if (controller.signal.aborted) return;
@@ -413,7 +411,7 @@ const BulkPicker: React.FC<PickerProps> = ({
     abortRef.current?.abort();
     abortRef.current = null;
     setDrafts({});
-    setPushChosen(new Set());
+    setIncluded(new Set());
     setProgress(null);
     setBusy(false);
     setPhase('select');
@@ -450,7 +448,7 @@ const BulkPicker: React.FC<PickerProps> = ({
       return commitOne(
         entry,
         drafts[entry.app.workspace_id].message.trim(),
-        entry.hasRemote && pushChosen.has(entry.app.workspace_id),
+        entry.hasRemote,
       );
     }
     return commitOne(entry, message.trim(), entry.hasRemote);
@@ -500,19 +498,24 @@ const BulkPicker: React.FC<PickerProps> = ({
     onClose();
   };
 
-  // Apps whose drafted message is usable. A failed draft, or one the user
-  // cleared out, drops out of the confirm set rather than blocking it.
+  // Apps that will actually run: ticked, and holding a usable message. A
+  // failed draft or one the user cleared out drops itself, so either control
+  // can exclude an app and neither blocks the rest of the batch.
   const approved = React.useMemo(
-    () => targets.filter(t => (drafts[t.app.workspace_id]?.message ?? '').trim().length > 0),
-    [targets, drafts],
+    () =>
+      targets.filter(
+        t =>
+          included.has(t.app.workspace_id) &&
+          (drafts[t.app.workspace_id]?.message ?? '').trim().length > 0,
+      ),
+    [targets, drafts, included],
   );
   const drafting = mode === 'magic' && phase === 'review' && busy;
-  // Of the apps actually committing, how many also leave the machine. Counted
-  // off `approved` so an app excluded by an emptied message can't inflate it.
+  // How many of those reach GitHub. An app with no remote still commits, it
+  // just has nowhere to go afterwards.
   const pushCount = React.useMemo(
-    () =>
-      approved.filter(t => t.hasRemote && pushChosen.has(t.app.workspace_id)).length,
-    [approved, pushChosen],
+    () => approved.filter(t => t.hasRemote).length,
+    [approved],
   );
 
   const title =
@@ -526,7 +529,7 @@ const BulkPicker: React.FC<PickerProps> = ({
   const hint =
     mode === 'magic'
       ? phase === 'review'
-        ? 'One message per app, written from its diff. Edit any of them, clear one to leave that app out, or untick its push to commit it locally only.'
+        ? 'One message per app, written from its diff. Edit any of them, or untick an app to leave it out entirely.'
         : 'AI writes a commit message per app. You read them all before anything is committed.'
       : mode === 'commit'
         ? 'One message, one commit per app, every dirty file in each.'
@@ -745,20 +748,20 @@ const BulkPicker: React.FC<PickerProps> = ({
                       Empty — this app will be left alone.
                     </Box>
                   )}
-                  {/* Committing and publishing are asked separately: the
-                      message above decides whether the app commits at all,
-                      this decides whether that commit leaves the machine. */}
+                  {/* Whether this app is in the run at all. Unticked means
+                      nothing happens to it: no commit, no push, working tree
+                      left exactly as it is. */}
                   {!draft.writing && draft.message.trim() && (
                     <Box
                       component="button"
-                      onClick={() => !busy && togglePush(id)}
-                      disabled={busy || !hasRemote}
+                      onClick={() => !busy && toggleInclude(id)}
+                      disabled={busy}
                       title={
-                        !hasRemote
-                          ? 'No remote to push to'
-                          : pushChosen.has(id)
-                            ? 'Commit only, leave it local'
-                            : 'Push this commit after it lands'
+                        included.has(id)
+                          ? 'Leave this app out of the run'
+                          : hasRemote
+                            ? 'Commit and push this app'
+                            : 'Commit this app'
                       }
                       sx={{
                         display: 'inline-flex',
@@ -770,18 +773,12 @@ const BulkPicker: React.FC<PickerProps> = ({
                         border: 'none',
                         background: 'transparent',
                         borderRadius: `${c.radius.xs}px`,
-                        cursor: hasRemote && !busy ? 'pointer' : 'default',
+                        cursor: busy ? 'default' : 'pointer',
                         ...c.type.caption,
-                        color: !hasRemote
-                          ? c.text.muted
-                          : pushChosen.has(id)
-                            ? c.accent.primary
-                            : c.text.tertiary,
+                        color: included.has(id) ? c.accent.primary : c.text.tertiary,
                         transition: c.transition,
-                        '&:hover': {
-                          background: hasRemote && !busy ? c.bg.secondary : 'transparent',
-                        },
-                        '&:disabled': { opacity: hasRemote ? 0.65 : 1 },
+                        '&:hover': { background: busy ? 'transparent' : c.bg.secondary },
+                        '&:disabled': { opacity: 0.65 },
                       }}
                     >
                       <Box
@@ -794,21 +791,20 @@ const BulkPicker: React.FC<PickerProps> = ({
                           justifyContent: 'center',
                           borderRadius: `${c.radius.xs}px`,
                           border: `1px solid ${
-                            hasRemote && pushChosen.has(id) ? c.accent.primary : c.border.subtle
+                            included.has(id) ? c.accent.primary : c.border.subtle
                           }`,
-                          background:
-                            hasRemote && pushChosen.has(id) ? c.accent.primary : 'transparent',
+                          background: included.has(id) ? c.accent.primary : 'transparent',
                         }}
                       >
-                        {hasRemote && pushChosen.has(id) && (
+                        {included.has(id) && (
                           <CheckIcon sx={{ fontSize: 11, color: '#FFFFFF' }} />
                         )}
                       </Box>
-                      {!hasRemote
-                        ? 'Commit only · no remote'
-                        : pushChosen.has(id)
-                          ? 'Push after commit'
-                          : 'Commit only, stays local'}
+                      {included.has(id)
+                        ? hasRemote
+                          ? 'Commit and push'
+                          : 'Commit · no remote to push to'
+                        : 'Skip this app'}
                     </Box>
                   )}
                 </Box>
