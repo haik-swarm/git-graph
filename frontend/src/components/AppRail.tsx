@@ -688,7 +688,7 @@ const RailAppRow: React.FC<{
             gap: '3px',
             flexShrink: 0,
             ...c.type.caption,
-            color: sharing.pending ? c.status.warning : c.text.tertiary,
+            color: c.text.tertiary,
           }}
         >
           <GroupRoundedIcon sx={{ fontSize: 12 }} />
