@@ -662,6 +662,125 @@ def read_status(path: Path) -> Dict[str, Any]:
 
 
 @typechecked
+def _is_hex_sha(sha: str) -> bool:
+    return bool(sha) and len(sha) <= 40 and all(
+        ch in "0123456789abcdefABCDEF" for ch in sha
+    )
+
+
+# A diff is rendered in a browser, so a genuinely huge one costs more to paint
+# than it can ever be worth reading. Past this the response says so instead.
+_MAX_PATCH_BYTES = 400_000
+
+
+@typechecked
+def read_file_diff(
+    path: Path, file_path: str, sha: Optional[str] = None
+) -> Dict[str, Any]:
+    """A unified patch for ONE file, either uncommitted or inside a commit.
+
+    `sha=None` means the working-tree view: what changed against HEAD, staged
+    and unstaged together, which is the same thing the uncommitted list counts.
+    An untracked file has no blob on either side, so git emits nothing for it;
+    it's rendered as an all-additions patch built from the file itself.
+
+    `file_path` reaches a git pathspec, so it's passed after `--` and rejected
+    if it isn't a path git itself currently reports, which is what keeps a
+    crafted value from being read as a flag or escaping the workspace.
+    """
+    if not (path / ".git").is_dir():
+        return {"ok": False, "detail": "This workspace isn't a git repository."}
+    if not file_path or file_path.startswith("-"):
+        return {"ok": False, "detail": "Invalid file path."}
+
+    if sha is not None:
+        if not _is_hex_sha(sha):
+            return {"ok": False, "detail": "Invalid commit id."}
+        ok, out, err = _run_git_result(
+            ["show", "--format=", "--no-color", "--patch", sha, "--", file_path], path
+        )
+        if not ok:
+            return {"ok": False, "detail": err.strip() or "Couldn't read that diff."}
+        patch = out
+        binary = False
+    else:
+        entry = next(
+            (e for e in read_dirty(path) if e["path"] == file_path), None
+        )
+        if entry is None:
+            return {"ok": False, "detail": "That file has no pending changes."}
+
+        untracked = entry["code"] == "??"
+        if untracked:
+            patch, binary = _synth_untracked_patch(path, file_path)
+        else:
+            # HEAD (not the index) so staged and unstaged edits show as one
+            # patch: the list offers a single row per file, so splitting the
+            # diff in two would describe a distinction the UI never made.
+            ok, out, err = _run_git_result(
+                ["diff", "HEAD", "--no-color", "--", file_path], path
+            )
+            if not ok:
+                return {"ok": False, "detail": err.strip() or "Couldn't read that diff."}
+            patch = out
+            binary = "Binary files" in out
+
+    if len(patch.encode("utf-8", errors="replace")) > _MAX_PATCH_BYTES:
+        return {
+            "ok": True,
+            "path": file_path,
+            "patch": "",
+            "binary": False,
+            "too_large": True,
+        }
+
+    return {
+        "ok": True,
+        "path": file_path,
+        "patch": patch,
+        "binary": binary,
+        "too_large": False,
+    }
+
+
+@typechecked
+def _synth_untracked_patch(path: Path, file_path: str) -> Tuple[str, bool]:
+    """Build an all-additions patch for a file git has never seen.
+
+    `git diff` has nothing to compare an untracked file against and prints
+    nothing at all, which would render as an empty viewer on exactly the
+    files a new app has the most of.
+    """
+    target = (path / file_path).resolve()
+    try:
+        # The path came from git's own status output, but it is re-checked
+        # against the workspace root because it round-tripped through the
+        # client on the way here.
+        if target.parent != path.resolve() and path.resolve() not in target.parents:
+            return "", False
+        raw = target.read_bytes()
+    except (OSError, ValueError):
+        return "", False
+
+    if b"\0" in raw[:8000]:
+        return f"Binary file {file_path}\n", True
+
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    body = "".join(f"+{line}\n" for line in lines)
+    if text and not text.endswith("\n"):
+        body += "\\ No newline at end of file\n"
+    header = (
+        f"diff --git a/{file_path} b/{file_path}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{file_path}\n"
+        f"@@ -0,0 +1,{len(lines)} @@\n"
+    )
+    return header + body, False
+
+
+@typechecked
 def read_commit_detail(path: Path, sha: str) -> Optional[Dict[str, Any]]:
     """Per-file stats for one commit.
 

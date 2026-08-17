@@ -299,6 +299,84 @@ def save_global(content: str) -> List[Dict[str, Any]]:
 
 
 @typechecked
+def _append_local_rules(path: Path, rules: List[str]) -> List[str]:
+    """Add rules BELOW the managed block, where the user's own rules live.
+
+    Returns only the rules that weren't already there. Writing above the
+    closing marker would place them inside the managed region, which the
+    next global sync rewrites wholesale, silently dropping them.
+    """
+    ignore = path / ".gitignore"
+    try:
+        existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+    except OSError:
+        return []
+
+    present = {line.strip() for line in existing.splitlines()}
+    fresh = [r for r in rules if r not in present]
+    if not fresh:
+        return []
+
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    try:
+        ignore.write_text(existing + "\n".join(fresh) + "\n", encoding="utf-8")
+    except OSError:
+        return []
+    return fresh
+
+
+@typechecked
+def ignore_paths(
+    workspace_id: str, rules: List[str], globally: bool
+) -> Dict[str, Any]:
+    """Add ignore rules for one app, optionally to the shared global list.
+
+    Two steps: the rule text lands in the app's own `.gitignore` (or in the
+    global list, which mirrors into every opted-in app), then any file the
+    rule now covers is dropped from the index. That second step is what
+    actually makes the file leave the uncommitted list — a `.gitignore`
+    only governs files git isn't already tracking, so without it a rule on
+    a tracked file changes nothing the user can see.
+    """
+    path = workspace_path(workspace_id)
+    if path is None:
+        raise RuntimeError("Workspace not found")
+    if not (path / ".git").is_dir():
+        raise RuntimeError("This workspace isn't a git repository.")
+
+    cleaned = [r.strip() for r in rules if r and r.strip()]
+    if not cleaned:
+        raise RuntimeError("No rules given.")
+    # '!' re-includes rather than excludes, and a rule climbing out of the
+    # workspace is never something this button should write on the user's
+    # behalf. Both are legal in a hand-edited file; neither is one click.
+    for rule in cleaned:
+        if rule.startswith("!") or rule.startswith("../") or "/../" in rule:
+            raise RuntimeError(f"Refusing to write rule: {rule}")
+
+    if globally:
+        current = load_global()
+        present = {line.strip() for line in current.splitlines()}
+        fresh = [r for r in cleaned if r not in present]
+        if fresh:
+            base = current if (not current or current.endswith("\n")) else current + "\n"
+            save_global(base + "\n".join(fresh) + "\n")
+        added = fresh
+    else:
+        added = _append_local_rules(path, cleaned)
+
+    # Runs even when every rule was already present: a rule may have landed
+    # on an earlier click while the offending file stayed in the index.
+    freed = _untrack_now_ignored(path)
+    return {
+        "added": added,
+        "untracked": freed,
+        "scope": "global" if globally else "local",
+    }
+
+
+@typechecked
 def read_state() -> Dict[str, Any]:
     """Everything the UI needs to render the sheet in one round-trip."""
     opt_out = _load_opt_out()

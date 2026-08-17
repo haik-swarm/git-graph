@@ -26,6 +26,7 @@ from backend.apps.gitgraph.discovery import (
     init_repo,
     list_apps,
     read_commit_detail,
+    read_file_diff,
     read_graph,
     read_status,
     restore_to,
@@ -53,6 +54,13 @@ class GlobalIgnoreSaveRequest(BaseModel):
 
 class GlobalIgnoreIncludeRequest(BaseModel):
     included: bool
+
+
+class IgnorePathsRequest(BaseModel):
+    rules: List[str]
+    # False writes to this app's own .gitignore; True writes to the shared
+    # list, which then mirrors into every opted-in app.
+    globally: bool = False
 
 
 class InstallRepoRequest(BaseModel):
@@ -206,6 +214,38 @@ async def commit(workspace_id: str, sha: str) -> dict:
     if detail is None:
         raise HTTPException(status_code=404, detail="Commit not found")
     return detail
+
+
+@gitgraph.router.get("/diff/{workspace_id}")
+@typechecked
+async def file_diff(workspace_id: str, path: str, sha: Optional[str] = None) -> dict:
+    """A unified patch for one file, uncommitted or from a commit.
+
+    The file path arrives as a query parameter rather than in the URL path
+    because it contains slashes; encoding those into a path segment fights
+    both the router and every proxy in between.
+    """
+    ws = _resolve(workspace_id)
+    result = await asyncio.to_thread(read_file_diff, ws, path, sha)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("detail", "Diff failed."))
+    debug(workspace_id, path, len(result["patch"]))
+    return result
+
+
+@gitgraph.router.post("/ignore/{workspace_id}")
+@typechecked
+async def ignore_paths(workspace_id: str, body: IgnorePathsRequest) -> dict:
+    """Write ignore rules and stop tracking whatever they now cover."""
+    _resolve(workspace_id)
+    try:
+        result = await asyncio.to_thread(
+            global_ignore.ignore_paths, workspace_id, body.rules, body.globally
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    debug(workspace_id, result["added"], len(result["untracked"]))
+    return result
 
 
 @gitgraph.router.post("/commit/{workspace_id}")

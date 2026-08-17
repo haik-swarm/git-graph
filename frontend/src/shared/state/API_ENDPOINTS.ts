@@ -24,6 +24,25 @@ export const gitgraphDiscardUrl = (workspaceId: string) =>
 export const gitgraphInitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/init/${encodeURIComponent(workspaceId)}`;
 
+// One file's unified patch. The path travels in the query string, not the
+// URL path: it contains slashes, and encoding those into a path segment
+// fights the router and every proxy in between. Omit `sha` for the working
+// tree, pass one to read that file as it changed inside a commit.
+export const gitgraphDiffUrl = (
+  workspaceId: string,
+  filePath: string,
+  sha?: string,
+) => {
+  const query = new URLSearchParams({ path: filePath });
+  if (sha) query.set('sha', sha);
+  return `${API_URL}/gitgraph/diff/${encodeURIComponent(workspaceId)}?${query}`;
+};
+
+// Writes ignore rules, then drops whatever they now cover from the index.
+// The untrack half is the point: a rule alone never frees a tracked file.
+export const gitgraphIgnoreUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/ignore/${encodeURIComponent(workspaceId)}`;
+
 export const GITGRAPH_GLOBAL_IGNORE_URL = API_URL + '/gitgraph/global-ignore';
 export const GITGRAPH_GLOBAL_IGNORE_SYNC_URL = API_URL + '/gitgraph/global-ignore/sync';
 export const gitgraphGlobalIgnoreToggleUrl = (workspaceId: string) =>

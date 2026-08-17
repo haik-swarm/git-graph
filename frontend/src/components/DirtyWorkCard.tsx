@@ -18,6 +18,8 @@ interface Props {
   onCommitted: () => void;
   onDiscarded: () => void;
   onMagicDone: () => void;
+  onViewDiff: (path: string) => void;
+  onIgnored: () => void;
 }
 
 /**
@@ -35,6 +37,8 @@ const DirtyWorkCard: React.FC<Props> = ({
   onCommitted,
   onDiscarded,
   onMagicDone,
+  onViewDiff,
+  onIgnored,
 }) => {
   const c = useClaudeTokens();
 
@@ -135,6 +139,8 @@ const DirtyWorkCard: React.FC<Props> = ({
               workspaceId={workspaceId}
               dirty={dirty}
               onCommitted={onCommitted}
+              onViewDiff={onViewDiff}
+              onIgnored={onIgnored}
             />
             <DiscardButton
               workspaceId={workspaceId}

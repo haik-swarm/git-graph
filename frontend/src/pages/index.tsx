@@ -37,6 +37,7 @@ import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
 import CommitSheet from '@/components/CommitSheet';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
+import DiffViewer, { type DiffTarget } from '@/components/DiffViewer';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
@@ -111,6 +112,8 @@ const Home: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
+  // One file's patch, opened from either the uncommitted list or a commit.
+  const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   const [cloudOpen, setCloudOpen] = useState(false);
   // Bumped after an install/delete to re-poll the restart notice immediately.
   const [noticeKey, setNoticeKey] = useState(0);
@@ -733,6 +736,10 @@ const Home: React.FC = () => {
                 onCommitted={refresh}
                 onDiscarded={refresh}
                 onMagicDone={refresh}
+                onViewDiff={path =>
+                  setDiffTarget({ path, context: 'Uncommitted' })
+                }
+                onIgnored={refresh}
               />
             )}
 
@@ -788,7 +795,18 @@ const Home: React.FC = () => {
         branches={graph?.branches ?? []}
         onClose={() => setSelectedSha(null)}
         onRestored={refresh}
+        onViewDiff={(path, sha) =>
+          setDiffTarget({ path, sha, context: sha.slice(0, 7) })
+        }
       />
+
+      {selected && (
+        <DiffViewer
+          workspaceId={selected.workspace_id}
+          target={diffTarget}
+          onClose={() => setDiffTarget(null)}
+        />
+      )}
 
       {selected && (
         <DeleteAppDialog

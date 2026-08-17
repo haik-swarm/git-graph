@@ -9,6 +9,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { popover, primaryButton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { gitgraphCreateCommitUrl } from '@/shared/state/API_ENDPOINTS';
+import IgnoreMenu, { type IgnoreResult } from './IgnoreMenu';
 
 export interface DirtyFile {
   code: string;
@@ -21,6 +22,10 @@ interface Props {
   workspaceId: string;
   dirty: DirtyFile[];
   onCommitted: () => void;
+  /** Opens the per-file diff sheet. */
+  onViewDiff: (path: string) => void;
+  /** Ignoring rewrites the index, so the graph has to be re-read. */
+  onIgnored: () => void;
 }
 
 /** git's two-letter status codes, as the words a person would use. */
@@ -32,12 +37,19 @@ function describe(code: string): { label: string; tone: 'add' | 'edit' | 'remove
   return { label: 'modified', tone: 'edit' };
 }
 
-const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
+const CommitPanel: React.FC<Props> = ({
+  workspaceId,
+  dirty,
+  onCommitted,
+  onViewDiff,
+  onIgnored,
+}) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [message, setMessage] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Everything starts checked: committing all pending work is the common
@@ -45,6 +57,7 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
   useEffect(() => {
     setChosen(new Set(dirty.map(f => f.path)));
     setError(null);
+    setNotice(null);
   }, [dirty, workspaceId]);
 
   const allChosen = chosen.size === dirty.length && dirty.length > 0;
@@ -151,8 +164,6 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
             return (
               <Box
                 key={file.path}
-                component="button"
-                onClick={() => toggle(file.path)}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
@@ -160,15 +171,17 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
                   width: '100%',
                   px: '8px',
                   py: '5px',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  textAlign: 'left',
                   borderRadius: `${c.radius.sm}px`,
                   '&:hover': { background: c.bg.secondary },
+                  // The ignore button is an escape hatch, not a primary
+                  // action: showing it on every row at rest turns a list you
+                  // scan into a list you have to read.
+                  '&:hover .row-ignore': { opacity: 1 },
                 }}
               >
-                <Box
+                <ButtonBase
+                  onClick={() => toggle(file.path)}
+                  aria-label={isChosen ? `Deselect ${file.path}` : `Select ${file.path}`}
                   sx={{
                     width: 14,
                     height: 14,
@@ -176,32 +189,63 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
                     borderRadius: `${c.radius.xs}px`,
                     border: `1px solid ${isChosen ? c.accent.primary : c.border.subtle}`,
                     background: isChosen ? c.accent.primary : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                   }}
                 >
                   {isChosen && (
                     <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
                   )}
-                </Box>
+                </ButtonBase>
 
-                <Typography
+                <ButtonBase
+                  onClick={() => onViewDiff(file.path)}
+                  title={`View changes to ${file.path}`}
                   sx={{
-                    ...c.type.caption,
-                    fontFamily: c.font.mono,
-                    color: c.text.secondary,
                     flex: 1,
                     minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    direction: 'rtl',
-                    textAlignLast: 'left',
+                    justifyContent: 'flex-start',
+                    borderRadius: `${c.radius.xs}px`,
+                    '&:hover .row-path': { color: c.accent.primary },
                   }}
                 >
-                  {file.path}
-                </Typography>
+                  <Typography
+                    className="row-path"
+                    sx={{
+                      ...c.type.caption,
+                      fontFamily: c.font.mono,
+                      color: c.text.secondary,
+                      width: '100%',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      direction: 'rtl',
+                      textAlignLast: 'left',
+                      transition: c.transition,
+                    }}
+                  >
+                    {file.path}
+                  </Typography>
+                </ButtonBase>
+
+                <Box
+                  className="row-ignore"
+                  sx={{ opacity: 0, transition: c.transition, flexShrink: 0 }}
+                >
+                  <IgnoreMenu
+                    workspaceId={workspaceId}
+                    filePath={file.path}
+                    onIgnored={(result: IgnoreResult) => {
+                      const freed = result.untracked.length;
+                      setNotice(
+                        freed > 0
+                          ? `Ignored ${result.rule} — stopped tracking ${freed} file${freed === 1 ? '' : 's'}.`
+                          : `Ignored ${result.rule}.`,
+                      );
+                      onIgnored();
+                    }}
+                    onError={setError}
+                  />
+                </Box>
 
                 <Typography
                   sx={{ ...c.type.caption, color: toneColor[tone], flexShrink: 0 }}
@@ -244,11 +288,15 @@ const CommitPanel: React.FC<Props> = ({ workspaceId, dirty, onCommitted }) => {
             }}
           />
 
-          {error && (
+          {error ? (
             <Typography sx={{ ...c.type.caption, color: c.status.error }}>
               {error}
             </Typography>
-          )}
+          ) : notice ? (
+            <Typography sx={{ ...c.type.caption, color: c.status.success }}>
+              {notice}
+            </Typography>
+          ) : null}
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography sx={{ ...c.type.caption, color: c.text.tertiary, flex: 1 }}>

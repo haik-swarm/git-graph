@@ -27,6 +27,7 @@ interface Props {
   branches: string[];
   onClose: () => void;
   onRestored: () => void;
+  onViewDiff: (path: string, sha: string) => void;
 }
 
 /**
@@ -43,6 +44,7 @@ const CommitSheet: React.FC<Props> = ({
   branches,
   onClose,
   onRestored,
+  onViewDiff,
 }) => {
   const c = useClaudeTokens();
   const open = Boolean(commit);
@@ -274,7 +276,12 @@ const CommitSheet: React.FC<Props> = ({
                     </Box>
                   ) : (
                     files.map(f => (
-                      <FileRow key={f.path} file={f} busiest={totals?.busiest ?? 0} />
+                      <FileRow
+                        key={f.path}
+                        file={f}
+                        busiest={totals?.busiest ?? 0}
+                        onClick={() => onViewDiff(f.path, commit.sha)}
+                      />
                     ))
                   )}
                 </Box>
@@ -328,7 +335,11 @@ const CommitSheet: React.FC<Props> = ({
  * commit rather than an absolute line count, so a small commit still shows
  * contrast instead of a row of near-empty slivers.
  */
-const FileRow: React.FC<{ file: CommitFile; busiest: number }> = ({ file, busiest }) => {
+const FileRow: React.FC<{
+  file: CommitFile;
+  busiest: number;
+  onClick: () => void;
+}> = ({ file, busiest, onClick }) => {
   const c = useClaudeTokens();
   const added = file.added ?? 0;
   const removed = file.removed ?? 0;
@@ -342,14 +353,27 @@ const FileRow: React.FC<{ file: CommitFile; busiest: number }> = ({ file, busies
 
   return (
     <Box
-      title={file.path}
+      component="button"
+      onClick={onClick}
+      title={`View changes to ${file.path}`}
       sx={{
         display: 'flex',
         alignItems: 'center',
         gap: 1,
         py: '6px',
+        px: '4px',
+        mx: '-4px',
+        width: 'calc(100% + 8px)',
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer',
+        textAlign: 'left',
         borderTop: `1px solid ${c.border.subtle}`,
+        borderRadius: `${c.radius.xs}px`,
+        transition: c.transition,
         '&:first-of-type': { borderTop: 'none' },
+        '&:hover': { background: c.bg.secondary },
+        '&:hover .file-name': { color: c.accent.primary },
       }}
     >
       {/* The filename never truncates: it's the identifier you scan for.
@@ -383,6 +407,7 @@ const FileRow: React.FC<{ file: CommitFile; busiest: number }> = ({ file, busies
         )}
         <Box
           component="span"
+          className="file-name"
           sx={{
             color: c.text.primary,
             flexShrink: 0,
@@ -390,6 +415,7 @@ const FileRow: React.FC<{ file: CommitFile; busiest: number }> = ({ file, busies
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             maxWidth: '100%',
+            transition: c.transition,
           }}
         >
           {name}
