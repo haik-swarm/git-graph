@@ -281,6 +281,10 @@ const BulkPicker: React.FC<PickerProps> = ({
   // Keyed by workspace id rather than held per row: the review step edits
   // these while the rows re-render underneath from fresh status.
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // Landing a commit and publishing it are separate decisions: a message can
+  // be good enough to keep locally while the user isn't ready to push it.
+  // Only consulted in magic mode, where there's a review step to set it in.
+  const [pushChosen, setPushChosen] = useState<Set<string>>(new Set());
   // Set while drafting so Cancel can abort in-flight requests instead of
   // letting them land on a panel the user already backed out of.
   const abortRef = React.useRef<AbortController | null>(null);
@@ -301,6 +305,7 @@ const BulkPicker: React.FC<PickerProps> = ({
     // no longer matches what's on disk.
     abortRef.current?.abort();
     setDrafts({});
+    setPushChosen(new Set());
     setPhase('select');
   }, [mode, entryKey]);
 
@@ -315,6 +320,15 @@ const BulkPicker: React.FC<PickerProps> = ({
 
   const toggle = (id: string) => {
     setChosen(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePush = (id: string) => {
+    setPushChosen(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -345,6 +359,11 @@ const BulkPicker: React.FC<PickerProps> = ({
       Object.fromEntries(
         targets.map(t => [t.app.workspace_id, { message: '', error: null, writing: true }]),
       ),
+    );
+    // Push stays opt-out, the way it was when it was implicit. An app with no
+    // remote can't be in the set at all, so its toggle has nothing to say.
+    setPushChosen(
+      new Set(targets.filter(t => t.hasRemote).map(t => t.app.workspace_id)),
     );
 
     for (let i = 0; i < targets.length; i++) {
@@ -394,18 +413,19 @@ const BulkPicker: React.FC<PickerProps> = ({
     abortRef.current?.abort();
     abortRef.current = null;
     setDrafts({});
+    setPushChosen(new Set());
     setProgress(null);
     setBusy(false);
     setPhase('select');
   };
 
-  const commitOne = async (entry: BulkEntry, text: string) => {
+  const commitOne = async (entry: BulkEntry, text: string, push: boolean) => {
     const res = await fetch(gitgraphCreateCommitUrl(entry.app.workspace_id), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // Empty `paths` means every dirty file, which is what a bulk row
       // promises: the whole workspace, not a subset it never showed.
-      body: JSON.stringify({ message: text, paths: [], push: entry.hasRemote }),
+      body: JSON.stringify({ message: text, paths: [], push }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
@@ -427,9 +447,13 @@ const BulkPicker: React.FC<PickerProps> = ({
       return null;
     }
     if (mode === 'magic') {
-      return commitOne(entry, drafts[entry.app.workspace_id].message.trim());
+      return commitOne(
+        entry,
+        drafts[entry.app.workspace_id].message.trim(),
+        entry.hasRemote && pushChosen.has(entry.app.workspace_id),
+      );
     }
-    return commitOne(entry, message.trim());
+    return commitOne(entry, message.trim(), entry.hasRemote);
   };
 
   /**
@@ -483,6 +507,13 @@ const BulkPicker: React.FC<PickerProps> = ({
     [targets, drafts],
   );
   const drafting = mode === 'magic' && phase === 'review' && busy;
+  // Of the apps actually committing, how many also leave the machine. Counted
+  // off `approved` so an app excluded by an emptied message can't inflate it.
+  const pushCount = React.useMemo(
+    () =>
+      approved.filter(t => t.hasRemote && pushChosen.has(t.app.workspace_id)).length,
+    [approved, pushChosen],
+  );
 
   const title =
     mode === 'magic'
@@ -495,7 +526,7 @@ const BulkPicker: React.FC<PickerProps> = ({
   const hint =
     mode === 'magic'
       ? phase === 'review'
-        ? 'One message per app, written from its diff. Edit any of them, or clear one to leave that app out.'
+        ? 'One message per app, written from its diff. Edit any of them, clear one to leave that app out, or untick its push to commit it locally only.'
         : 'AI writes a commit message per app. You read them all before anything is committed.'
       : mode === 'commit'
         ? 'One message, one commit per app, every dirty file in each.'
@@ -714,6 +745,72 @@ const BulkPicker: React.FC<PickerProps> = ({
                       Empty — this app will be left alone.
                     </Box>
                   )}
+                  {/* Committing and publishing are asked separately: the
+                      message above decides whether the app commits at all,
+                      this decides whether that commit leaves the machine. */}
+                  {!draft.writing && draft.message.trim() && (
+                    <Box
+                      component="button"
+                      onClick={() => !busy && togglePush(id)}
+                      disabled={busy || !hasRemote}
+                      title={
+                        !hasRemote
+                          ? 'No remote to push to'
+                          : pushChosen.has(id)
+                            ? 'Commit only, leave it local'
+                            : 'Push this commit after it lands'
+                      }
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        mt: '6px',
+                        px: '6px',
+                        py: '2px',
+                        border: 'none',
+                        background: 'transparent',
+                        borderRadius: `${c.radius.xs}px`,
+                        cursor: hasRemote && !busy ? 'pointer' : 'default',
+                        ...c.type.caption,
+                        color: !hasRemote
+                          ? c.text.muted
+                          : pushChosen.has(id)
+                            ? c.accent.primary
+                            : c.text.tertiary,
+                        transition: c.transition,
+                        '&:hover': {
+                          background: hasRemote && !busy ? c.bg.secondary : 'transparent',
+                        },
+                        '&:disabled': { opacity: hasRemote ? 0.65 : 1 },
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: `${c.radius.xs}px`,
+                          border: `1px solid ${
+                            hasRemote && pushChosen.has(id) ? c.accent.primary : c.border.subtle
+                          }`,
+                          background:
+                            hasRemote && pushChosen.has(id) ? c.accent.primary : 'transparent',
+                        }}
+                      >
+                        {hasRemote && pushChosen.has(id) && (
+                          <CheckIcon sx={{ fontSize: 11, color: '#FFFFFF' }} />
+                        )}
+                      </Box>
+                      {!hasRemote
+                        ? 'Commit only · no remote'
+                        : pushChosen.has(id)
+                          ? 'Push after commit'
+                          : 'Commit only, stays local'}
+                    </Box>
+                  )}
                 </Box>
               )}
 
@@ -791,7 +888,7 @@ const BulkPicker: React.FC<PickerProps> = ({
               drafting ? (
                 'Writing messages…'
               ) : (
-                `${approved.length} of ${targets.length} ready to commit`
+                `${approved.length} of ${targets.length} ready to commit · ${pushCount} will push`
               )
             ) : (
               <>
@@ -866,7 +963,9 @@ const BulkPicker: React.FC<PickerProps> = ({
             ) : result ? (
               'Done'
             ) : phase === 'review' ? (
-              `Commit ${approved.length} app${approved.length === 1 ? '' : 's'}`
+              `Commit ${approved.length} app${approved.length === 1 ? '' : 's'}${
+                pushCount > 0 ? `, push ${pushCount}` : ''
+              }`
             ) : (
               runLabel(chosen.size)
             )}
