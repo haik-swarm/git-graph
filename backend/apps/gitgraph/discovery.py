@@ -681,6 +681,7 @@ def read_status(path: Path) -> Dict[str, Any]:
             "current_branch": None,
             "head_subject": None,
             "head_date": None,
+            "head_sha": None,
             "has_remote": False,
             "unpushed": 0,
             "behind": 0,
@@ -700,16 +701,19 @@ def read_status(path: Path) -> Dict[str, Any]:
     has_remote, unpushed, behind = _read_unpushed(path, current_branch, commit_count)
 
     head_raw = _run_git(
-        ["log", "-1", f"--pretty=format:%s{_SEP}%aI", "HEAD"], path
+        ["log", "-1", f"--pretty=format:%s{_SEP}%aI{_SEP}%H", "HEAD"], path
     )
     head_subject: Optional[str] = None
     head_date: Optional[str] = None
+    head_sha: Optional[str] = None
     if head_raw:
-        parts = head_raw.split(_SEP, 1)
+        parts = head_raw.split(_SEP, 2)
         if parts:
             head_subject = parts[0] or None
         if len(parts) > 1:
             head_date = parts[1] or None
+        if len(parts) > 2:
+            head_sha = parts[2] or None
 
     return {
         "is_repo": True,
@@ -718,6 +722,7 @@ def read_status(path: Path) -> Dict[str, Any]:
         "current_branch": current_branch,
         "head_subject": head_subject,
         "head_date": head_date,
+        "head_sha": head_sha,
         "has_remote": has_remote,
         "unpushed": unpushed,
         "behind": behind,

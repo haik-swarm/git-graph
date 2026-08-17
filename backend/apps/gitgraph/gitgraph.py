@@ -147,6 +147,7 @@ async def status_all() -> dict:
                 "current_branch": None,
                 "head_subject": None,
                 "head_date": None,
+                "head_sha": None,
                 "has_remote": False,
                 "unpushed": 0,
                 "behind": 0,

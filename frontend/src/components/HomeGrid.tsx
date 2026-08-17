@@ -16,6 +16,7 @@ import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
 import type { BulkEntry } from '@/components/BulkActionBar';
 import StatRow from '@/components/StatRow';
+import HomeHero from '@/components/HomeHero';
 import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
@@ -29,6 +30,7 @@ interface Meta {
   current_branch: string | null;
   head_subject: string | null;
   head_date: string | null;
+  head_sha?: string | null;
   has_remote?: boolean;
   unpushed?: number;
   runtime_running?: boolean;
@@ -158,30 +160,18 @@ const HomeGrid: React.FC<Props> = ({
   return (
     <Box sx={{ px: 3, pb: 4 }}>
       <Box sx={{ pt: 3, pb: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Box>
-          <Box
-            sx={{
-              ...c.type.title,
-              color: c.text.primary,
-              letterSpacing: '-0.022em',
-              lineHeight: 1.1,
-            }}
-          >
-            Your apps
-          </Box>
-          <Box
-            sx={{
-              ...c.type.callout,
-              color: c.text.secondary,
-              mt: '4px',
-              maxWidth: 640,
-              lineHeight: 1.5,
-            }}
-          >
-            Every workspace on your dashboard, at a glance. Pick one to open its
-            commit history, or track a fresh app straight from the card.
-          </Box>
+        <Box
+          sx={{
+            ...c.type.title,
+            color: c.text.primary,
+            letterSpacing: '-0.022em',
+            lineHeight: 1.1,
+          }}
+        >
+          Your apps
         </Box>
+
+        <HomeHero apps={apps} meta={meta} onOpen={onOpen} />
 
         <StatRow
           apps={apps}

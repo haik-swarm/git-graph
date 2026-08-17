@@ -55,6 +55,7 @@ interface HomeMeta {
   current_branch: string | null;
   head_subject: string | null;
   head_date: string | null;
+  head_sha: string | null;
   has_remote: boolean;
   unpushed: number;
   runtime_running?: boolean;
