@@ -726,7 +726,6 @@ const Home: React.FC = () => {
                 onBusyChange={setMagicBusy}
                 onCommitted={refresh}
                 onDiscarded={refresh}
-                onMagicDone={refresh}
                 onIgnored={refresh}
               />
             )}

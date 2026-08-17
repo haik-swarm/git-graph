@@ -23,6 +23,11 @@ export interface DirtyFile {
 interface Props {
   workspaceId: string;
   dirty: DirtyFile[];
+  hasRemote: boolean;
+  /** A message written upstream by the draft button; null when none is pending. */
+  draft: string | null;
+  draftError: string | null;
+  onDraftConsumed: () => void;
   onCommitted: () => void;
   onIgnored: () => void;
 }
@@ -45,6 +50,10 @@ function describe(code: string): { label: string; tone: 'add' | 'edit' | 'remove
 const DirtyDetails: React.FC<Props> = ({
   workspaceId,
   dirty,
+  hasRemote,
+  draft,
+  draftError,
+  onDraftConsumed,
   onCommitted,
   onIgnored,
 }) => {
@@ -63,6 +72,14 @@ const DirtyDetails: React.FC<Props> = ({
     setError(null);
     setNotice(null);
   }, [dirty, workspaceId]);
+
+  // A drafted message overwrites the field, then is released upstream so a
+  // later edit here isn't clobbered by this effect re-running.
+  useEffect(() => {
+    if (draft === null) return;
+    setMessage(draft);
+    onDraftConsumed();
+  }, [draft, onDraftConsumed]);
 
   const allChosen = chosen.size === dirty.length && dirty.length > 0;
   const canCommit = chosen.size > 0 && message.trim().length > 0 && !busy;
@@ -92,12 +109,20 @@ const DirtyDetails: React.FC<Props> = ({
       const res = await fetch(gitgraphCreateCommitUrl(workspaceId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message.trim(), paths: [...chosen] }),
+        body: JSON.stringify({
+          message: message.trim(),
+          paths: [...chosen],
+          push: hasRemote,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.detail ?? `Commit failed (${res.status})`);
       }
+      // The commit is already in history at this point, so a push failure is
+      // reported without discarding the fact that the commit succeeded.
+      const data: { push_error?: string } = await res.json().catch(() => ({}));
+      if (data.push_error) setError(`Committed, but the push failed: ${data.push_error}`);
       setMessage('');
       setOpenPath(null);
       onCommitted();
@@ -234,8 +259,10 @@ const DirtyDetails: React.FC<Props> = ({
           }}
         />
 
-        {error ? (
-          <Typography sx={{ ...c.type.caption, color: c.status.error }}>{error}</Typography>
+        {error || draftError ? (
+          <Typography sx={{ ...c.type.caption, color: c.status.error }}>
+            {error ?? draftError}
+          </Typography>
         ) : notice ? (
           <Typography sx={{ ...c.type.caption, color: c.status.success }}>{notice}</Typography>
         ) : null}
@@ -243,7 +270,13 @@ const DirtyDetails: React.FC<Props> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box sx={{ flex: 1 }} />
           <ButtonBase disabled={!canCommit} onClick={() => void submit()} sx={{ ...primaryButton(c) }}>
-            {busy ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Commit'}
+            {busy ? (
+              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+            ) : hasRemote ? (
+              'Commit and push'
+            ) : (
+              'Commit'
+            )}
           </ButtonBase>
         </Box>
       </Box>

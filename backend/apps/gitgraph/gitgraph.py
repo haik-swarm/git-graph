@@ -38,6 +38,9 @@ from backend.config.Apps import SubApp
 class CommitRequest(BaseModel):
     message: str
     paths: List[str]
+    # Commit and push are one button in the dirty-work card, so the push
+    # rides along on the same request instead of the UI firing two.
+    push: bool = False
 
 
 class CreateRepoRequest(BaseModel):
@@ -256,7 +259,30 @@ async def create_commit(workspace_id: str, body: CommitRequest) -> dict:
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result)
-    return {"sha": result}
+
+    # A failed push is reported alongside a successful commit rather than as
+    # an error: the commit landed, and losing that fact would be worse than
+    # the push not happening.
+    pushed = False
+    push_error = ""
+    if body.push:
+        pushed, push_result = github.push(path)
+        if not pushed:
+            push_error = str(push_result)
+    return {"sha": result, "pushed": pushed, "push_error": push_error}
+
+
+@gitgraph.router.post("/magic-draft/{workspace_id}")
+@typechecked
+async def magic_draft(workspace_id: str) -> dict:
+    """Write a commit message for the current diff. Touches nothing."""
+    path = _resolve(workspace_id)
+    try:
+        message, paths = await magic.draft_message(path, _app_name(workspace_id))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    debug(workspace_id, len(paths), message.split("\n")[0])
+    return {"message": message, "paths": paths}
 
 
 @gitgraph.router.post("/magic-update/{workspace_id}")

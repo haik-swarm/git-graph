@@ -15,6 +15,13 @@ export const gitgraphCommitUrl = (workspaceId: string, sha: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
 export const gitgraphCreateCommitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/commit/${encodeURIComponent(workspaceId)}`;
+// Writes a commit message from the current diff and returns it, without
+// staging or committing anything. The single-app card drafts into its own
+// message field so the user reads and edits before committing.
+export const gitgraphMagicDraftUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/magic-draft/${encodeURIComponent(workspaceId)}`;
+// Draft, commit and push in one unreviewable shot. Bulk-only: across many
+// apps there is nowhere to show each message for approval.
 export const gitgraphMagicUpdateUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/magic-update/${encodeURIComponent(workspaceId)}`;
 export const gitgraphRestoreUrl = (workspaceId: string, sha: string) =>

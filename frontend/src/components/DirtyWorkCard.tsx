@@ -9,7 +9,7 @@ import Collapse from '@mui/material/Collapse';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import DirtyDetails, { type DirtyFile } from './DirtyDetails';
 import DiscardButton from './DiscardButton';
-import MagicUpdateButton from './MagicUpdateButton';
+import MagicDraftButton from './MagicDraftButton';
 
 export type { DirtyFile };
 
@@ -21,7 +21,6 @@ interface Props {
   onBusyChange: (b: boolean) => void;
   onCommitted: () => void;
   onDiscarded: () => void;
-  onMagicDone: () => void;
   onIgnored: () => void;
 }
 
@@ -40,11 +39,14 @@ const DirtyWorkCard: React.FC<Props> = ({
   onBusyChange,
   onCommitted,
   onDiscarded,
-  onMagicDone,
   onIgnored,
 }) => {
   const c = useClaudeTokens();
   const [open, setOpen] = React.useState(false);
+  // A drafted message is pushed down into the commit form rather than owned
+  // by it, so the button above can fill the field it doesn't render.
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const [draftError, setDraftError] = React.useState<string | null>(null);
 
   // Committing or discarding empties the list, so an open panel would be
   // left showing a stale form over nothing.
@@ -153,11 +155,17 @@ const DirtyWorkCard: React.FC<Props> = ({
         onClick={e => e.stopPropagation()}
         sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}
       >
-        <MagicUpdateButton
+        <MagicDraftButton
           workspaceId={workspaceId}
-          hasRemote={hasRemote}
           onBusyChange={onBusyChange}
-          onDone={onMagicDone}
+          // Expanding on click, before the message arrives, means the field
+          // the text is headed for is already on screen when it lands.
+          onStart={() => {
+            setDraftError(null);
+            setOpen(true);
+          }}
+          onDrafted={setDraft}
+          onError={setDraftError}
         />
         {!magicBusy && (
           <DiscardButton
@@ -184,6 +192,10 @@ const DirtyWorkCard: React.FC<Props> = ({
         <DirtyDetails
           workspaceId={workspaceId}
           dirty={dirty}
+          hasRemote={hasRemote}
+          draft={draft}
+          draftError={draftError}
+          onDraftConsumed={() => setDraft(null)}
           onCommitted={onCommitted}
           onIgnored={onIgnored}
         />

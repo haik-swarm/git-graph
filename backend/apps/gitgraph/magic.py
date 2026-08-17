@@ -168,12 +168,12 @@ async def _ask_llm(diff: str, file_list: List[str], app_name: str) -> str:
     return message
 
 
-async def magic_update(path: Path, app_name: str, do_push: bool) -> Dict[str, object]:
-    """Draft a message from the current diff, commit everything dirty, push.
+async def draft_message(path: Path, app_name: str) -> Tuple[str, List[str]]:
+    """Write a commit message for the current diff without touching the repo.
 
-    Returns the pieces the UI needs to render a receipt (message, sha,
-    file list, whether push happened). Raises with a plain string on
-    the first failure so the caller can surface it directly.
+    This is the read-only half of the old one-shot button: the single-app UI
+    drafts first and lets the user read and edit the message before anything
+    is committed, so drafting must not stage, commit, or push.
     """
     if not (path / ".git").is_dir():
         raise RuntimeError("This workspace isn't a git repository.")
@@ -185,6 +185,18 @@ async def magic_update(path: Path, app_name: str, do_push: bool) -> Dict[str, ob
     message = await _ask_llm(diff, paths, app_name)
     if not message:
         raise RuntimeError("The model returned an empty message.")
+    return message, paths
+
+
+async def magic_update(path: Path, app_name: str, do_push: bool) -> Dict[str, object]:
+    """Draft a message from the current diff, commit everything dirty, push.
+
+    Still one shot, because bulk across many apps has no room to review each
+    message. Returns the pieces the UI needs to render a receipt (message,
+    sha, file list, whether push happened). Raises with a plain string on
+    the first failure so the caller can surface it directly.
+    """
+    message, paths = await draft_message(path, app_name)
 
     # Stage everything dirty in one shot; -A also catches deletions that
     # a bare `add <paths>` would miss.
