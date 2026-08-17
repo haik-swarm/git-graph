@@ -35,9 +35,7 @@ import PublishPanel from '@/components/PublishPanel';
 import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
-import CommitSheet from '@/components/CommitSheet';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
-import DiffViewer, { type DiffTarget } from '@/components/DiffViewer';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
@@ -47,7 +45,7 @@ import RepoHero from '@/components/RepoHero';
 import { RestartNotice } from '@/components/RestartNotice';
 import { Placeholder, Scroller, Shell, Toolbar } from '@/components/Chrome';
 import { githubStatusUrl } from '@/shared/state/API_ENDPOINTS';
-import type { DirtyFile } from '@/components/CommitPanel';
+import type { DirtyFile } from '@/components/DirtyWorkCard';
 
 interface HomeMeta {
   is_repo: boolean;
@@ -112,8 +110,6 @@ const Home: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
-  // One file's patch, opened from either the uncommitted list or a commit.
-  const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   const [cloudOpen, setCloudOpen] = useState(false);
   // Bumped after an install/delete to re-poll the restart notice immediately.
   const [noticeKey, setNoticeKey] = useState(0);
@@ -356,11 +352,6 @@ const Home: React.FC = () => {
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
     [graph],
-  );
-
-  const detail = useMemo(
-    () => layout.nodes.find(n => n.sha === selectedSha) ?? null,
-    [layout, selectedSha],
   );
 
   const commitDates = useMemo(
@@ -736,9 +727,6 @@ const Home: React.FC = () => {
                 onCommitted={refresh}
                 onDiscarded={refresh}
                 onMagicDone={refresh}
-                onViewDiff={path =>
-                  setDiffTarget({ path, context: 'Uncommitted' })
-                }
                 onIgnored={refresh}
               />
             )}
@@ -768,6 +756,11 @@ const Home: React.FC = () => {
               selectedSha={selectedSha}
               headSha={graph.head_sha}
               onSelect={sha => setSelectedSha(prev => (prev === sha ? null : sha))}
+              files={files}
+              workspaceId={selected?.workspace_id ?? null}
+              currentBranch={graph.current_branch ?? null}
+              branches={graph.branches ?? []}
+              onRestored={refresh}
             />
 
             {graph.truncated && (
@@ -785,28 +778,6 @@ const Home: React.FC = () => {
           </>
         )}
       </Scroller>
-
-      <CommitSheet
-        commit={detail}
-        files={files}
-        workspaceId={selected?.workspace_id ?? null}
-        headSha={graph?.head_sha ?? null}
-        currentBranch={graph?.current_branch ?? null}
-        branches={graph?.branches ?? []}
-        onClose={() => setSelectedSha(null)}
-        onRestored={refresh}
-        onViewDiff={(path, sha) =>
-          setDiffTarget({ path, sha, context: sha.slice(0, 7) })
-        }
-      />
-
-      {selected && (
-        <DiffViewer
-          workspaceId={selected.workspace_id}
-          target={diffTarget}
-          onClose={() => setDiffTarget(null)}
-        />
-      )}
 
       {selected && (
         <DeleteAppDialog

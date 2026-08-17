@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
-import Popover from '@mui/material/Popover';
 import Typography from '@mui/material/Typography';
 import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { popover, primaryButton, slimScroll, sunkenField } from '@/shared/styles/ui';
+import { primaryButton, sunkenField } from '@/shared/styles/ui';
 import { gitgraphCreateCommitUrl } from '@/shared/state/API_ENDPOINTS';
 import IgnoreMenu, { type IgnoreResult } from './IgnoreMenu';
+import DiffInline from './DiffInline';
 
 export interface DirtyFile {
   code: string;
@@ -22,9 +22,6 @@ interface Props {
   workspaceId: string;
   dirty: DirtyFile[];
   onCommitted: () => void;
-  /** Opens the per-file diff sheet. */
-  onViewDiff: (path: string) => void;
-  /** Ignoring rewrites the index, so the graph has to be re-read. */
   onIgnored: () => void;
 }
 
@@ -37,17 +34,22 @@ function describe(code: string): { label: string; tone: 'add' | 'edit' | 'remove
   return { label: 'modified', tone: 'edit' };
 }
 
-const CommitPanel: React.FC<Props> = ({
+/**
+ * The uncommitted file list and the commit form, rendered inline inside the
+ * dirty-work card. This is the same shape as an expanded commit in the
+ * history: a row per file that opens to its own patch, so both halves of the
+ * page are read the same way instead of one being a popover.
+ */
+const DirtyDetails: React.FC<Props> = ({
   workspaceId,
   dirty,
   onCommitted,
-  onViewDiff,
   onIgnored,
 }) => {
   const c = useClaudeTokens();
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [message, setMessage] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [openPath, setOpenPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +97,7 @@ const CommitPanel: React.FC<Props> = ({
         throw new Error(data?.detail ?? `Commit failed (${res.status})`);
       }
       setMessage('');
-      setAnchor(null);
+      setOpenPath(null);
       onCommitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Commit failed.');
@@ -105,65 +107,42 @@ const CommitPanel: React.FC<Props> = ({
   };
 
   return (
-    <>
-      <ButtonBase
-        onClick={e => setAnchor(e.currentTarget)}
+    <Box>
+      <Box
         sx={{
-          height: 22,
-          px: '8px',
-          borderRadius: `${c.radius.sm}px`,
-          ...c.type.caption,
-          color: c.status.warning,
-          border: `1px solid ${c.status.warning}`,
-          transition: c.transition,
-          '&:hover': { background: c.bg.secondary },
+          display: 'flex',
+          alignItems: 'center',
+          px: 1,
+          py: '6px',
+          borderTop: `1px solid ${c.border.subtle}`,
         }}
       >
-        {dirty.length} uncommitted
-      </ButtonBase>
-
-      <Popover
-        open={Boolean(anchor)}
-        anchorEl={anchor}
-        onClose={() => !busy && setAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, width: 380 } } }}
-      >
-        <Box
+        <Typography sx={{ ...c.type.caption, color: c.text.tertiary, flex: 1 }}>
+          {chosen.size} of {dirty.length} selected
+        </Typography>
+        <ButtonBase
+          onClick={() => setChosen(allChosen ? new Set() : new Set(dirty.map(f => f.path)))}
           sx={{
-            display: 'flex',
-            alignItems: 'center',
-            px: 1.5,
-            py: '8px',
-            borderBottom: `1px solid ${c.border.subtle}`,
+            ...c.type.caption,
+            color: c.accent.primary,
+            px: '6px',
+            py: '2px',
+            borderRadius: `${c.radius.xs}px`,
+            '&:hover': { background: c.bg.secondary },
           }}
         >
-          <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
-            Uncommitted changes
-          </Typography>
-          <ButtonBase
-            onClick={() =>
-              setChosen(allChosen ? new Set() : new Set(dirty.map(f => f.path)))
-            }
-            sx={{
-              ...c.type.callout,
-              color: c.accent.primary,
-              px: '4px',
-              borderRadius: `${c.radius.xs}px`,
-            }}
-          >
-            {allChosen ? 'Deselect all' : 'Select all'}
-          </ButtonBase>
-        </Box>
+          {allChosen ? 'Deselect all' : 'Select all'}
+        </ButtonBase>
+      </Box>
 
-        <Box sx={{ maxHeight: 240, overflowY: 'auto', p: '4px', ...slimScroll(c) }}>
-          {dirty.map(file => {
-            const { label, tone } = describe(file.code);
-            const isChosen = chosen.has(file.path);
-            return (
+      <Box sx={{ px: '4px' }}>
+        {dirty.map(file => {
+          const { label, tone } = describe(file.code);
+          const isChosen = chosen.has(file.path);
+          const isOpen = openPath === file.path;
+          return (
+            <Box key={file.path}>
               <Box
-                key={file.path}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
@@ -172,6 +151,7 @@ const CommitPanel: React.FC<Props> = ({
                   px: '8px',
                   py: '5px',
                   borderRadius: `${c.radius.sm}px`,
+                  background: isOpen ? c.bg.secondary : 'transparent',
                   '&:hover': { background: c.bg.secondary },
                   // The ignore button is an escape hatch, not a primary
                   // action: showing it on every row at rest turns a list you
@@ -191,14 +171,12 @@ const CommitPanel: React.FC<Props> = ({
                     background: isChosen ? c.accent.primary : 'transparent',
                   }}
                 >
-                  {isChosen && (
-                    <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
-                  )}
+                  {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
                 </ButtonBase>
 
                 <ButtonBase
-                  onClick={() => onViewDiff(file.path)}
-                  title={`View changes to ${file.path}`}
+                  onClick={() => setOpenPath(prev => (prev === file.path ? null : file.path))}
+                  title={isOpen ? 'Hide changes' : `View changes to ${file.path}`}
                   sx={{
                     flex: 1,
                     minWidth: 0,
@@ -212,7 +190,7 @@ const CommitPanel: React.FC<Props> = ({
                     sx={{
                       ...c.type.caption,
                       fontFamily: c.font.mono,
-                      color: c.text.secondary,
+                      color: isOpen ? c.accent.primary : c.text.secondary,
                       width: '100%',
                       minWidth: 0,
                       overflow: 'hidden',
@@ -227,10 +205,7 @@ const CommitPanel: React.FC<Props> = ({
                   </Typography>
                 </ButtonBase>
 
-                <Box
-                  className="row-ignore"
-                  sx={{ opacity: 0, transition: c.transition, flexShrink: 0 }}
-                >
+                <Box className="row-ignore" sx={{ opacity: 0, transition: c.transition, flexShrink: 0 }}>
                   <IgnoreMenu
                     workspaceId={workspaceId}
                     filePath={file.path}
@@ -247,77 +222,64 @@ const CommitPanel: React.FC<Props> = ({
                   />
                 </Box>
 
-                <Typography
-                  sx={{ ...c.type.caption, color: toneColor[tone], flexShrink: 0 }}
-                >
+                <Typography sx={{ ...c.type.caption, color: toneColor[tone], flexShrink: 0 }}>
                   {label}
                 </Typography>
               </Box>
-            );
-          })}
-        </Box>
 
-        <Box
-          sx={{
-            p: 1.5,
-            borderTop: `1px solid ${c.border.subtle}`,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
+              <DiffInline workspaceId={workspaceId} filePath={file.path} open={isOpen} />
+            </Box>
+          );
+        })}
+      </Box>
+
+      <Box
+        sx={{
+          p: 1,
+          mt: '4px',
+          borderTop: `1px solid ${c.border.subtle}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+        }}
+      >
+        <InputBase
+          multiline
+          minRows={2}
+          maxRows={5}
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+          placeholder="Commit message"
+          onKeyDown={e => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canCommit) {
+              void submit();
+            }
           }}
-        >
-          <InputBase
-            multiline
-            minRows={2}
-            maxRows={5}
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            placeholder="Commit message"
-            onKeyDown={e => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canCommit) {
-                void submit();
-              }
-            }}
-            sx={{
-              ...sunkenField(c),
-              ...c.type.body,
-              color: c.text.primary,
-              px: 1,
-              py: '6px',
-              '& textarea::placeholder': { color: c.text.muted, opacity: 1 },
-            }}
-          />
+          sx={{
+            ...sunkenField(c),
+            ...c.type.body,
+            color: c.text.primary,
+            px: 1,
+            py: '6px',
+            '& textarea::placeholder': { color: c.text.muted, opacity: 1 },
+          }}
+        />
 
-          {error ? (
-            <Typography sx={{ ...c.type.caption, color: c.status.error }}>
-              {error}
-            </Typography>
-          ) : notice ? (
-            <Typography sx={{ ...c.type.caption, color: c.status.success }}>
-              {notice}
-            </Typography>
-          ) : null}
+        {error ? (
+          <Typography sx={{ ...c.type.caption, color: c.status.error }}>{error}</Typography>
+        ) : notice ? (
+          <Typography sx={{ ...c.type.caption, color: c.status.success }}>{notice}</Typography>
+        ) : null}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography sx={{ ...c.type.caption, color: c.text.tertiary, flex: 1 }}>
-              {chosen.size} of {dirty.length} selected
-            </Typography>
-            <ButtonBase
-              disabled={!canCommit}
-              onClick={() => void submit()}
-              sx={{ ...primaryButton(c) }}
-            >
-              {busy ? (
-                <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
-              ) : (
-                'Commit'
-              )}
-            </ButtonBase>
-          </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ flex: 1 }} />
+          <ButtonBase disabled={!canCommit} onClick={() => void submit()} sx={{ ...primaryButton(c) }}>
+            {busy ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Commit'}
+          </ButtonBase>
         </Box>
-      </Popover>
-    </>
+      </Box>
+    </Box>
   );
 };
 
-export default CommitPanel;
+export default DirtyDetails;

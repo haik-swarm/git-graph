@@ -11,6 +11,15 @@ interface Props {
   layout: Layout;
   selectedSha: string | null;
   headSha: string | null;
+  /**
+   * Extra height pushed in above a given row by an expanded commit. Rows are
+   * no longer uniformly ROW_HEIGHT once one opens inline, so the rail can't
+   * derive a dot's y from its index alone; without this every dot below the
+   * open row drifts away from the subject it belongs to.
+   */
+  offsetForRow?: (row: number) => number;
+  /** Total added height, so the SVG still ends where the last row ends. */
+  extraHeight?: number;
 }
 
 /**
@@ -22,13 +31,20 @@ interface Props {
  * HEAD ring are drawn here (not in the row) so they align with the dot
  * regardless of row height.
  */
-const GraphRail: React.FC<Props> = ({ layout, selectedSha, headSha }) => {
+const GraphRail: React.FC<Props> = ({
+  layout,
+  selectedSha,
+  headSha,
+  offsetForRow,
+  extraHeight = 0,
+}) => {
   const c = useClaudeTokens();
   const width = Math.max(layout.laneCount, 1) * LANE_WIDTH + 14;
-  const height = Math.max(layout.nodes.length, 1) * ROW_HEIGHT;
+  const height = Math.max(layout.nodes.length, 1) * ROW_HEIGHT + extraHeight;
 
   const cx = (lane: number) => lane * LANE_WIDTH + LANE_WIDTH / 2 + 6;
-  const cy = (row: number) => row * ROW_HEIGHT + ROW_HEIGHT / 2;
+  const cy = (row: number) =>
+    row * ROW_HEIGHT + ROW_HEIGHT / 2 + (offsetForRow?.(row) ?? 0);
 
   return (
     <Box

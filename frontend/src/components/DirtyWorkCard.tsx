@@ -4,10 +4,14 @@ import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonChecke
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import Collapse from '@mui/material/Collapse';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import CommitPanel, { type DirtyFile } from './CommitPanel';
+import DirtyDetails, { type DirtyFile } from './DirtyDetails';
 import DiscardButton from './DiscardButton';
 import MagicUpdateButton from './MagicUpdateButton';
+
+export type { DirtyFile };
 
 interface Props {
   workspaceId: string;
@@ -18,15 +22,15 @@ interface Props {
   onCommitted: () => void;
   onDiscarded: () => void;
   onMagicDone: () => void;
-  onViewDiff: (path: string) => void;
   onIgnored: () => void;
 }
 
 /**
- * A single card above the graph that surfaces uncommitted work directly:
- * you can see the file mix at a glance and the three primary actions sit
- * in the same place every time. Previous design buried these behind three
- * separate toolbar chips.
+ * A single card above the graph that surfaces uncommitted work directly.
+ * The header is a disclosure row: it expands in place to the file list,
+ * per-file diffs and the commit box, matching how a commit in the history
+ * below opens. Both halves of the page then read the same way, where this
+ * half used to hide its files behind a popover.
  */
 const DirtyWorkCard: React.FC<Props> = ({
   workspaceId,
@@ -37,10 +41,16 @@ const DirtyWorkCard: React.FC<Props> = ({
   onCommitted,
   onDiscarded,
   onMagicDone,
-  onViewDiff,
   onIgnored,
 }) => {
   const c = useClaudeTokens();
+  const [open, setOpen] = React.useState(false);
+
+  // Committing or discarding empties the list, so an open panel would be
+  // left showing a stale form over nothing.
+  React.useEffect(() => {
+    if (dirty.length === 0) setOpen(false);
+  }, [dirty.length]);
 
   const counts = React.useMemo(() => {
     const stat = { add: 0, edit: 0, remove: 0 };
@@ -76,14 +86,10 @@ const DirtyWorkCard: React.FC<Props> = ({
       sx={{
         mx: 3,
         mb: 2,
-        p: 1.75,
         borderRadius: `${c.radius.xl}px`,
         border: `1px solid ${c.border.subtle}`,
         background: c.bg.surface,
         boxShadow: c.shadow.sm,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
         // Signature detail: a hairline gradient stripe on the left communicates
         // "the working tree is diverging" without shouting.
         position: 'relative',
@@ -96,7 +102,22 @@ const DirtyWorkCard: React.FC<Props> = ({
           bottom: 0,
           width: 3,
           background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.primary})`,
+          zIndex: 1,
         },
+      }}
+    >
+    <Box
+      onClick={() => dirty.length > 0 && setOpen(o => !o)}
+      role="button"
+      aria-expanded={open}
+      sx={{
+        p: 1.75,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        cursor: dirty.length > 0 ? 'pointer' : 'default',
+        transition: c.transition,
+        '&:hover': { background: dirty.length > 0 ? c.bg.secondary : 'transparent' },
       }}
     >
       <Box
@@ -126,7 +147,12 @@ const DirtyWorkCard: React.FC<Props> = ({
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+      {/* The action buttons open their own menus, so a click on one must not
+          also toggle the card underneath it. */}
+      <Box
+        onClick={e => e.stopPropagation()}
+        sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}
+      >
         <MagicUpdateButton
           workspaceId={workspaceId}
           hasRemote={hasRemote}
@@ -134,22 +160,35 @@ const DirtyWorkCard: React.FC<Props> = ({
           onDone={onMagicDone}
         />
         {!magicBusy && (
-          <>
-            <CommitPanel
-              workspaceId={workspaceId}
-              dirty={dirty}
-              onCommitted={onCommitted}
-              onViewDiff={onViewDiff}
-              onIgnored={onIgnored}
-            />
-            <DiscardButton
-              workspaceId={workspaceId}
-              dirtyCount={dirty.length}
-              onDiscarded={onDiscarded}
-            />
-          </>
+          <DiscardButton
+            workspaceId={workspaceId}
+            dirtyCount={dirty.length}
+            onDiscarded={onDiscarded}
+          />
         )}
       </Box>
+
+      <ExpandMoreRoundedIcon
+        sx={{
+          fontSize: 18,
+          flexShrink: 0,
+          color: open ? c.accent.primary : c.text.muted,
+          transform: open ? 'rotate(180deg)' : 'none',
+          transition: 'transform 180ms ease, color 120ms ease',
+        }}
+      />
+    </Box>
+
+    <Collapse in={open} timeout={180} unmountOnExit>
+      <Box sx={{ borderTop: `1px solid ${c.border.subtle}`, pl: '3px' }}>
+        <DirtyDetails
+          workspaceId={workspaceId}
+          dirty={dirty}
+          onCommitted={onCommitted}
+          onIgnored={onIgnored}
+        />
+      </Box>
+    </Collapse>
     </Box>
   );
 };
