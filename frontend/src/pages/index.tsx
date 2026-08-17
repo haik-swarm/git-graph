@@ -27,6 +27,7 @@ import {
 } from '@/shared/state/API_ENDPOINTS';
 import AppRail, {
   type Published,
+  type RepoState,
   type Sharing,
   type SharingPhase,
 } from '@/components/AppRail';
@@ -272,13 +273,19 @@ const Home: React.FC = () => {
     void refreshSharing();
   }, [apps.length, refreshSharing]);
 
-  // Re-scan every time the user lands on Home so returning from an app
-  // page (or from another window entirely) doesn't leave stale numbers.
+  // Re-scan on every view change so returning to Home (or to an app page,
+  // or from another window entirely) doesn't leave stale numbers.
+  //
+  // Not gated on Home any more: the rail's "Needs you" group reads the same
+  // batch, and it's on screen in every mode. Gated, the rail would sit empty
+  // on an app page until the user happened to visit Home.
   useEffect(() => {
-    if (mode !== 'home') return;
     // Local first so the grid paints immediately, then the network pass
-    // corrects the unpushed counts once it lands.
-    void refreshHomeMeta().then(() => syncRemotes());
+    // corrects the unpushed counts once it lands. The network half stays
+    // Home-only: it's the expensive one, and Home is where its freshness
+    // badge is actually rendered.
+    const scan = refreshHomeMeta();
+    if (mode === 'home') void scan.then(() => syncRemotes());
     const onFocus = () => {
       if (document.visibilityState === 'visible') void refreshHomeMeta();
     };
@@ -381,6 +388,20 @@ const Home: React.FC = () => {
     return set;
   }, [homeMeta]);
 
+  // Outstanding work per app, for the rail's "Needs you" group. Only apps
+  // with something pending are kept, so a clean workspace costs no entry.
+  const repoState = useMemo(() => {
+    const out: Record<string, RepoState> = {};
+    for (const [id, m] of Object.entries(homeMeta)) {
+      const dirty = m?.dirty_count ?? 0;
+      // An app with no remote can't be "unpushed" — every commit would
+      // count as outstanding against a push that isn't possible yet.
+      const unpushed = m?.has_remote ? m?.unpushed ?? 0 : 0;
+      if (dirty > 0 || unpushed > 0) out[id] = { dirty, unpushed };
+    }
+    return out;
+  }, [homeMeta]);
+
   const rail = (
     <AppRail
       apps={apps}
@@ -394,6 +415,7 @@ const Home: React.FC = () => {
       sharing={sharing}
       sharingPhase={sharingPhase}
       published={published}
+      repoState={repoState}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);

@@ -6,6 +6,8 @@ import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded';
+import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
+import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
@@ -24,6 +26,12 @@ export interface Sharing {
   theirs: boolean;
   people: string[];
   pending: number;
+}
+
+/** Outstanding local git work on an app: what a commit or a push would clear. */
+export interface RepoState {
+  dirty: number;
+  unpushed: number;
 }
 
 /** An app of the user's that's live in the marketplace org. */
@@ -56,6 +64,7 @@ interface Props {
   sharing?: Record<string, Sharing>;
   sharingPhase?: SharingPhase;
   published?: Record<string, Published>;
+  repoState?: Record<string, RepoState>;
 }
 
 /**
@@ -65,11 +74,19 @@ interface Props {
  * Untracked ones sit in a quieter group with a hover "Track" pill so a new
  * repo is one click away without opening a picker.
  *
+ * Apps carrying uncommitted or unpushed work show a count badge and sort to
+ * the top of their own group. They are deliberately NOT collected into a
+ * separate "needs attention" section: which group an app lives in is a
+ * stable fact the user navigates by, and having work pending is a temporary
+ * state that shouldn't move an app out from under them.
+ *
  * Only GitHub knows who an app is shared with, so that split can't be
  * computed locally. Rather than open on a guess and reshuffle when the
  * answer lands, the tracked section shows placeholders until the sweep
  * finishes: a rail that briefly calls a shared app private is worse than
- * a rail that admits it doesn't know yet.
+ * a rail that admits it doesn't know yet. The work badges are exempt from
+ * that gate — they're read from local git, so they're already true when the
+ * rail first paints and don't need to wait on the network.
  */
 const AppRail: React.FC<Props> = ({
   apps,
@@ -84,6 +101,7 @@ const AppRail: React.FC<Props> = ({
   sharing,
   sharingPhase = 'ready',
   published,
+  repoState,
 }) => {
   const c = useClaudeTokens();
   const [query, setQuery] = useState('');
@@ -96,19 +114,41 @@ const AppRail: React.FC<Props> = ({
       ? apps.filter(a => a.name.toLowerCase().includes(q))
       : apps;
     const trackedApps = filtered.filter(a => a.has_git && a.workspace_exists);
+
+    /**
+     * Float the apps with outstanding work to the top of whichever group
+     * they're already in. Sorting inside each group rather than pulling
+     * them into one keeps an app where the user expects to find it: which
+     * group an app lives in is a stable fact they navigate by, while having
+     * work pending is a temporary state that shouldn't relocate it.
+     *
+     * Uncommitted outranks unpushed because committing is what makes work
+     * recoverable; pushing only moves work that is already safe.
+     */
+    const byUrgency = (list: AppEntry[]) =>
+      list.slice().sort((a, b) => {
+        const sa = repoState?.[a.workspace_id];
+        const sb = repoState?.[b.workspace_id];
+        return (
+          (sb?.dirty ?? 0) - (sa?.dirty ?? 0) ||
+          (sb?.unpushed ?? 0) - (sa?.unpushed ?? 0) ||
+          0
+        );
+      });
+
     // Published wins over the sharing split: an app in the marketplace is
     // readable by everyone, so filing it under Private or Shared would be
     // the misleading half of the truth.
     const live = trackedApps.filter(a => published?.[a.workspace_id]);
     const rest = trackedApps.filter(a => !published?.[a.workspace_id]);
     return {
-      tracked: trackedApps,
-      publishedApps: live,
-      privateApps: rest.filter(a => !sharing?.[a.workspace_id]?.shared),
-      sharedApps: rest.filter(a => sharing?.[a.workspace_id]?.shared),
+      tracked: byUrgency(trackedApps),
+      publishedApps: byUrgency(live),
+      privateApps: byUrgency(rest.filter(a => !sharing?.[a.workspace_id]?.shared)),
+      sharedApps: byUrgency(rest.filter(a => sharing?.[a.workspace_id]?.shared)),
       untracked: filtered.filter(a => !a.has_git || !a.workspace_exists),
     };
-  }, [apps, query, sharing, published]);
+  }, [apps, query, sharing, published, repoState]);
 
   const track = async (app: AppEntry) => {
     setTrackingId(app.workspace_id);
@@ -289,6 +329,7 @@ const AppRail: React.FC<Props> = ({
                 selected={selected?.workspace_id === app.workspace_id}
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
+                state={repoState?.[app.workspace_id]}
                 sharingPending
               />
             ))}
@@ -305,6 +346,7 @@ const AppRail: React.FC<Props> = ({
                 selected={selected?.workspace_id === app.workspace_id}
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
+                state={repoState?.[app.workspace_id]}
               />
             ))}
           </>
@@ -322,6 +364,7 @@ const AppRail: React.FC<Props> = ({
                 running={runningIds?.has(app.workspace_id) ?? false}
                 sharing={sharing?.[app.workspace_id]}
                 published={published?.[app.workspace_id]}
+                state={repoState?.[app.workspace_id]}
               />
             ))}
           </>
@@ -338,6 +381,7 @@ const AppRail: React.FC<Props> = ({
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
                 sharing={sharing?.[app.workspace_id]}
+                state={repoState?.[app.workspace_id]}
               />
             ))}
           </>
@@ -354,6 +398,7 @@ const AppRail: React.FC<Props> = ({
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
                 sharing={sharing?.[app.workspace_id]}
+                state={repoState?.[app.workspace_id]}
               />
             ))}
           </>
@@ -474,6 +519,7 @@ const RailAppRow: React.FC<{
   /** Sweep still running: hold a placeholder where the count will go. */
   sharingPending?: boolean;
   published?: Published;
+  state?: RepoState;
 }> = ({
   app,
   selected,
@@ -484,9 +530,12 @@ const RailAppRow: React.FC<{
   sharing,
   sharingPending,
   published,
+  state,
 }) => {
   const c = useClaudeTokens();
   const missing = !app.workspace_exists;
+  const dirty = state?.dirty ?? 0;
+  const unpushed = state?.unpushed ?? 0;
   const people = sharing?.people ?? [];
   const shareTitle = sharing?.shared
     ? `${sharing.theirs ? `${sharing.owner}'s app · ` : ''}with ${people.join(', ')}${
@@ -569,6 +618,45 @@ const RailAppRow: React.FC<{
       >
         {app.name}
       </Box>
+
+      {/* Uncommitted and unpushed are separate badges rather than one total:
+          they take different actions to clear, and collapsing them would
+          hide which one this app is actually waiting on. */}
+      {dirty > 0 && !missing && (
+        <Box
+          title={`${dirty} uncommitted ${dirty === 1 ? 'file' : 'files'}`}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            flexShrink: 0,
+            ...c.type.caption,
+            fontWeight: 500,
+            color: c.status.warning,
+          }}
+        >
+          <RadioButtonCheckedRoundedIcon sx={{ fontSize: 11 }} />
+          {dirty}
+        </Box>
+      )}
+
+      {unpushed > 0 && !missing && (
+        <Box
+          title={`${unpushed} ${unpushed === 1 ? 'commit' : 'commits'} to push`}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            flexShrink: 0,
+            ...c.type.caption,
+            fontWeight: 500,
+            color: c.accent.primary,
+          }}
+        >
+          <CloudUploadRoundedIcon sx={{ fontSize: 12 }} />
+          {unpushed}
+        </Box>
+      )}
 
       {sharingPending && !missing && (
         <Box sx={{ ...skeleton(c), width: 22, height: 8, flexShrink: 0 }} />
