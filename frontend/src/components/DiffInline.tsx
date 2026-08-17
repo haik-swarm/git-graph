@@ -1,11 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
 import CircularProgress from '@mui/material/CircularProgress';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { slimScroll } from '@/shared/styles/ui';
 import { gitgraphDiffUrl } from '@/shared/state/API_ENDPOINTS';
-import VendoredToolUi from '@/toolui/VendoredToolUi';
+
+// Only the patch body is wanted here: the row above already carries the
+// filename and the +/− counts, so the viewer's own header would print both a
+// second time. Root/Content are composed by hand instead of going through
+// VendoredToolUi, whose flat preset always includes that header.
+const CodeDiff = lazy(() =>
+  import('@/toolui/components/code-diff').then(m => ({ default: m.CodeDiff.Root })),
+);
+const CodeDiffContent = lazy(() =>
+  import('@/toolui/components/code-diff').then(m => ({ default: m.CodeDiff.Content })),
+);
 
 /** Map a file extension to the highlighter's language id. */
 function languageFor(path: string): string {
@@ -68,6 +78,7 @@ interface DiffState {
  */
 const DiffInline: React.FC<Props> = ({ workspaceId, filePath, sha, open }) => {
   const c = useClaudeTokens();
+  const { mode } = useThemeMode();
   const [state, setState] = useState<DiffState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,18 +112,6 @@ const DiffInline: React.FC<Props> = ({ workspaceId, filePath, sha, open }) => {
     };
   }, [open, workspaceId, filePath, sha]);
 
-  const diffProps = useMemo(() => {
-    if (!state?.patch) return null;
-    return {
-      id: `diff-${sha ?? 'worktree'}-${filePath}`,
-      patch: state.patch,
-      filename: filePath,
-      language: languageFor(filePath),
-      diffStyle: 'unified' as const,
-      lineNumbers: 'visible' as const,
-    };
-  }, [state, filePath, sha]);
-
   const note = (text: string, tone: 'muted' | 'error' = 'muted') => (
     <Box
       sx={{
@@ -128,16 +127,7 @@ const DiffInline: React.FC<Props> = ({ workspaceId, filePath, sha, open }) => {
 
   return (
     <Collapse in={open} timeout={160} unmountOnExit>
-      <Box
-        sx={{
-          mx: '4px',
-          mb: '6px',
-          borderRadius: `${c.radius.sm}px`,
-          border: `1px solid ${c.border.subtle}`,
-          background: c.bg.page,
-          overflow: 'hidden',
-        }}
-      >
+      <Box sx={{ background: c.bg.page }}>
         {error
           ? note(error, 'error')
           : state === null
@@ -156,8 +146,32 @@ const DiffInline: React.FC<Props> = ({ workspaceId, filePath, sha, open }) => {
                   : (
                     // Capped so one enormous file can't push the rest of the
                     // commit off screen; the patch scrolls within its own row.
-                    <Box sx={{ maxHeight: 420, overflow: 'auto', ...slimScroll(c) }}>
-                      {diffProps && <VendoredToolUi name="code-diff" props={diffProps} />}
+                    <Box
+                      className={`tool-ui-scope${mode === 'dark' ? ' dark' : ''}`}
+                      sx={{ maxHeight: 420, overflow: 'auto', ...slimScroll(c) }}
+                    >
+                      <Suspense
+                        fallback={
+                          <Box sx={{ ...c.type.caption, color: c.text.tertiary, px: 1.5, py: 1.25 }}>
+                            Loading diff…
+                          </Box>
+                        }
+                      >
+                        <CodeDiff
+                          id={`diff-${sha ?? 'worktree'}-${filePath}`}
+                          patch={state.patch}
+                          filename={filePath}
+                          language={languageFor(filePath)}
+                          diffStyle="unified"
+                          lineNumbers="visible"
+                          // Root ships its own bordered, rounded card; the row
+                          // already draws that frame, so it's flattened here
+                          // rather than nested one inside the other.
+                          className="gap-0 min-w-0 [&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none"
+                        >
+                          <CodeDiffContent />
+                        </CodeDiff>
+                      </Suspense>
                     </Box>
                   )}
       </Box>

@@ -301,6 +301,68 @@ def read_dirty(path: Path) -> List[Dict[str, Any]]:
 
 
 @typechecked
+def annotate_dirty_stats(path: Path, dirty: List[Dict[str, Any]]) -> None:
+    """Attach added/removed counts to each working-tree entry, in place.
+
+    Deliberately NOT part of `read_dirty`: that runs inside `read_status`
+    for every app on every window focus, and the home grid shows only a
+    file count. This is called from the single-workspace view, where the
+    numbers are actually rendered.
+
+    Tracked files come from one `diff --numstat HEAD` covering the whole
+    tree, so the cost is a single git call no matter how many files are
+    dirty. Untracked files are absent from that output — git has no blob
+    to compare them against — so they're counted as all-additions from
+    disk, matching the synthetic patch the diff viewer shows for them.
+    """
+    if not dirty:
+        return
+
+    counts: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
+    raw = _run_git(["diff", "--numstat", "HEAD"], path)
+    for line in (raw or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        added, removed, name = parts
+        counts[name] = (
+            None if added == "-" else int(added),
+            None if removed == "-" else int(removed),
+        )
+
+    for entry in dirty:
+        name = entry["path"]
+        if name in counts:
+            entry["added"], entry["removed"] = counts[name]
+            continue
+        if entry["code"] == "??":
+            entry["added"], entry["removed"] = _count_untracked_lines(path, name)
+            continue
+        entry["added"], entry["removed"] = None, None
+
+
+@typechecked
+def _count_untracked_lines(path: Path, file_path: str) -> Tuple[Optional[int], int]:
+    """Line count for a file git has never seen, as (added, 0).
+
+    Returns (None, 0) for binary or unreadable files, which renders as
+    "binary" rather than a misleading zero.
+    """
+    target = (path / file_path).resolve()
+    try:
+        root = path.resolve()
+        if target.parent != root and root not in target.parents:
+            return None, 0
+        raw = target.read_bytes()
+    except (OSError, ValueError):
+        return None, 0
+
+    if b"\0" in raw[:8000]:
+        return None, 0
+    return len(raw.decode("utf-8", errors="replace").splitlines()), 0
+
+
+@typechecked
 def commit_paths(
     path: Path, message: str, paths: List[str]
 ) -> Tuple[bool, str]:
@@ -550,6 +612,7 @@ def read_graph(path: Path) -> Dict[str, Any]:
     head_sha = (head_raw or "").strip() or None
 
     dirty = read_dirty(path)
+    annotate_dirty_stats(path, dirty)
 
     return {
         "is_repo": True,

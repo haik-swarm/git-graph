@@ -9,13 +9,15 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { primaryButton, sunkenField } from '@/shared/styles/ui';
 import { gitgraphCreateCommitUrl } from '@/shared/state/API_ENDPOINTS';
 import IgnoreMenu, { type IgnoreResult } from './IgnoreMenu';
-import DiffInline from './DiffInline';
+import DiffFileRow from './DiffFileRow';
 
 export interface DirtyFile {
   code: string;
   path: string;
   unstaged: boolean;
   orig_path?: string;
+  added?: number | null;
+  removed?: number | null;
 }
 
 interface Props {
@@ -141,24 +143,15 @@ const DirtyDetails: React.FC<Props> = ({
           const isChosen = chosen.has(file.path);
           const isOpen = openPath === file.path;
           return (
-            <Box key={file.path}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  width: '100%',
-                  px: '8px',
-                  py: '5px',
-                  borderRadius: `${c.radius.sm}px`,
-                  background: isOpen ? c.bg.secondary : 'transparent',
-                  '&:hover': { background: c.bg.secondary },
-                  // The ignore button is an escape hatch, not a primary
-                  // action: showing it on every row at rest turns a list you
-                  // scan into a list you have to read.
-                  '&:hover .row-ignore': { opacity: 1 },
-                }}
-              >
+            <DiffFileRow
+              key={file.path}
+              workspaceId={workspaceId}
+              filePath={file.path}
+              expanded={isOpen}
+              onToggle={() => setOpenPath(prev => (prev === file.path ? null : file.path))}
+              added={file.added}
+              removed={file.removed}
+              leading={
                 <ButtonBase
                   onClick={() => toggle(file.path)}
                   aria-label={isChosen ? `Deselect ${file.path}` : `Select ${file.path}`}
@@ -173,62 +166,38 @@ const DirtyDetails: React.FC<Props> = ({
                 >
                   {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
                 </ButtonBase>
-
-                <ButtonBase
-                  onClick={() => setOpenPath(prev => (prev === file.path ? null : file.path))}
-                  title={isOpen ? 'Hide changes' : `View changes to ${file.path}`}
-                  sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    justifyContent: 'flex-start',
-                    borderRadius: `${c.radius.xs}px`,
-                    '&:hover .row-path': { color: c.accent.primary },
-                  }}
-                >
-                  <Typography
-                    className="row-path"
-                    sx={{
-                      ...c.type.caption,
-                      fontFamily: c.font.mono,
-                      color: isOpen ? c.accent.primary : c.text.secondary,
-                      width: '100%',
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      direction: 'rtl',
-                      textAlignLast: 'left',
-                      transition: c.transition,
-                    }}
+              }
+              trailing={
+                <>
+                  {/* The ignore button is an escape hatch, not a primary
+                      action: showing it on every row at rest turns a list you
+                      scan into a list you have to read. */}
+                  <Box
+                    className="row-trailing"
+                    sx={{ opacity: 0, transition: c.transition, flexShrink: 0 }}
                   >
-                    {file.path}
+                    <IgnoreMenu
+                      workspaceId={workspaceId}
+                      filePath={file.path}
+                      onIgnored={(result: IgnoreResult) => {
+                        const freed = result.untracked.length;
+                        setNotice(
+                          freed > 0
+                            ? `Ignored ${result.rule} — stopped tracking ${freed} file${freed === 1 ? '' : 's'}.`
+                            : `Ignored ${result.rule}.`,
+                        );
+                        onIgnored();
+                      }}
+                      onError={setError}
+                    />
+                  </Box>
+
+                  <Typography sx={{ ...c.type.caption, color: toneColor[tone], flexShrink: 0 }}>
+                    {label}
                   </Typography>
-                </ButtonBase>
-
-                <Box className="row-ignore" sx={{ opacity: 0, transition: c.transition, flexShrink: 0 }}>
-                  <IgnoreMenu
-                    workspaceId={workspaceId}
-                    filePath={file.path}
-                    onIgnored={(result: IgnoreResult) => {
-                      const freed = result.untracked.length;
-                      setNotice(
-                        freed > 0
-                          ? `Ignored ${result.rule} — stopped tracking ${freed} file${freed === 1 ? '' : 's'}.`
-                          : `Ignored ${result.rule}.`,
-                      );
-                      onIgnored();
-                    }}
-                    onError={setError}
-                  />
-                </Box>
-
-                <Typography sx={{ ...c.type.caption, color: toneColor[tone], flexShrink: 0 }}>
-                  {label}
-                </Typography>
-              </Box>
-
-              <DiffInline workspaceId={workspaceId} filePath={file.path} open={isOpen} />
-            </Box>
+                </>
+              }
+            />
           );
         })}
       </Box>

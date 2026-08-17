@@ -8,7 +8,7 @@ import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { absoluteTime, laneColor, relativeTime, type PlacedCommit } from '@/shared/graphLayout';
 import RestoreControl from '@/components/RestoreControl';
-import DiffInline from '@/components/DiffInline';
+import DiffFileRow, { tally } from '@/components/DiffFileRow';
 
 export interface CommitFile {
   path: string;
@@ -209,12 +209,6 @@ const CommitDetails: React.FC<Props> = ({
   );
 };
 
-const tally = (c: ReturnType<typeof useClaudeTokens>) => ({
-  ...c.type.caption,
-  fontFamily: c.font.mono,
-  fontVariantNumeric: 'tabular-nums' as const,
-});
-
 /**
  * One changed file, which expands to its own patch in place. The bar is
  * scaled against the busiest file in the same commit rather than an absolute
@@ -235,116 +229,37 @@ const FileRow: React.FC<{
   // sqrt keeps a 5-line change visible next to a 500-line one; a linear
   // scale collapses everything small into an indistinguishable sliver.
   const width = busiest > 0 ? Math.max(0.14, Math.sqrt(churn / busiest)) * 52 : 0;
-  const slash = file.path.lastIndexOf('/');
-  const dir = slash === -1 ? '' : file.path.slice(0, slash + 1);
-  const name = slash === -1 ? file.path : file.path.slice(slash + 1);
 
   return (
-    <Box>
-      <Box
-        component="button"
-        onClick={onToggle}
-        title={expanded ? 'Hide changes' : `View changes to ${file.path}`}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          py: '6px',
-          px: '8px',
-          width: '100%',
-          border: 'none',
-          background: expanded ? c.bg.secondary : 'transparent',
-          cursor: 'pointer',
-          textAlign: 'left',
-          borderRadius: `${c.radius.sm}px`,
-          transition: c.transition,
-          '&:hover': { background: c.bg.secondary },
-          '&:hover .file-name': { color: c.accent.primary },
-        }}
-      >
-        {/* The filename never truncates: it's the identifier you scan for.
-            The directory is context, so it gives up its width first and
-            clips from the left, keeping the part nearest the file. */}
-        <Box
-          sx={{
-            ...c.type.caption,
-            fontFamily: c.font.mono,
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'baseline',
-            overflow: 'hidden',
-          }}
-        >
-          {dir && (
-            <Box
-              component="span"
-              sx={{
-                color: c.text.muted,
-                minWidth: 0,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                direction: 'rtl',
-                textAlign: 'left',
-              }}
-            >
-              {dir}
-            </Box>
-          )}
+    <DiffFileRow
+      workspaceId={workspaceId}
+      filePath={file.path}
+      sha={sha}
+      expanded={expanded}
+      onToggle={onToggle}
+      added={file.added}
+      removed={file.removed}
+      trailing={
+        file.added !== null && (
           <Box
-            component="span"
-            className="file-name"
             sx={{
-              color: expanded ? c.accent.primary : c.text.primary,
+              width: 52,
+              height: 4,
               flexShrink: 0,
+              borderRadius: `${c.radius.full}px`,
+              background: c.bg.elevated,
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              maxWidth: '100%',
-              transition: c.transition,
+              display: 'flex',
             }}
           >
-            {name}
+            <Box sx={{ width, display: 'flex', height: '100%' }}>
+              <Box sx={{ flex: added, background: c.status.success }} />
+              <Box sx={{ flex: removed, background: c.status.error }} />
+            </Box>
           </Box>
-        </Box>
-
-        {file.added === null ? (
-          <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>binary</Box>
-        ) : (
-          <>
-            <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexShrink: 0 }}>
-              {added > 0 && <Box sx={{ ...tally(c), color: c.status.success }}>+{added}</Box>}
-              {removed > 0 && <Box sx={{ ...tally(c), color: c.status.error }}>−{removed}</Box>}
-            </Box>
-            <Box
-              sx={{
-                width: 52,
-                height: 4,
-                flexShrink: 0,
-                borderRadius: `${c.radius.full}px`,
-                background: c.bg.elevated,
-                overflow: 'hidden',
-                display: 'flex',
-              }}
-            >
-              <Box sx={{ width, display: 'flex', height: '100%' }}>
-                <Box sx={{ flex: added, background: c.status.success }} />
-                <Box sx={{ flex: removed, background: c.status.error }} />
-              </Box>
-            </Box>
-          </>
-        )}
-      </Box>
-
-      {workspaceId && (
-        <DiffInline
-          workspaceId={workspaceId}
-          filePath={file.path}
-          sha={sha}
-          open={expanded}
-        />
-      )}
-    </Box>
+        )
+      }
+    />
   );
 };
 
