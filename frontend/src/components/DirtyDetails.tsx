@@ -6,7 +6,7 @@ import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { primaryButton, sunkenField } from '@/shared/styles/ui';
+import { primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
 import { gitgraphCreateCommitUrl } from '@/shared/state/API_ENDPOINTS';
 import IgnoreMenu, { type IgnoreResult } from './IgnoreMenu';
 import DiffFileRow from './DiffFileRow';
@@ -28,6 +28,8 @@ interface Props {
   draft: string | null;
   draftError: string | null;
   onDraftConsumed: () => void;
+  /** Null when there's no drafted message to back out of. */
+  onCancel: (() => void) | null;
   onCommitted: () => void;
   onIgnored: () => void;
 }
@@ -54,6 +56,7 @@ const DirtyDetails: React.FC<Props> = ({
   draft,
   draftError,
   onDraftConsumed,
+  onCancel,
   onCommitted,
   onIgnored,
 }) => {
@@ -269,6 +272,19 @@ const DirtyDetails: React.FC<Props> = ({
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box sx={{ flex: 1 }} />
+          {onCancel && (
+            <ButtonBase
+              disabled={busy}
+              onClick={() => {
+                setMessage('');
+                setError(null);
+                onCancel();
+              }}
+              sx={{ ...pushButton(c) }}
+            >
+              Cancel
+            </ButtonBase>
+          )}
           <ButtonBase disabled={!canCommit} onClick={() => void submit()} sx={{ ...primaryButton(c) }}>
             {busy ? (
               <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />

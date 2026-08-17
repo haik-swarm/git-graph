@@ -47,11 +47,19 @@ const DirtyWorkCard: React.FC<Props> = ({
   // by it, so the button above can fill the field it doesn't render.
   const [draft, setDraft] = React.useState<string | null>(null);
   const [draftError, setDraftError] = React.useState<string | null>(null);
+  // Once a message is drafted the card is mid-commit, so the header drops
+  // back to a plain summary: re-drafting over the message you're about to
+  // send, or discarding it outright, are not the next step from here.
+  // `draft` can't carry this since it's cleared as soon as the field takes it.
+  const [drafting, setDrafting] = React.useState(false);
 
   // Committing or discarding empties the list, so an open panel would be
   // left showing a stale form over nothing.
   React.useEffect(() => {
-    if (dirty.length === 0) setOpen(false);
+    if (dirty.length === 0) {
+      setOpen(false);
+      setDrafting(false);
+    }
   }, [dirty.length]);
 
   const counts = React.useMemo(() => {
@@ -109,7 +117,19 @@ const DirtyWorkCard: React.FC<Props> = ({
       }}
     >
     <Box
-      onClick={() => dirty.length > 0 && setOpen(o => !o)}
+      // The panel unmounts when it collapses, taking the pending message with
+      // it, so collapsing has to mean the same thing as Cancel. Otherwise the
+      // header comes back with its buttons hidden and no way to reach either.
+      onClick={() => {
+        if (dirty.length === 0) return;
+        setOpen(prev => {
+          if (prev) {
+            setDrafting(false);
+            setDraftError(null);
+          }
+          return !prev;
+        });
+      }}
       role="button"
       aria-expanded={open}
       sx={{
@@ -155,19 +175,24 @@ const DirtyWorkCard: React.FC<Props> = ({
         onClick={e => e.stopPropagation()}
         sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}
       >
-        <MagicDraftButton
-          workspaceId={workspaceId}
-          onBusyChange={onBusyChange}
-          // Expanding on click, before the message arrives, means the field
-          // the text is headed for is already on screen when it lands.
-          onStart={() => {
-            setDraftError(null);
-            setOpen(true);
-          }}
-          onDrafted={setDraft}
-          onError={setDraftError}
-        />
-        {!magicBusy && (
+        {!drafting && (
+          <MagicDraftButton
+            workspaceId={workspaceId}
+            onBusyChange={onBusyChange}
+            // Expanding on click, before the message arrives, means the field
+            // the text is headed for is already on screen when it lands.
+            onStart={() => {
+              setDraftError(null);
+              setOpen(true);
+            }}
+            onDrafted={message => {
+              setDraft(message);
+              setDrafting(true);
+            }}
+            onError={setDraftError}
+          />
+        )}
+        {!magicBusy && !drafting && (
           <DiscardButton
             workspaceId={workspaceId}
             dirtyCount={dirty.length}
@@ -196,7 +221,23 @@ const DirtyWorkCard: React.FC<Props> = ({
           draft={draft}
           draftError={draftError}
           onDraftConsumed={() => setDraft(null)}
-          onCommitted={onCommitted}
+          // Only offered while a drafted message is pending, so Cancel always
+          // means "drop that message", never "collapse the panel".
+          onCancel={
+            drafting
+              ? () => {
+                  setDrafting(false);
+                  setDraftError(null);
+                  setOpen(false);
+                }
+              : null
+          }
+          // A partial commit leaves files behind, so the card survives and has
+          // to return to its resting header rather than stay mid-commit.
+          onCommitted={() => {
+            setDrafting(false);
+            onCommitted();
+          }}
           onIgnored={onIgnored}
         />
       </Box>
