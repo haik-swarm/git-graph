@@ -368,6 +368,9 @@ def commit_paths(
 ) -> Tuple[bool, str]:
     """Commit exactly `paths`, leaving every other pending change alone.
 
+    An empty `paths` means every dirty file. The bulk bar commits whole
+    workspaces it never enumerated, so it has no list to send.
+
     Only paths git currently reports as dirty are accepted: the pathspec
     reaches the command line, so restricting it to a set the repo itself
     just produced keeps a crafted request from touching unrelated files.
@@ -388,6 +391,9 @@ def commit_paths(
         addable[entry["path"]] = entry["unstaged"]
         if "orig_path" in entry:
             rename_sources[entry["path"]] = entry["orig_path"]
+
+    if not paths:
+        paths = list(addable)
 
     targets: List[str] = []
     to_add: List[str] = []

@@ -13,12 +13,18 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
+import {
+  primaryButton,
+  pushButton,
+  slimScroll,
+  sunkenField,
+  writingField,
+} from '@/shared/styles/ui';
 import { BrandGlyph } from '@/components/Chrome';
 import BulkAppDetails from '@/components/BulkAppDetails';
 import {
   gitgraphCreateCommitUrl,
-  gitgraphMagicUpdateUrl,
+  gitgraphMagicDraftUrl,
   githubPushUrl,
 } from '@/shared/state/API_ENDPOINTS';
 import type { AppEntry } from '@/components/AppPicker';
@@ -233,6 +239,21 @@ interface Outcome {
   warnings: string[];
 }
 
+/** What the LLM wrote for one app, or why it couldn't. */
+interface Draft {
+  message: string;
+  error: string | null;
+  writing: boolean;
+}
+
+/**
+ * Magic mode used to draft, commit and push in one unreviewable server call.
+ * It now stops after drafting so every message is on screen, editable, and
+ * refusable before anything is written. `select` gathers apps, `review` shows
+ * what was written, `done` is the receipt.
+ */
+type Phase = 'select' | 'review' | 'done';
+
 const BulkPicker: React.FC<PickerProps> = ({
   mode,
   entries,
@@ -256,6 +277,13 @@ const BulkPicker: React.FC<PickerProps> = ({
     currentName: string;
   } | null>(null);
   const [result, setResult] = useState<Outcome | null>(null);
+  const [phase, setPhase] = useState<Phase>('select');
+  // Keyed by workspace id rather than held per row: the review step edits
+  // these while the rows re-render underneath from fresh status.
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // Set while drafting so Cancel can abort in-flight requests instead of
+  // letting them land on a panel the user already backed out of.
+  const abortRef = React.useRef<AbortController | null>(null);
 
   // Switching mode without collapsing swaps the whole entry list underneath,
   // so a selection carried over would point at apps that aren't listed. Keyed
@@ -268,11 +296,22 @@ const BulkPicker: React.FC<PickerProps> = ({
     // Push mode's rows list commits where the commit modes list files, so an
     // app left open across the switch would show the wrong half of its work.
     setOpenApp(null);
+    // Drafts describe a diff. Switching modes or landing a commit changes
+    // that diff, so carrying them over would show messages for work that
+    // no longer matches what's on disk.
+    abortRef.current?.abort();
+    setDrafts({});
+    setPhase('select');
   }, [mode, entryKey]);
 
+  React.useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Pending drafts hold the panel open too, not just an in-flight request:
+  // collapsing unmounts this component, and messages the user is still
+  // reading would vanish with no way to get them back.
   React.useEffect(() => {
-    onBusyChange(busy);
-  }, [busy, onBusyChange]);
+    onBusyChange(busy || (phase === 'review' && !result));
+  }, [busy, phase, result, onBusyChange]);
 
   const toggle = (id: string) => {
     setChosen(prev => {
@@ -288,63 +327,128 @@ const BulkPicker: React.FC<PickerProps> = ({
   const canRun =
     chosen.size > 0 && !busy && (!needsMessage || message.trim().length > 0);
 
+  const targets = entries.filter(d => chosen.has(d.app.workspace_id));
+
+  /**
+   * Ask the model for a message per app, streaming each into its own row as
+   * it lands. Nothing is staged or committed here: `magic-draft` is the
+   * read-only half, so a user who dislikes every message can walk away and
+   * the working tree is exactly as they left it.
+   */
+  const draftAll = async () => {
+    if (targets.length === 0) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setBusy(true);
+    setPhase('review');
+    setDrafts(
+      Object.fromEntries(
+        targets.map(t => [t.app.workspace_id, { message: '', error: null, writing: true }]),
+      ),
+    );
+
+    for (let i = 0; i < targets.length; i++) {
+      if (controller.signal.aborted) return;
+      const { app } = targets[i];
+      setProgress({
+        done: i,
+        total: targets.length,
+        currentId: app.workspace_id,
+        currentName: app.name,
+      });
+      try {
+        const res = await fetch(gitgraphMagicDraftUrl(app.workspace_id), {
+          method: 'POST',
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.detail ?? `draft ${res.status}`);
+        }
+        const data: { message: string } = await res.json();
+        setDrafts(prev => ({
+          ...prev,
+          [app.workspace_id]: { message: data.message, error: null, writing: false },
+        }));
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setDrafts(prev => ({
+          ...prev,
+          [app.workspace_id]: {
+            message: '',
+            error: err instanceof Error ? err.message : 'Draft failed.',
+            writing: false,
+          },
+        }));
+      }
+    }
+
+    if (controller.signal.aborted) return;
+    abortRef.current = null;
+    setProgress(null);
+    setBusy(false);
+  };
+
+  /** Throw away every drafted message and go back to picking apps. */
+  const cancelDrafts = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setDrafts({});
+    setProgress(null);
+    setBusy(false);
+    setPhase('select');
+  };
+
+  const commitOne = async (entry: BulkEntry, text: string) => {
+    const res = await fetch(gitgraphCreateCommitUrl(entry.app.workspace_id), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Empty `paths` means every dirty file, which is what a bulk row
+      // promises: the whole workspace, not a subset it never showed.
+      body: JSON.stringify({ message: text, paths: [], push: entry.hasRemote }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.detail ?? `commit ${res.status}`);
+    }
+    const data: { push_error?: string } = await res.json().catch(() => ({}));
+    return data.push_error
+      ? `${entry.app.name}: committed, push failed (${data.push_error})`
+      : null;
+  };
+
   const runOne = async (entry: BulkEntry): Promise<string | null> => {
-    const { app, hasRemote } = entry;
     if (mode === 'push') {
-      const res = await fetch(githubPushUrl(app.workspace_id), { method: 'POST' });
+      const res = await fetch(githubPushUrl(entry.app.workspace_id), { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.detail ?? `push ${res.status}`);
       }
       return null;
     }
-
     if (mode === 'magic') {
-      const res = await fetch(gitgraphMagicUpdateUrl(app.workspace_id), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Same contract as the single-app button: push when there's a
-        // remote to push to, so bulk isn't a second-class path.
-        body: JSON.stringify({ push: hasRemote }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? `magic-update ${res.status}`);
-      }
-      // The commit landed even when the push leg failed, so this is a
-      // warning on a successful row rather than an outright failure.
-      const data = await res.json().catch(() => null);
-      if (data?.push_error) {
-        return `${app.name}: committed, push failed (${data.push_error})`;
-      }
-      return null;
+      return commitOne(entry, drafts[entry.app.workspace_id].message.trim());
     }
-
-    const res = await fetch(gitgraphCreateCommitUrl(app.workspace_id), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: message.trim(), paths: [] }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      throw new Error(data?.detail ?? `commit ${res.status}`);
-    }
-    return null;
+    return commitOne(entry, message.trim());
   };
 
-  const run = async () => {
-    const targets = entries.filter(d => chosen.has(d.app.workspace_id));
-    if (targets.length === 0) return;
+  /**
+   * `subset` is the confirmed set. In magic mode that's whichever apps still
+   * have a usable message after review, which is narrower than `chosen`:
+   * a failed draft or a message the user emptied is not something to commit.
+   */
+  const run = async (subset: BulkEntry[]) => {
+    if (subset.length === 0) return;
     setBusy(true);
     setResult(null);
     const ok: string[] = [];
     const failed: { id: string; name: string; error: string }[] = [];
     const warnings: string[] = [];
-    for (let i = 0; i < targets.length; i++) {
-      const entry = targets[i];
+    for (let i = 0; i < subset.length; i++) {
+      const entry = subset[i];
       setProgress({
         done: i,
-        total: targets.length,
+        total: subset.length,
         currentId: entry.app.workspace_id,
         currentName: entry.app.name,
       });
@@ -362,6 +466,7 @@ const BulkPicker: React.FC<PickerProps> = ({
     }
     setProgress(null);
     setResult({ ok, failed, warnings });
+    setPhase('done');
     setBusy(false);
     onDone(ok);
   };
@@ -371,26 +476,41 @@ const BulkPicker: React.FC<PickerProps> = ({
     onClose();
   };
 
+  // Apps whose drafted message is usable. A failed draft, or one the user
+  // cleared out, drops out of the confirm set rather than blocking it.
+  const approved = React.useMemo(
+    () => targets.filter(t => (drafts[t.app.workspace_id]?.message ?? '').trim().length > 0),
+    [targets, drafts],
+  );
+  const drafting = mode === 'magic' && phase === 'review' && busy;
+
   const title =
     mode === 'magic'
-      ? 'Magic update across apps'
+      ? phase === 'review'
+        ? 'Review each message'
+        : 'Magic update across apps'
       : mode === 'commit'
         ? 'Commit across apps'
         : 'Push across apps';
   const hint =
     mode === 'magic'
-      ? 'AI drafts a commit message per app, then pushes anywhere a remote is set.'
+      ? phase === 'review'
+        ? 'One message per app, written from its diff. Edit any of them, or clear one to leave that app out.'
+        : 'AI writes a commit message per app. You read them all before anything is committed.'
       : mode === 'commit'
         ? 'One message, one commit per app, every dirty file in each.'
         : 'Send every selected app’s local commits up to its GitHub remote.';
   const runLabel = (n: number) =>
     mode === 'magic'
-      ? `Magic update ${n} app${n === 1 ? '' : 's'}`
+      ? `Write ${n} message${n === 1 ? '' : 's'}`
       : mode === 'commit'
         ? `Commit ${n} app${n === 1 ? '' : 's'}`
         : `Push ${n} app${n === 1 ? '' : 's'}`;
-  const progressVerb =
-    mode === 'magic' ? 'Updating' : mode === 'commit' ? 'Committing' : 'Pushing';
+  const progressVerb = drafting
+    ? 'Writing'
+    : mode === 'push'
+      ? 'Pushing'
+      : 'Committing';
   const unit = mode === 'push' ? 'commit' : 'file';
 
   return (
@@ -406,8 +526,13 @@ const BulkPicker: React.FC<PickerProps> = ({
         <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: '2px' }}>{hint}</Box>
       </Box>
 
-      <Box sx={{ maxHeight: 260, overflowY: 'auto', p: '4px', ...slimScroll(c) }}>
-        {entries.map(({ app, count, hasRemote }) => {
+      <Box sx={{ maxHeight: 360, overflowY: 'auto', p: '4px', ...slimScroll(c) }}>
+        {/* Once messages exist, the list is the review: apps that were never
+            selected have nothing to show and would only be noise. */}
+        {(phase === 'select'
+          ? entries
+          : entries.filter(e => drafts[e.app.workspace_id])
+        ).map(({ app, count, hasRemote }) => {
           const id = app.workspace_id;
           const isChosen = chosen.has(id);
           const isCurrent = busy && progress?.currentId === id;
@@ -419,6 +544,9 @@ const BulkPicker: React.FC<PickerProps> = ({
                 : null
             : null;
           const isOpen = openApp === id;
+          // Present only in magic mode once drafting has started. Its
+          // presence is what turns the row into a reviewable message.
+          const draft = drafts[id] ?? null;
           return (
             <Box
               key={id}
@@ -447,21 +575,25 @@ const BulkPicker: React.FC<PickerProps> = ({
                 {/* Selecting an app and inspecting it are different questions,
                     so the checkbox keeps its own hit target rather than the
                     whole row meaning one of them. */}
-                <ButtonBase
-                  onClick={() => !busy && toggle(id)}
-                  disabled={busy}
-                  aria-label={isChosen ? `Deselect ${app.name}` : `Select ${app.name}`}
-                  sx={{
-                    width: 14,
-                    height: 14,
-                    flexShrink: 0,
-                    borderRadius: `${c.radius.xs}px`,
-                    border: `1px solid ${isChosen ? c.accent.primary : c.border.subtle}`,
-                    background: isChosen ? c.accent.primary : 'transparent',
-                  }}
-                >
-                  {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
-                </ButtonBase>
+                {/* During review the message field decides inclusion, so a
+                    second control saying the same thing could contradict it. */}
+                {phase === 'select' && (
+                  <ButtonBase
+                    onClick={() => !busy && toggle(id)}
+                    disabled={busy}
+                    aria-label={isChosen ? `Deselect ${app.name}` : `Select ${app.name}`}
+                    sx={{
+                      width: 14,
+                      height: 14,
+                      flexShrink: 0,
+                      borderRadius: `${c.radius.xs}px`,
+                      border: `1px solid ${isChosen ? c.accent.primary : c.border.subtle}`,
+                      background: isChosen ? c.accent.primary : 'transparent',
+                    }}
+                  >
+                    {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
+                  </ButtonBase>
+                )}
 
                 <BrandGlyph seed={id} letter={app.name[0] || '?'} size={22} />
 
@@ -526,6 +658,65 @@ const BulkPicker: React.FC<PickerProps> = ({
                 )}
               </Box>
 
+              {/* The message this app is about to commit under, in the row it
+                  belongs to. Bulk used to name a count and commit text nobody
+                  ever saw; this is that text, editable, before it lands. */}
+              {draft && (
+                <Box sx={{ px: '8px', pb: '8px', pl: '32px' }}>
+                  <InputBase
+                    multiline
+                    minRows={2}
+                    maxRows={6}
+                    value={draft.message}
+                    disabled={draft.writing || busy}
+                    placeholder={
+                      draft.writing ? 'Writing a commit message…' : 'Commit message'
+                    }
+                    onChange={e =>
+                      setDrafts(prev => ({
+                        ...prev,
+                        [id]: { ...prev[id], message: e.target.value },
+                      }))
+                    }
+                    sx={{
+                      width: '100%',
+                      ...sunkenField(c),
+                      ...(draft.writing ? writingField(c) : null),
+                      ...c.type.body,
+                      color: c.text.primary,
+                      px: 1,
+                      py: '6px',
+                      // MUI greys both the text and the placeholder on a
+                      // disabled field, which would flatten the accent
+                      // mid-animation.
+                      '& textarea.Mui-disabled': {
+                        WebkitTextFillColor: draft.writing
+                          ? c.accent.primary
+                          : c.text.primary,
+                        opacity: 1,
+                      },
+                      '& textarea::placeholder, & textarea.Mui-disabled::placeholder': {
+                        color: draft.writing ? c.accent.primary : c.text.muted,
+                        WebkitTextFillColor: draft.writing
+                          ? c.accent.primary
+                          : c.text.muted,
+                        opacity: 1,
+                      },
+                    }}
+                  />
+                  {draft.error && (
+                    <Box sx={{ ...c.type.caption, color: c.status.error, mt: '4px' }}>
+                      {draft.error} · write one yourself, or leave it empty to skip this app.
+                    </Box>
+                  )}
+                  {!draft.error && !draft.writing && !draft.message.trim() && (
+                    <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: '4px' }}>
+                      Empty — this app will be left alone.
+                    </Box>
+                  )}
+                </Box>
+              )}
+
               <Collapse in={isOpen} timeout={180} unmountOnExit>
                 <Box sx={{ borderTop: `1px solid ${c.border.subtle}`, background: c.bg.surface }}>
                   <BulkAppDetails
@@ -561,7 +752,7 @@ const BulkPicker: React.FC<PickerProps> = ({
             disabled={busy}
             onKeyDown={e => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canRun) {
-                void run();
+                void run(targets);
               }
             }}
             sx={{
@@ -596,53 +787,86 @@ const BulkPicker: React.FC<PickerProps> = ({
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box sx={{ ...c.type.caption, color: c.text.tertiary, flex: 1 }}>
-            {chosen.size} of {entries.length} selected
-            {!allChosen && entries.length > 0 && (
-              <Box
-                component="button"
-                onClick={() => setChosen(new Set(entries.map(d => d.app.workspace_id)))}
-                disabled={busy}
-                sx={{
-                  ml: '6px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: c.accent.primary,
-                  cursor: 'pointer',
-                  ...c.type.caption,
-                  p: 0,
-                }}
-              >
-                All
-              </Box>
-            )}
-            {chosen.size > 0 && (
-              <Box
-                component="button"
-                onClick={() => setChosen(new Set())}
-                disabled={busy}
-                sx={{
-                  ml: '6px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: c.accent.primary,
-                  cursor: 'pointer',
-                  ...c.type.caption,
-                  p: 0,
-                }}
-              >
-                None
-              </Box>
+            {phase === 'review' ? (
+              drafting ? (
+                'Writing messages…'
+              ) : (
+                `${approved.length} of ${targets.length} ready to commit`
+              )
+            ) : (
+              <>
+                {chosen.size} of {entries.length} selected
+                {!allChosen && entries.length > 0 && (
+                  <Box
+                    component="button"
+                    onClick={() => setChosen(new Set(entries.map(d => d.app.workspace_id)))}
+                    disabled={busy}
+                    sx={{
+                      ml: '6px',
+                      border: 'none',
+                      background: 'transparent',
+                      color: c.accent.primary,
+                      cursor: 'pointer',
+                      ...c.type.caption,
+                      p: 0,
+                    }}
+                  >
+                    All
+                  </Box>
+                )}
+                {chosen.size > 0 && (
+                  <Box
+                    component="button"
+                    onClick={() => setChosen(new Set())}
+                    disabled={busy}
+                    sx={{
+                      ml: '6px',
+                      border: 'none',
+                      background: 'transparent',
+                      color: c.accent.primary,
+                      cursor: 'pointer',
+                      ...c.type.caption,
+                      p: 0,
+                    }}
+                  >
+                    None
+                  </Box>
+                )}
+              </>
             )}
           </Box>
+
+          {/* Cancel is offered for the whole batch here; each row cancels
+              itself by having its message cleared. Both are reachable right
+              up until the commit actually runs. */}
+          {phase === 'review' && !result && (
+            <ButtonBase onClick={cancelDrafts} sx={{ ...pushButton(c) }}>
+              {drafting ? 'Stop' : 'Cancel'}
+            </ButtonBase>
+          )}
+
           <ButtonBase
-            disabled={result ? false : !canRun}
-            onClick={result ? closeIfIdle : () => void run()}
+            disabled={
+              result
+                ? false
+                : phase === 'review'
+                  ? busy || approved.length === 0
+                  : !canRun
+            }
+            onClick={() => {
+              if (result) return closeIfIdle();
+              if (phase === 'review') return void run(approved);
+              if (mode === 'magic') return void draftAll();
+              return void run(targets);
+            }}
             sx={{ ...primaryButton(c) }}
           >
             {busy ? (
               <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
             ) : result ? (
               'Done'
+            ) : phase === 'review' ? (
+              `Commit ${approved.length} app${approved.length === 1 ? '' : 's'}`
             ) : (
               runLabel(chosen.size)
             )}
