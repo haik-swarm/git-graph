@@ -6,7 +6,7 @@ import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckIcon from '@mui/icons-material/Check';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
+import { primaryButton, pushButton, sunkenField, writingField } from '@/shared/styles/ui';
 import { gitgraphCreateCommitUrl } from '@/shared/state/API_ENDPOINTS';
 import IgnoreMenu, { type IgnoreResult } from './IgnoreMenu';
 import DiffFileRow from './DiffFileRow';
@@ -27,6 +27,8 @@ interface Props {
   /** A message written upstream by the draft button; null when none is pending. */
   draft: string | null;
   draftError: string | null;
+  /** A message is being written right now; the field animates and locks. */
+  writing: boolean;
   onDraftConsumed: () => void;
   /** Null when there's no drafted message to back out of. */
   onCancel: (() => void) | null;
@@ -55,6 +57,7 @@ const DirtyDetails: React.FC<Props> = ({
   hasRemote,
   draft,
   draftError,
+  writing,
   onDraftConsumed,
   onCancel,
   onCommitted,
@@ -85,7 +88,10 @@ const DirtyDetails: React.FC<Props> = ({
   }, [draft, onDraftConsumed]);
 
   const allChosen = chosen.size === dirty.length && dirty.length > 0;
-  const canCommit = chosen.size > 0 && message.trim().length > 0 && !busy;
+  // `writing` blocks it too: the message on screen is about to be replaced, so
+  // committing it now would commit text the user never got to see.
+  const canCommit =
+    chosen.size > 0 && message.trim().length > 0 && !busy && !writing;
 
   const toneColor = useMemo(
     () => ({
@@ -246,7 +252,10 @@ const DirtyDetails: React.FC<Props> = ({
           maxRows={5}
           value={message}
           onChange={e => setMessage(e.target.value)}
-          placeholder="Commit message"
+          // Typing into a field that's about to be overwritten by the incoming
+          // message would just lose what you typed.
+          disabled={writing}
+          placeholder={writing ? 'Writing a commit message…' : 'Commit message'}
           onKeyDown={e => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canCommit) {
               void submit();
@@ -254,11 +263,24 @@ const DirtyDetails: React.FC<Props> = ({
           }}
           sx={{
             ...sunkenField(c),
+            ...(writing ? writingField(c) : null),
             ...c.type.body,
             color: c.text.primary,
             px: 1,
             py: '6px',
-            '& textarea::placeholder': { color: c.text.muted, opacity: 1 },
+            // Disabling the field makes MUI paint both the text and the
+            // placeholder with its own greyed fill, so the accent has to be
+            // restored explicitly or the field goes flat mid-animation.
+            '& textarea.Mui-disabled': {
+              WebkitTextFillColor: writing ? c.accent.primary : c.text.primary,
+              opacity: 1,
+              cursor: 'wait',
+            },
+            '& textarea::placeholder, & textarea.Mui-disabled::placeholder': {
+              color: writing ? c.accent.primary : c.text.muted,
+              WebkitTextFillColor: writing ? c.accent.primary : c.text.muted,
+              opacity: 1,
+            },
           }}
         />
 

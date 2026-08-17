@@ -52,6 +52,9 @@ const DirtyWorkCard: React.FC<Props> = ({
   // send, or discarding it outright, are not the next step from here.
   // `draft` can't carry this since it's cleared as soon as the field takes it.
   const [drafting, setDrafting] = React.useState(false);
+  // The request is in flight. Distinct from `drafting`, which means a message
+  // has already landed: this one drives the field's writing animation.
+  const [writing, setWriting] = React.useState(false);
 
   // Committing or discarding empties the list, so an open panel would be
   // left showing a stale form over nothing.
@@ -178,7 +181,10 @@ const DirtyWorkCard: React.FC<Props> = ({
         {!drafting && (
           <MagicDraftButton
             workspaceId={workspaceId}
-            onBusyChange={onBusyChange}
+            onBusyChange={busy => {
+              setWriting(busy);
+              onBusyChange(busy);
+            }}
             // Expanding on click, before the message arrives, means the field
             // the text is headed for is already on screen when it lands.
             onStart={() => {
@@ -220,6 +226,7 @@ const DirtyWorkCard: React.FC<Props> = ({
           hasRemote={hasRemote}
           draft={draft}
           draftError={draftError}
+          writing={writing}
           onDraftConsumed={() => setDraft(null)}
           // Only offered while a drafted message is pending, so Cancel always
           // means "drop that message", never "collapse the panel".

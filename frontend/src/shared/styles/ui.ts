@@ -233,6 +233,38 @@ export function focusRing(c: SwarmTokens) {
 }
 
 /**
+ * A field that something else is currently typing into.
+ *
+ * Layered on top of `sunkenField`, so it reads as the same control in a
+ * different state rather than a different control. The accent border and
+ * breathing glow borrow the focus treatment on purpose: the model writing
+ * here should feel like a cursor in the box, not a loading screen over it.
+ * A sheen crosses the surface to carry the sense of work in progress.
+ * Holds still under reduced-motion, keeping only the static accent border.
+ */
+export function writingField(c: SwarmTokens) {
+  return {
+    borderColor: c.accent.primary,
+    background: `linear-gradient(90deg, ${c.bg.secondary} 30%, rgba(${c.accentRgb},0.10) 50%, ${c.bg.secondary} 70%)`,
+    backgroundSize: '300% 100%',
+    animation: `swarm-writing-sheen 1.8s ${c.ease} infinite, swarm-writing-glow 1.8s ${c.ease} infinite`,
+    '@keyframes swarm-writing-sheen': {
+      '0%': { backgroundPosition: '100% 50%' },
+      '100%': { backgroundPosition: '0% 50%' },
+    },
+    '@keyframes swarm-writing-glow': {
+      '0%, 100%': { boxShadow: `0 0 0 0 rgba(${c.accentRgb},0.22)` },
+      '50%': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.22)` },
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      background: c.bg.secondary,
+      boxShadow: 'none',
+    },
+  } as const;
+}
+
+/**
  * Placeholder block for content that can't be shown yet.
  *
  * Deliberately a sweep rather than a spinner: it occupies the shape the
