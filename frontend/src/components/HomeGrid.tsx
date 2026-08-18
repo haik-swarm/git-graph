@@ -16,7 +16,6 @@ import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
 import type { BulkEntry } from '@/components/BulkActionBar';
 import StatRow from '@/components/StatRow';
-import HomeHero from '@/components/HomeHero';
 import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
@@ -170,8 +169,6 @@ const HomeGrid: React.FC<Props> = ({
         >
           Your apps
         </Box>
-
-        <HomeHero apps={apps} meta={meta} onOpen={onOpen} />
 
         <StatRow
           apps={apps}
