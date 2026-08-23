@@ -5,6 +5,7 @@ import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded';
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import PublishRoundedIcon from '@mui/icons-material/PublishRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -27,6 +28,8 @@ interface Props {
   dirtyActive: boolean;
   onFocusUnpushed: () => void;
   unpushedActive: boolean;
+  onFocusUnpublished: () => void;
+  unpublishedActive: boolean;
   syncing: boolean;
   /** ISO time of the last successful remote fetch; null means never. */
   syncedAt: string | null;
@@ -45,6 +48,8 @@ const StatRow: React.FC<Props> = ({
   dirtyActive,
   onFocusUnpushed,
   unpushedActive,
+  onFocusUnpublished,
+  unpublishedActive,
   syncing,
   syncedAt,
   onSyncRemotes,
@@ -58,6 +63,7 @@ const StatRow: React.FC<Props> = ({
     let dirtyApps = 0;
     let unpushedCommits = 0;
     let unpushedApps = 0;
+    let unpublishedApps = 0;
     for (const a of apps) {
       const m = meta[a.workspace_id];
       if (a.has_git && a.workspace_exists) tracked += 1;
@@ -72,6 +78,17 @@ const StatRow: React.FC<Props> = ({
         unpushedCommits += ahead;
         unpushedApps += 1;
       }
+      // Tracked with commits but no remote: never published to GitHub. Kept
+      // apart from `unpushed`, which needs a remote to be ahead of one.
+      if (
+        a.has_git &&
+        a.workspace_exists &&
+        m.is_repo &&
+        m.has_remote === false &&
+        (m.commit_count ?? 0) > 0
+      ) {
+        unpublishedApps += 1;
+      }
     }
     return {
       tracked,
@@ -80,6 +97,7 @@ const StatRow: React.FC<Props> = ({
       dirtyApps,
       unpushedCommits,
       unpushedApps,
+      unpublishedApps,
       total: apps.length,
     };
   }, [apps, meta]);
@@ -94,7 +112,7 @@ const StatRow: React.FC<Props> = ({
     icon: React.ReactNode;
     value: string;
     label: string;
-    tone?: 'warning';
+    tone?: 'warning' | 'accent';
     onClick?: () => void;
     active?: boolean;
     footnote?: React.ReactNode;
@@ -154,6 +172,18 @@ const StatRow: React.FC<Props> = ({
         </SyncNote>
       ),
     },
+    {
+      key: 'unpublished',
+      icon: <PublishRoundedIcon />,
+      value: stats.unpublishedApps.toLocaleString(),
+      label:
+        stats.unpublishedApps === 0
+          ? 'all published'
+          : `never published`,
+      tone: stats.unpublishedApps > 0 ? 'accent' : undefined,
+      onClick: stats.unpublishedApps > 0 ? onFocusUnpublished : undefined,
+      active: unpublishedActive,
+    },
   ];
 
   return (
@@ -166,7 +196,13 @@ const StatRow: React.FC<Props> = ({
     >
       {cells.map(cell => {
         const clickable = Boolean(cell.onClick);
-        const ink = cell.tone === 'warning' ? c.status.warning : c.text.primary;
+        const toneColor =
+          cell.tone === 'warning'
+            ? c.status.warning
+            : cell.tone === 'accent'
+              ? c.accent.primary
+              : null;
+        const ink = toneColor ?? c.text.primary;
         return (
           <Box
             key={cell.key}
@@ -202,7 +238,7 @@ const StatRow: React.FC<Props> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                color: cell.tone === 'warning' ? c.status.warning : c.text.muted,
+                color: toneColor ?? c.text.muted,
                 '& svg': { fontSize: 14 },
               }}
             >

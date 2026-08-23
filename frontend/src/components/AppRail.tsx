@@ -32,6 +32,8 @@ export interface Sharing {
 export interface RepoState {
   dirty: number;
   unpushed: number;
+  /** Tracked with commits but no remote yet — never published. */
+  needsPublish?: boolean;
 }
 
 /** An app of the user's that's live in the marketplace org. */
@@ -536,6 +538,7 @@ const RailAppRow: React.FC<{
   const missing = !app.workspace_exists;
   const dirty = state?.dirty ?? 0;
   const unpushed = state?.unpushed ?? 0;
+  const needsPublish = state?.needsPublish ?? false;
   const people = sharing?.people ?? [];
   const shareTitle = sharing?.shared
     ? `${sharing.theirs ? `${sharing.owner}'s app · ` : ''}with ${people.join(', ')}${
@@ -581,6 +584,21 @@ const RailAppRow: React.FC<{
                 height: 8,
                 borderRadius: '50%',
                 background: c.status.success,
+                border: `1.5px solid ${selected ? `rgba(${c.accentRgb},0.10)` : c.bg.surface}`,
+              }}
+            />
+          )}
+          {needsPublish && !missing && (
+            <Box
+              title="Never published — publish this app for the first time"
+              sx={{
+                position: 'absolute',
+                right: -1,
+                top: -1,
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: c.accent.primary,
                 border: `1.5px solid ${selected ? `rgba(${c.accentRgb},0.10)` : c.bg.surface}`,
               }}
             />

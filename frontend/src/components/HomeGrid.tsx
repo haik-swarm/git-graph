@@ -6,6 +6,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import PublishRoundedIcon from '@mui/icons-material/PublishRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
@@ -20,7 +21,23 @@ import { absoluteTime, relativeTime } from '@/shared/graphLayout';
 import type { AppEntry } from '@/components/AppPicker';
 
 type SortKey = 'recent' | 'name' | 'status';
-type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty' | 'unpushed';
+type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty' | 'unpushed' | 'unpublished';
+
+/**
+ * Tracked, holds at least one commit, and has no remote at all — the app has
+ * never been published to GitHub. Distinct from `unpushed`, which is commits
+ * ahead of a remote that already exists. `has_remote` is undefined until the
+ * per-app status lands, so an app mid-load isn't flagged prematurely.
+ */
+function isUnpublished(app: AppEntry, m?: Meta): boolean {
+  return Boolean(
+    app.has_git &&
+      app.workspace_exists &&
+      m?.is_repo &&
+      m.has_remote === false &&
+      (m.commit_count ?? 0) > 0,
+  );
+}
 
 interface Meta {
   is_repo: boolean;
@@ -77,6 +94,7 @@ const HomeGrid: React.FC<Props> = ({
       if (filter === 'untracked' && a.has_git) return false;
       if (filter === 'dirty' && !(meta[a.workspace_id]?.dirty_count)) return false;
       if (filter === 'unpushed' && !(meta[a.workspace_id]?.unpushed)) return false;
+      if (filter === 'unpublished' && !isUnpublished(a, meta[a.workspace_id])) return false;
       if (!q) return true;
       return (
         a.name.toLowerCase().includes(q) ||
@@ -156,6 +174,21 @@ const HomeGrid: React.FC<Props> = ({
     return rows;
   }, [apps, meta]);
 
+  // Tracked apps that have never been published — no remote at all. Publishing
+  // one creates its private repo and pushes every commit, so the count is the
+  // whole log rather than an unpushed delta.
+  const unpublishedApps = React.useMemo(() => {
+    const rows: BulkEntry[] = [];
+    for (const a of apps) {
+      const m = meta[a.workspace_id];
+      if (isUnpublished(a, m)) {
+        rows.push({ app: a, count: m?.commit_count ?? 0, hasRemote: false });
+      }
+    }
+    rows.sort((a, b) => b.count - a.count);
+    return rows;
+  }, [apps, meta]);
+
   return (
     <Box sx={{ px: 3, pb: 4 }}>
       <Box sx={{ pt: 3, pb: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -177,6 +210,10 @@ const HomeGrid: React.FC<Props> = ({
           onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
           unpushedActive={filter === 'unpushed'}
           onFocusUnpushed={() => setFilter(f => (f === 'unpushed' ? 'all' : 'unpushed'))}
+          unpublishedActive={filter === 'unpublished'}
+          onFocusUnpublished={() =>
+            setFilter(f => (f === 'unpublished' ? 'all' : 'unpublished'))
+          }
           syncing={syncing}
           syncedAt={syncedAt}
           onSyncRemotes={onSyncRemotes}
@@ -258,11 +295,12 @@ const HomeGrid: React.FC<Props> = ({
         </Box>
       </Box>
 
-      {(dirtyApps.length > 0 || unpushedApps.length > 0) && (
+      {(dirtyApps.length > 0 || unpushedApps.length > 0 || unpublishedApps.length > 0) && (
         <Box sx={{ mb: 2 }}>
           <BulkActionBar
             dirtyApps={dirtyApps}
             unpushedApps={unpushedApps}
+            unpublishedApps={unpublishedApps}
             onDone={onBulkDone}
           />
         </Box>
@@ -278,7 +316,9 @@ const HomeGrid: React.FC<Props> = ({
                 ? 'Everything is committed'
                 : filter === 'unpushed'
                   ? 'Everything is pushed'
-                  : 'No apps in this filter'
+                  : filter === 'unpublished'
+                    ? 'Everything is published'
+                    : 'No apps in this filter'
           }
           hint={
             query
@@ -287,7 +327,9 @@ const HomeGrid: React.FC<Props> = ({
                 ? 'No workspace has uncommitted changes right now.'
                 : filter === 'unpushed'
                   ? 'Every tracked app is up to date with its remote.'
-                  : 'Switch filters to see the rest of your workspace.'
+                  : filter === 'unpublished'
+                    ? 'Every tracked app already has a GitHub remote.'
+                    : 'Switch filters to see the rest of your workspace.'
           }
         />
       ) : (
@@ -329,6 +371,7 @@ const AppCard: React.FC<{
   const dirty = meta?.dirty_count ?? 0;
   const commits = meta?.commit_count ?? 0;
   const unpushed = meta?.unpushed ?? 0;
+  const needsPublish = isUnpublished(app, meta);
 
   return (
     <Box
@@ -473,6 +516,12 @@ const AppCard: React.FC<{
               <Pill tone="warning">
                 <CloudUploadRoundedIcon />
                 {unpushed} to push
+              </Pill>
+            )}
+            {needsPublish && (
+              <Pill tone="accent">
+                <PublishRoundedIcon />
+                never published
               </Pill>
             )}
             {meta?.head_date && (

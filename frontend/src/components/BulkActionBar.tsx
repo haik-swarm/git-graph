@@ -9,6 +9,7 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import PublishRoundedIcon from '@mui/icons-material/PublishRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CheckIcon from '@mui/icons-material/Check';
@@ -25,6 +26,7 @@ import BulkAppDetails from '@/components/BulkAppDetails';
 import {
   gitgraphCreateCommitUrl,
   gitgraphMagicDraftUrl,
+  githubCreateRepoUrl,
   githubPushUrl,
 } from '@/shared/state/API_ENDPOINTS';
 import type { AppEntry } from '@/components/AppPicker';
@@ -39,12 +41,18 @@ export interface BulkEntry {
 interface Props {
   dirtyApps: BulkEntry[];
   unpushedApps: BulkEntry[];
+  unpublishedApps?: BulkEntry[];
   onDone: (workspaceIds: string[]) => void;
 }
 
-type Mode = 'magic' | 'commit' | 'push';
+type Mode = 'magic' | 'commit' | 'push' | 'publish';
 
-const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => {
+const BulkActionBar: React.FC<Props> = ({
+  dirtyApps,
+  unpushedApps,
+  unpublishedApps = [],
+  onDone,
+}) => {
   const c = useClaudeTokens();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('magic');
@@ -61,8 +69,9 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => 
 
   const hasDirty = dirtyApps.length > 0;
   const hasUnpushed = unpushedApps.length > 0;
+  const hasUnpublished = unpublishedApps.length > 0;
 
-  const defaultMode: Mode = hasDirty ? 'magic' : 'push';
+  const defaultMode: Mode = hasDirty ? 'magic' : hasUnpushed ? 'push' : 'publish';
 
   // A run in flight owns the panel: collapsing would unmount the progress it
   // is reporting into, so the disclosure is inert until it finishes.
@@ -79,22 +88,31 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => 
   };
 
   // The list is rebuilt from fresh status after every run, so a mode whose
-  // work is now done would expand onto an empty panel.
+  // work is now done would land the panel on an empty list. Each mode falls
+  // back to whatever work is still outstanding.
   React.useEffect(() => {
-    if (!hasDirty && !hasUnpushed) setOpen(false);
+    if (!hasDirty && !hasUnpushed && !hasUnpublished) setOpen(false);
+    else if (mode === 'publish' && !hasUnpublished) setMode(defaultMode);
     else if (mode === 'push' && !hasUnpushed) setMode(defaultMode);
-    else if (mode !== 'push' && !hasDirty) setMode('push');
-  }, [hasDirty, hasUnpushed, mode, defaultMode]);
+    else if ((mode === 'magic' || mode === 'commit') && !hasDirty) setMode(defaultMode);
+  }, [hasDirty, hasUnpushed, hasUnpublished, mode, defaultMode]);
 
   const headline = hasDirty
     ? `${totalDirty} uncommitted file${totalDirty === 1 ? '' : 's'} across ${dirtyApps.length} app${dirtyApps.length === 1 ? '' : 's'}`
-    : `${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} ready to push across ${unpushedApps.length} app${unpushedApps.length === 1 ? '' : 's'}`;
-
-  const subline = !hasDirty
-    ? 'Send them all to GitHub in one shot, or pick which ones.'
     : hasUnpushed
-      ? `Plus ${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} already waiting to push.`
-      : 'Handle every dirty workspace in one shot, or pick which ones.';
+      ? `${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} ready to push across ${unpushedApps.length} app${unpushedApps.length === 1 ? '' : 's'}`
+      : `${unpublishedApps.length} app${unpublishedApps.length === 1 ? '' : 's'} never published`;
+
+  const publishAside = hasUnpublished
+    ? ` Plus ${unpublishedApps.length} app${unpublishedApps.length === 1 ? '' : 's'} never published.`
+    : '';
+  const subline = !hasDirty && !hasUnpushed
+    ? 'Create a private GitHub repo for each and push, or pick which ones.'
+    : !hasDirty
+      ? `Send them all to GitHub in one shot, or pick which ones.${publishAside}`
+      : hasUnpushed
+        ? `Plus ${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} already waiting to push.${publishAside}`
+        : `Handle every dirty workspace in one shot, or pick which ones.${publishAside}`;
 
   return (
     <Box
@@ -146,8 +164,10 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => 
         >
           {hasDirty ? (
             <RadioButtonCheckedRoundedIcon sx={{ fontSize: 15 }} />
-          ) : (
+          ) : hasUnpushed ? (
             <CloudUploadRoundedIcon sx={{ fontSize: 15 }} />
+          ) : (
+            <PublishRoundedIcon sx={{ fontSize: 15 }} />
           )}
         </Box>
 
@@ -197,6 +217,21 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => 
               Push all…
             </ButtonBase>
           )}
+
+          {hasUnpublished && (
+            <ButtonBase
+              onClick={() => toggle('publish')}
+              title="Create a private GitHub repo for every never-published app and push it"
+              sx={{
+                ...(hasDirty || hasUnpushed ? pushButton(c) : primaryButton(c)),
+                gap: '6px',
+                '& svg': { fontSize: 14 },
+              }}
+            >
+              <PublishRoundedIcon />
+              Publish all…
+            </ButtonBase>
+          )}
         </Box>
 
         <ExpandMoreRoundedIcon
@@ -214,7 +249,13 @@ const BulkActionBar: React.FC<Props> = ({ dirtyApps, unpushedApps, onDone }) => 
         <Box sx={{ borderTop: `1px solid ${c.border.subtle}`, pl: '3px' }}>
           <BulkPicker
             mode={mode}
-            entries={mode === 'push' ? unpushedApps : dirtyApps}
+            entries={
+              mode === 'publish'
+                ? unpublishedApps
+                : mode === 'push'
+                  ? unpushedApps
+                  : dirtyApps
+            }
             onBusyChange={setBusy}
             onClose={() => setOpen(false)}
             onDone={onDone}
@@ -444,6 +485,33 @@ const BulkPicker: React.FC<PickerProps> = ({
       }
       return null;
     }
+    if (mode === 'publish') {
+      // Creating the repo only wires up origin; the commits still have to be
+      // pushed. A created repo with a failed push is reported as a warning,
+      // not a failure — the hard part (the repo) succeeded and a retry will
+      // just push.
+      const created = await fetch(githubCreateRepoUrl(entry.app.workspace_id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // No name: the backend slugifies the app's own name, same as the
+        // single-app card's default.
+        body: JSON.stringify({}),
+      });
+      if (!created.ok) {
+        const data = await created.json().catch(() => null);
+        throw new Error(
+          typeof data?.detail === 'string' ? data.detail : `publish ${created.status}`,
+        );
+      }
+      const pushed = await fetch(githubPushUrl(entry.app.workspace_id), { method: 'POST' });
+      if (!pushed.ok) {
+        const data = await pushed.json().catch(() => null);
+        return `${entry.app.name}: repo created, push failed (${
+          typeof data?.detail === 'string' ? data.detail : pushed.status
+        })`;
+      }
+      return null;
+    }
     if (mode === 'magic') {
       return commitOne(
         entry,
@@ -525,7 +593,9 @@ const BulkPicker: React.FC<PickerProps> = ({
         : 'Magic update across apps'
       : mode === 'commit'
         ? 'Commit across apps'
-        : 'Push across apps';
+        : mode === 'publish'
+          ? 'Publish across apps'
+          : 'Push across apps';
   const hint =
     mode === 'magic'
       ? phase === 'review'
@@ -533,19 +603,25 @@ const BulkPicker: React.FC<PickerProps> = ({
         : 'AI writes a commit message per app. You read them all before anything is committed.'
       : mode === 'commit'
         ? 'One message, one commit per app, every dirty file in each.'
-        : 'Send every selected app’s local commits up to its GitHub remote.';
+        : mode === 'publish'
+          ? 'Create a private GitHub repo for each selected app, then push its commits up.'
+          : 'Send every selected app’s local commits up to its GitHub remote.';
   const runLabel = (n: number) =>
     mode === 'magic'
       ? `Write ${n} message${n === 1 ? '' : 's'}`
       : mode === 'commit'
         ? `Commit ${n} app${n === 1 ? '' : 's'}`
-        : `Push ${n} app${n === 1 ? '' : 's'}`;
+        : mode === 'publish'
+          ? `Publish ${n} app${n === 1 ? '' : 's'}`
+          : `Push ${n} app${n === 1 ? '' : 's'}`;
   const progressVerb = drafting
     ? 'Writing'
     : mode === 'push'
       ? 'Pushing'
-      : 'Committing';
-  const unit = mode === 'push' ? 'commit' : 'file';
+      : mode === 'publish'
+        ? 'Publishing'
+        : 'Committing';
+  const unit = mode === 'push' || mode === 'publish' ? 'commit' : 'file';
 
   return (
     <Box>
@@ -815,7 +891,7 @@ const BulkPicker: React.FC<PickerProps> = ({
                   <BulkAppDetails
                     workspaceId={id}
                     open={isOpen}
-                    showCommits={mode === 'push'}
+                    showCommits={mode === 'push' || mode === 'publish'}
                     unpushedCount={count}
                   />
                 </Box>

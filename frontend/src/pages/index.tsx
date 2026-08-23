@@ -398,7 +398,9 @@ const Home: React.FC = () => {
       // An app with no remote can't be "unpushed" — every commit would
       // count as outstanding against a push that isn't possible yet.
       const unpushed = m?.has_remote ? m?.unpushed ?? 0 : 0;
-      if (dirty > 0 || unpushed > 0) out[id] = { dirty, unpushed };
+      // Tracked with commits but no remote yet: it has never been published.
+      const needsPublish = Boolean(m?.is_repo) && m?.has_remote === false && (m?.commit_count ?? 0) > 0;
+      if (dirty > 0 || unpushed > 0 || needsPublish) out[id] = { dirty, unpushed, needsPublish };
     }
     return out;
   }, [homeMeta]);
