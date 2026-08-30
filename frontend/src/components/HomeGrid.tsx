@@ -57,6 +57,7 @@ interface Props {
   apps: AppEntry[];
   meta: Record<string, Meta>;
   metaBusy: boolean;
+  source?: 'apps' | 'skills';
   onOpen: (app: AppEntry) => void;
   onTrack: (app: AppEntry) => Promise<void> | void;
   trackingId: string | null;
@@ -74,6 +75,7 @@ const HomeGrid: React.FC<Props> = ({
   apps,
   meta,
   metaBusy,
+  source = 'apps',
   onOpen,
   onTrack,
   trackingId,
@@ -86,6 +88,8 @@ const HomeGrid: React.FC<Props> = ({
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState<FilterKey>('all');
   const [sort, setSort] = React.useState<SortKey>('recent');
+  const nounPlural = source === 'skills' ? 'skills' : 'apps';
+  const titleWord = source === 'skills' ? 'Your skills' : 'Your apps';
 
   const rows = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -200,12 +204,13 @@ const HomeGrid: React.FC<Props> = ({
             lineHeight: 1.1,
           }}
         >
-          Your apps
+          {titleWord}
         </Box>
 
         <StatRow
           apps={apps}
           meta={meta}
+          source={source}
           dirtyActive={filter === 'dirty'}
           onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
           unpushedActive={filter === 'unpushed'}
@@ -236,7 +241,7 @@ const HomeGrid: React.FC<Props> = ({
             <Box
               component="input"
               value={query}
-              placeholder="Search apps"
+              placeholder={`Search ${nounPlural}`}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
               sx={{
                 flex: 1,
@@ -311,14 +316,14 @@ const HomeGrid: React.FC<Props> = ({
           icon={<SearchOffRoundedIcon />}
           title={
             query
-              ? 'No apps match that'
+              ? `No ${nounPlural} match that`
               : filter === 'dirty'
                 ? 'Everything is committed'
                 : filter === 'unpushed'
                   ? 'Everything is pushed'
                   : filter === 'unpublished'
                     ? 'Everything is published'
-                    : 'No apps in this filter'
+                    : `No ${nounPlural} in this filter`
           }
           hint={
             query
@@ -326,9 +331,9 @@ const HomeGrid: React.FC<Props> = ({
               : filter === 'dirty'
                 ? 'No workspace has uncommitted changes right now.'
                 : filter === 'unpushed'
-                  ? 'Every tracked app is up to date with its remote.'
+                  ? `Every tracked ${source === 'skills' ? 'skill' : 'app'} is up to date with its remote.`
                   : filter === 'unpublished'
-                    ? 'Every tracked app already has a GitHub remote.'
+                    ? `Every tracked ${source === 'skills' ? 'skill' : 'app'} already has a GitHub remote.`
                     : 'Switch filters to see the rest of your workspace.'
           }
         />

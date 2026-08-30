@@ -24,6 +24,7 @@ interface Meta {
 interface Props {
   apps: AppEntry[];
   meta: Record<string, Meta>;
+  source?: 'apps' | 'skills';
   onFocusDirty: () => void;
   dirtyActive: boolean;
   onFocusUnpushed: () => void;
@@ -44,6 +45,7 @@ interface Props {
 const StatRow: React.FC<Props> = ({
   apps,
   meta,
+  source = 'apps',
   onFocusDirty,
   dirtyActive,
   onFocusUnpushed,
@@ -55,6 +57,8 @@ const StatRow: React.FC<Props> = ({
   onSyncRemotes,
 }) => {
   const c = useClaudeTokens();
+  const noun = source === 'skills' ? 'skill' : 'app';
+  const nounFor = (n: number) => `${noun}${n === 1 ? '' : 's'}`;
 
   const stats = React.useMemo(() => {
     let tracked = 0;
@@ -121,7 +125,7 @@ const StatRow: React.FC<Props> = ({
       key: 'apps',
       icon: <AppsRoundedIcon />,
       value: stats.total.toLocaleString(),
-      label: stats.total === 1 ? 'app' : 'apps',
+      label: nounFor(stats.total),
     },
     {
       key: 'tracked',
@@ -142,7 +146,7 @@ const StatRow: React.FC<Props> = ({
       label:
         stats.dirtyApps === 0
           ? 'all committed'
-          : `uncommitted in ${stats.dirtyApps} app${stats.dirtyApps === 1 ? '' : 's'}`,
+          : `uncommitted in ${stats.dirtyApps} ${nounFor(stats.dirtyApps)}`,
       tone: stats.dirtyFiles > 0 ? 'warning' : undefined,
       onClick: stats.dirtyFiles > 0 ? onFocusDirty : undefined,
       active: dirtyActive,
@@ -154,7 +158,7 @@ const StatRow: React.FC<Props> = ({
       label:
         stats.unpushedApps === 0
           ? 'all pushed'
-          : `to push in ${stats.unpushedApps} app${stats.unpushedApps === 1 ? '' : 's'}`,
+          : `to push in ${stats.unpushedApps} ${nounFor(stats.unpushedApps)}`,
       tone: stats.unpushedCommits > 0 ? 'warning' : undefined,
       onClick: stats.unpushedCommits > 0 ? onFocusUnpushed : undefined,
       active: unpushedActive,

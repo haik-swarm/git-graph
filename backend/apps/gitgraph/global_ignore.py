@@ -18,29 +18,69 @@ from typeguard import typechecked
 
 from backend.apps.gitgraph.discovery import (
     _run_git_result,
+    is_skill_id,
     list_apps,
+    list_skills,
     openswarm_data_dir,
+    resolve_entity,
     workspace_path,
 )
 
 _HEAD = "# >>> openswarm-managed (edit in Git Graph → Global .gitignore) >>>"
 _TAIL = "# <<< openswarm-managed <<<"
 
-
-@typechecked
-def _global_path() -> Path:
-    return openswarm_data_dir() / "gitgraph_global.gitignore"
-
-
-@typechecked
-def _opt_out_path() -> Path:
-    return openswarm_data_dir() / "gitgraph_global.opt_out.json"
+# Apps and skills each keep their OWN shared list. They ignore genuinely
+# different things — an app workspace is a built web app (node_modules, dist,
+# a live SQLite db), a skill is a prompt folder with at most a Python helper —
+# so one list would carry rules that are noise for half the repos it touches.
+Scope = str  # "apps" | "skills"
+_APPS: Scope = "apps"
+_SKILLS: Scope = "skills"
 
 
 @typechecked
-def _default_content() -> str:
+def _scope_for_id(entity_id: str) -> Scope:
+    """Which shared list an entity belongs to, read straight off its id."""
+    return _SKILLS if is_skill_id(entity_id) else _APPS
+
+
+@typechecked
+def _global_path(scope: Scope) -> Path:
+    # The apps file keeps its original name so existing installs don't lose
+    # the list the user already curated; skills get a scoped sibling.
+    stem = "gitgraph_global" if scope == _APPS else "gitgraph_global.skills"
+    return openswarm_data_dir() / f"{stem}.gitignore"
+
+
+@typechecked
+def _opt_out_path(scope: Scope) -> Path:
+    stem = "gitgraph_global" if scope == _APPS else "gitgraph_global.skills"
+    return openswarm_data_dir() / f"{stem}.opt_out.json"
+
+
+@typechecked
+def _default_content(scope: Scope) -> str:
     # Deliberately short: the value of "one shared list" is that it stays
     # readable, not that it enumerates every ecosystem on earth.
+    if scope == _SKILLS:
+        # A skill is a SKILL.md plus supporting files, sometimes a small
+        # Python helper with its own venv. No build output, no bundler, no
+        # app database — so those rules would just be dead weight here.
+        return (
+            "# Global rules shared across every tracked OpenSwarm skill.\n"
+            "# Edit here to add or remove rules for all of them at once.\n"
+            "\n"
+            ".DS_Store\n"
+            "Thumbs.db\n"
+            "*.log\n"
+            "\n"
+            ".venv/\n"
+            "__pycache__/\n"
+            "*.pyc\n"
+            "\n"
+            ".env\n"
+            ".env.local\n"
+        )
     return (
         "# Global rules shared across every tracked OpenSwarm app.\n"
         "# Edit here to add or remove rules for all of them at once.\n"
@@ -72,10 +112,10 @@ def _default_content() -> str:
 
 
 @typechecked
-def load_global() -> str:
-    path = _global_path()
+def load_global(scope: Scope = _APPS) -> str:
+    path = _global_path(scope)
     if not path.exists():
-        content = _default_content()
+        content = _default_content(scope)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
@@ -89,8 +129,8 @@ def load_global() -> str:
 
 
 @typechecked
-def _load_opt_out() -> Dict[str, bool]:
-    path = _opt_out_path()
+def _load_opt_out(scope: Scope) -> Dict[str, bool]:
+    path = _opt_out_path(scope)
     if not path.exists():
         return {}
     try:
@@ -103,8 +143,8 @@ def _load_opt_out() -> Dict[str, bool]:
 
 
 @typechecked
-def _save_opt_out(opt_out: Dict[str, bool]) -> None:
-    path = _opt_out_path()
+def _save_opt_out(scope: Scope, opt_out: Dict[str, bool]) -> None:
+    path = _opt_out_path(scope)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         # Only keep opted-out entries so the file doesn't grow monotonically
@@ -220,7 +260,10 @@ def _untrack_now_ignored(path: Path) -> List[str]:
 
 @typechecked
 def _write_ignore(workspace_id: str, want_block: bool) -> Tuple[bool, str]:
-    path = workspace_path(workspace_id)
+    # resolve_entity covers both app workspace ids and skill ids, so the
+    # managed-ignore block seeds correctly for a skill repo (which needs
+    # __pycache__/.venv/node_modules excluded from its very first `add -A`).
+    path = resolve_entity(workspace_id)
     if path is None:
         return False, "workspace missing"
     ignore = path / ".gitignore"
@@ -230,7 +273,7 @@ def _write_ignore(workspace_id: str, want_block: bool) -> Tuple[bool, str]:
         return False, str(exc)
 
     if want_block:
-        new_content = _compose(existing, load_global())
+        new_content = _compose(existing, load_global(_scope_for_id(workspace_id)))
     else:
         new_content = _strip_managed(existing)
         if not new_content.endswith("\n") and new_content:
@@ -254,24 +297,34 @@ def _write_ignore(workspace_id: str, want_block: bool) -> Tuple[bool, str]:
 @typechecked
 def ensure_synced_for_new_repo(workspace_id: str) -> None:
     """Called when `init_repo` succeeds so the app gets the block immediately."""
-    opt_out = _load_opt_out()
+    opt_out = _load_opt_out(_scope_for_id(workspace_id))
     if opt_out.get(workspace_id):
         return
     _write_ignore(workspace_id, want_block=True)
 
 
 @typechecked
-def sync_all() -> List[Dict[str, Any]]:
-    """Apply the current global text to every tracked, opted-in app.
-
-    Returns one row per tracked app so the client can show which files
-    changed and which were skipped.
-    """
-    opt_out = _load_opt_out()
-    results: List[Dict[str, Any]] = []
-    for entry in list_apps():
+def _entries_for_scope(scope: Scope) -> List[Dict[str, Any]]:
+    """Tracked, on-disk entities for one scope, shaped uniformly for sync."""
+    listing = list_skills() if scope == _SKILLS else list_apps()
+    out: List[Dict[str, Any]] = []
+    for entry in listing:
         if not (entry["has_git"] and entry["workspace_exists"]):
             continue
+        out.append({"workspace_id": entry["workspace_id"], "name": entry["name"]})
+    return out
+
+
+@typechecked
+def sync_all(scope: Scope = _APPS) -> List[Dict[str, Any]]:
+    """Apply one scope's global text to every tracked, opted-in entity.
+
+    Returns one row per tracked entity so the client can show which files
+    changed and which were skipped.
+    """
+    opt_out = _load_opt_out(scope)
+    results: List[Dict[str, Any]] = []
+    for entry in _entries_for_scope(scope):
         wid = entry["workspace_id"]
         included = not opt_out.get(wid)
         ok, note = _write_ignore(wid, want_block=included)
@@ -288,14 +341,14 @@ def sync_all() -> List[Dict[str, Any]]:
 
 
 @typechecked
-def save_global(content: str) -> List[Dict[str, Any]]:
-    path = _global_path()
+def save_global(content: str, scope: Scope = _APPS) -> List[Dict[str, Any]]:
+    path = _global_path(scope)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
         raise RuntimeError(f"couldn't write global .gitignore: {exc}")
-    return sync_all()
+    return sync_all(scope)
 
 
 @typechecked
@@ -356,12 +409,13 @@ def ignore_paths(
             raise RuntimeError(f"Refusing to write rule: {rule}")
 
     if globally:
-        current = load_global()
+        scope = _scope_for_id(workspace_id)
+        current = load_global(scope)
         present = {line.strip() for line in current.splitlines()}
         fresh = [r for r in cleaned if r not in present]
         if fresh:
             base = current if (not current or current.endswith("\n")) else current + "\n"
-            save_global(base + "\n".join(fresh) + "\n")
+            save_global(base + "\n".join(fresh) + "\n", scope)
         added = fresh
     else:
         added = _append_local_rules(path, cleaned)
@@ -377,13 +431,15 @@ def ignore_paths(
 
 
 @typechecked
-def read_state() -> Dict[str, Any]:
-    """Everything the UI needs to render the sheet in one round-trip."""
-    opt_out = _load_opt_out()
+def read_state(scope: Scope = _APPS) -> Dict[str, Any]:
+    """Everything the UI needs to render the sheet in one round-trip.
+
+    `apps` is the entity list for the requested scope (apps or skills); the
+    key name is kept for frontend-shape compatibility.
+    """
+    opt_out = _load_opt_out(scope)
     apps: List[Dict[str, Any]] = []
-    for entry in list_apps():
-        if not (entry["has_git"] and entry["workspace_exists"]):
-            continue
+    for entry in _entries_for_scope(scope):
         wid = entry["workspace_id"]
         apps.append(
             {
@@ -392,16 +448,17 @@ def read_state() -> Dict[str, Any]:
                 "included": not opt_out.get(wid),
             }
         )
-    return {"content": load_global(), "apps": apps}
+    return {"content": load_global(scope), "apps": apps, "scope": scope}
 
 
 @typechecked
 def set_included(workspace_id: str, included: bool) -> Dict[str, Any]:
-    opt_out = _load_opt_out()
+    scope = _scope_for_id(workspace_id)
+    opt_out = _load_opt_out(scope)
     if included:
         opt_out.pop(workspace_id, None)
     else:
         opt_out[workspace_id] = True
-    _save_opt_out(opt_out)
+    _save_opt_out(scope, opt_out)
     ok, note = _write_ignore(workspace_id, want_block=included)
     return {"included": included, "ok": ok, "detail": note}

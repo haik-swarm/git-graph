@@ -13,6 +13,7 @@ import { primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/sty
 import { BrandGlyph } from '@/components/Chrome';
 import {
   GITGRAPH_GLOBAL_IGNORE_URL,
+  gitgraphGlobalIgnoreUrl,
   gitgraphGlobalIgnoreToggleUrl,
 } from '@/shared/state/API_ENDPOINTS';
 
@@ -29,12 +30,15 @@ interface State {
 
 interface Props {
   open: boolean;
+  source?: 'apps' | 'skills';
   onClose: () => void;
   onSaved: () => void;
 }
 
-const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
+const GlobalIgnoreSheet: React.FC<Props> = ({ open, source = 'apps', onClose, onSaved }) => {
   const c = useClaudeTokens();
+  const noun = source === 'skills' ? 'skill' : 'app';
+  const nounPlural = source === 'skills' ? 'skills' : 'apps';
   const [state, setState] = useState<State | null>(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -47,7 +51,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(GITGRAPH_GLOBAL_IGNORE_URL);
+      const res = await fetch(gitgraphGlobalIgnoreUrl(source));
       if (!res.ok) throw new Error(`load ${res.status}`);
       const data: State = await res.json();
       setState(data);
@@ -57,7 +61,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     if (open) void load();
@@ -81,7 +85,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
       const res = await fetch(GITGRAPH_GLOBAL_IGNORE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: draft }),
+        body: JSON.stringify({ content: draft, scope: source }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -210,8 +214,8 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
               lineHeight: 1.5,
             }}
           >
-            One list, mirrored into every tracked app as a managed block at
-            the top of its <code>.gitignore</code>. Any app-specific rules
+            One list, mirrored into every tracked {noun} as a managed block at
+            the top of its <code>.gitignore</code>. Any {noun}-specific rules
             below the block are yours; they're never overwritten.
           </Box>
 
@@ -253,7 +257,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
               <Box>Applies to</Box>
               <Box sx={{ flex: 1 }} />
               <Box sx={{ ...c.type.caption, color: c.text.muted, fontWeight: 400 }}>
-                {includedCount} of {state.apps.length} apps
+                {includedCount} of {state.apps.length} {nounPlural}
               </Box>
             </Box>
           </Box>
@@ -261,7 +265,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           <Box sx={{ px: '10px', pb: 1, maxHeight: 220, overflowY: 'auto', ...slimScroll(c) }}>
             {state.apps.length === 0 ? (
               <Box sx={{ p: 2, ...c.type.body, color: c.text.tertiary }}>
-                No tracked apps yet. Track an app from the Home grid and it
+                No tracked {nounPlural} yet. Track {noun === 'app' ? 'an app' : 'a skill'} from the Home grid and it
                 will inherit these rules automatically.
               </Box>
             ) : (
@@ -355,13 +359,13 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                 <Box component="span" sx={{ color: c.status.error }}>{error}</Box>
               ) : savedFlash ? (
                 <Box component="span" sx={{ color: c.status.success }}>
-                  Saved and synced to {includedCount} app
+                  Saved and synced to {includedCount} {noun}
                   {includedCount === 1 ? '' : 's'}.
                 </Box>
               ) : dirty ? (
                 'Unsaved changes'
               ) : (
-                'Editing the list also re-syncs every included app.'
+                `Editing the list also re-syncs every included ${noun}.`
               )}
             </Box>
             <ButtonBase onClick={onClose} sx={{ ...pushButton(c) }}>

@@ -25,10 +25,12 @@ from backend.apps.gitgraph.discovery import (
     discard_dirty,
     init_repo,
     list_apps,
+    list_skills,
     read_commit_detail,
     read_file_diff,
     read_graph,
     read_status,
+    resolve_entity,
     restore_to,
     workspace_path,
 )
@@ -53,6 +55,8 @@ class MagicUpdateRequest(BaseModel):
 
 class GlobalIgnoreSaveRequest(BaseModel):
     content: str
+    # Which shared list to write: "apps" (default, back-compatible) or "skills".
+    scope: str = "apps"
 
 
 class GlobalIgnoreIncludeRequest(BaseModel):
@@ -93,7 +97,10 @@ class AutofixRequest(BaseModel):
 
 @typechecked
 def _resolve(workspace_id: str) -> Path:
-    path = workspace_path(workspace_id)
+    # resolve_entity handles both app workspace ids (bare) and skill ids
+    # (skill:<tag>:<name>); every git endpoint reaches git through here, so
+    # supporting skills is a one-function change rather than N.
+    path = resolve_entity(workspace_id)
     if path is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return path
@@ -102,6 +109,9 @@ def _resolve(workspace_id: str) -> Path:
 @typechecked
 def _app_name(workspace_id: str) -> str:
     for entry in list_apps():
+        if entry["workspace_id"] == workspace_id:
+            return str(entry["name"])
+    for entry in list_skills():
         if entry["workspace_id"] == workspace_id:
             return str(entry["name"])
     return workspace_id
@@ -163,6 +173,52 @@ async def status_all() -> dict:
 
     pairs = await asyncio.gather(*(probe(e) for e in entries))
     return {"status": {wid: data for wid, data in pairs}}
+
+
+@gitgraph.router.get("/skills")
+@typechecked
+async def skills() -> dict:
+    """Every skill directory across both trees, same shape as /apps."""
+    found = list_skills()
+    debug(len(found))
+    return {"apps": found}
+
+
+@gitgraph.router.get("/skills-status")
+@typechecked
+async def skills_status_all() -> dict:
+    """Batch dirty/head summary for every skill.
+
+    The skill twin of /status. Skills have no preview runtime, so the
+    runtime flags are always false — kept in the payload so the home grid
+    renders skill cards through the identical code path as app cards.
+    """
+    entries = list_skills()
+
+    async def probe(entry: Dict) -> tuple:
+        eid = entry["workspace_id"]
+        path = resolve_entity(eid)
+        if path is None:
+            git_data = {
+                "is_repo": False,
+                "commit_count": 0,
+                "dirty_count": 0,
+                "current_branch": None,
+                "head_subject": None,
+                "head_date": None,
+                "head_sha": None,
+                "has_remote": False,
+                "unpushed": 0,
+                "behind": 0,
+            }
+        else:
+            git_data = await asyncio.to_thread(read_status, path)
+        git_data["runtime_running"] = False
+        git_data["runtime_ready"] = False
+        return eid, git_data
+
+    pairs = await asyncio.gather(*(probe(e) for e in entries))
+    return {"status": {eid: data for eid, data in pairs}}
 
 
 @gitgraph.router.post("/sync-remotes")
@@ -302,7 +358,7 @@ async def magic_update(workspace_id: str, body: MagicUpdateRequest) -> dict:
 @typechecked
 async def init(workspace_id: str) -> dict:
     path = _resolve(workspace_id)
-    ok, result = init_repo(path)
+    ok, result = init_repo(path, workspace_id)
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Init failed."))
@@ -311,17 +367,24 @@ async def init(workspace_id: str) -> dict:
     return result
 
 
+@typechecked
+def _norm_scope(scope: str) -> str:
+    # Only two lists exist; anything unrecognized falls back to apps so a
+    # stale client can't write to a phantom scope file.
+    return "skills" if scope == "skills" else "apps"
+
+
 @gitgraph.router.get("/global-ignore")
 @typechecked
-async def global_ignore_read() -> dict:
-    return global_ignore.read_state()
+async def global_ignore_read(scope: str = "apps") -> dict:
+    return global_ignore.read_state(_norm_scope(scope))
 
 
 @gitgraph.router.post("/global-ignore")
 @typechecked
 async def global_ignore_save(body: GlobalIgnoreSaveRequest) -> dict:
     try:
-        results = global_ignore.save_global(body.content)
+        results = global_ignore.save_global(body.content, _norm_scope(body.scope))
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     debug(len(results))
@@ -330,8 +393,8 @@ async def global_ignore_save(body: GlobalIgnoreSaveRequest) -> dict:
 
 @gitgraph.router.post("/global-ignore/sync")
 @typechecked
-async def global_ignore_sync() -> dict:
-    return {"results": global_ignore.sync_all()}
+async def global_ignore_sync(scope: str = "apps") -> dict:
+    return {"results": global_ignore.sync_all(_norm_scope(scope))}
 
 
 @gitgraph.router.post("/global-ignore/apps/{workspace_id}")

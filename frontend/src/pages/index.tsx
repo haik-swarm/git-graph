@@ -19,6 +19,8 @@ import {
   GITGRAPH_APPS_URL,
   GITGRAPH_COLLAB_SWEEP_URL,
   GITGRAPH_MARKETPLACE_PUBLISHED_URL,
+  GITGRAPH_SKILLS_URL,
+  GITGRAPH_SKILLS_STATUS_URL,
   GITGRAPH_STATUS_URL,
   GITGRAPH_SYNC_REMOTES_URL,
   gitgraphCommitUrl,
@@ -82,6 +84,12 @@ const Home: React.FC = () => {
   const c = useClaudeTokens();
   const { mode: themeMode, toggleMode } = useThemeMode();
 
+  // Which entity source the whole view is bound to. Apps read from the
+  // workspace registry; skills read from the on-disk skill trees. Both return
+  // the same AppEntry shape and both flow through the id-keyed git endpoints,
+  // so switching source only swaps the list + status URLs — the graph, commit,
+  // restore, and GitHub panels are already generic.
+  const [source, setSource] = useState<'apps' | 'skills'>('apps');
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
   const [mode, setMode] = useState<'home' | 'app' | 'marketplace'>('home');
@@ -119,13 +127,14 @@ const Home: React.FC = () => {
   const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
-    const res = await fetch(GITGRAPH_APPS_URL);
-    if (!res.ok) throw new Error(`apps ${res.status}`);
+    const url = source === 'skills' ? GITGRAPH_SKILLS_URL : GITGRAPH_APPS_URL;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${source} ${res.status}`);
     const data = await res.json();
     const list: AppEntry[] = data.apps ?? [];
     setApps(list);
     return list;
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     if (!selected) {
@@ -199,7 +208,8 @@ const Home: React.FC = () => {
   const refreshHomeMeta = useCallback(async () => {
     setMetaBusy(true);
     try {
-      const res = await fetch(GITGRAPH_STATUS_URL);
+      const url = source === 'skills' ? GITGRAPH_SKILLS_STATUS_URL : GITGRAPH_STATUS_URL;
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = await res.json();
       const raw = (data?.status ?? {}) as Record<string, HomeMeta>;
@@ -209,7 +219,7 @@ const Home: React.FC = () => {
     } finally {
       setMetaBusy(false);
     }
-  }, []);
+  }, [source]);
 
   // Who each app is shared with. Merged rather than replaced so an app the
   // sweep couldn't read keeps whatever it last knew instead of dropping
@@ -268,11 +278,14 @@ const Home: React.FC = () => {
   }, []);
 
   // The rail is on screen in every mode, not just Home, so its grouping is
-  // swept once the app list is known rather than on Home entry.
+  // swept once the app list is known rather than on Home entry. Skipped for
+  // skills: the collab/marketplace sweeps are workspace-app-only, and skills
+  // have no sharing or marketplace concept yet, so the rail shows them as a
+  // plain Tracked/Untracked list instead.
   useEffect(() => {
-    if (apps.length === 0) return;
+    if (source !== 'apps' || apps.length === 0) return;
     void refreshSharing();
-  }, [apps.length, refreshSharing]);
+  }, [source, apps.length, refreshSharing]);
 
   // Re-scan on every view change so returning to Home (or to an app page,
   // or from another window entirely) doesn't leave stale numbers.
@@ -286,7 +299,9 @@ const Home: React.FC = () => {
     // Home-only: it's the expensive one, and Home is where its freshness
     // badge is actually rendered.
     const scan = refreshHomeMeta();
-    if (mode === 'home') void scan.then(() => syncRemotes());
+    // The remote sync is workspace-app-only (it fetches app GitHub remotes),
+    // so it stays off for skills; their status is local-git only.
+    if (mode === 'home' && source === 'apps') void scan.then(() => syncRemotes());
     const onFocus = () => {
       if (document.visibilityState === 'visible') void refreshHomeMeta();
     };
@@ -351,6 +366,31 @@ const Home: React.FC = () => {
     setMode('home');
     setSelectedSha(null);
   }, []);
+
+  // Flip the whole view between apps and skills. Everything downstream reads
+  // from `apps`/`homeMeta`, which the source-aware fetches refill, so this
+  // just clears the current selection, resets the per-source sweeps, and
+  // bounces to Home; the fetch effects (keyed on `source`) reload the lists.
+  const switchSource = useCallback(
+    (next: 'apps' | 'skills') => {
+      setSource(prev => {
+        if (prev === next) return prev;
+        setSelected(null);
+        setMode('home');
+        setSelectedSha(null);
+        setApps([]);
+        setHomeMeta({});
+        setSharing({});
+        setPublished({});
+        // Skills have no sharing/marketplace sweep, so their rail is a plain
+        // Tracked/Untracked list — 'unavailable' is the phase that renders
+        // that. Apps go back through 'loading' until the sweep resolves.
+        setSharingPhase(next === 'skills' ? 'unavailable' : 'loading');
+        return next;
+      });
+    },
+    [],
+  );
 
   const goMarketplace = useCallback(() => {
     setMode('marketplace');
@@ -419,6 +459,8 @@ const Home: React.FC = () => {
       sharingPhase={sharingPhase}
       published={published}
       repoState={repoState}
+      source={source}
+      onSwitchSource={switchSource}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);
@@ -581,6 +623,7 @@ const Home: React.FC = () => {
               apps={apps}
               meta={homeMeta}
               metaBusy={metaBusy}
+              source={source}
               onOpen={openApp}
               onTrack={trackApp}
               trackingId={trackingId}
@@ -595,6 +638,7 @@ const Home: React.FC = () => {
         </Scroller>
         <GlobalIgnoreSheet
           open={ignoreOpen}
+          source={source}
           onClose={() => setIgnoreOpen(false)}
           // Editing the shared list can change what git sees as dirty, so
           // rescan meta once the sheet reports a save.

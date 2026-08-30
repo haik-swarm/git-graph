@@ -6,6 +6,12 @@ export const HEALTH_CHECK_URL = API_URL + '/health/check';
 // GIT GRAPH - Endpoints
 export const GITGRAPH_APPS_URL = API_URL + '/gitgraph/apps';
 export const GITGRAPH_STATUS_URL = API_URL + '/gitgraph/status';
+// Skills are the second entity source. Same payload shape as /apps and
+// /status, so the grid, rail, and single-repo view consume them unchanged;
+// only the list source differs. Skill ids carry a `skill:<root>:<name>`
+// prefix that flows through every id-keyed git endpoint untouched.
+export const GITGRAPH_SKILLS_URL = API_URL + '/gitgraph/skills';
+export const GITGRAPH_SKILLS_STATUS_URL = API_URL + '/gitgraph/skills-status';
 // The network half of status: fetches every remote, then re-reads. Slow by
 // nature, so it runs in the background rather than blocking the grid.
 export const GITGRAPH_SYNC_REMOTES_URL = API_URL + '/gitgraph/sync-remotes';
@@ -52,6 +58,11 @@ export const gitgraphIgnoreUrl = (workspaceId: string) =>
 
 export const GITGRAPH_GLOBAL_IGNORE_URL = API_URL + '/gitgraph/global-ignore';
 export const GITGRAPH_GLOBAL_IGNORE_SYNC_URL = API_URL + '/gitgraph/global-ignore/sync';
+// Apps and skills keep separate shared lists; the scope rides in the query so
+// the GET reads (and the POST/sync write) the right file. Defaults to apps for
+// any caller that predates the split.
+export const gitgraphGlobalIgnoreUrl = (scope: 'apps' | 'skills' = 'apps') =>
+  `${API_URL}/gitgraph/global-ignore?scope=${scope}`;
 export const gitgraphGlobalIgnoreToggleUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/global-ignore/apps/${encodeURIComponent(workspaceId)}`;
 

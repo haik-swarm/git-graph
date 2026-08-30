@@ -67,6 +67,8 @@ interface Props {
   sharingPhase?: SharingPhase;
   published?: Record<string, Published>;
   repoState?: Record<string, RepoState>;
+  source?: 'apps' | 'skills';
+  onSwitchSource?: (next: 'apps' | 'skills') => void;
 }
 
 /**
@@ -104,6 +106,8 @@ const AppRail: React.FC<Props> = ({
   sharingPhase = 'ready',
   published,
   repoState,
+  source = 'apps',
+  onSwitchSource,
 }) => {
   const c = useClaudeTokens();
   const [query, setQuery] = useState('');
@@ -210,6 +214,50 @@ const AppRail: React.FC<Props> = ({
         </Box>
       </ButtonBase>
 
+      {onSwitchSource && (
+        <Box sx={{ px: '10px', pt: '10px', flexShrink: 0 }}>
+          <Box
+            role="tablist"
+            aria-label="Show apps or skills"
+            sx={{
+              display: 'flex',
+              gap: '2px',
+              p: '2px',
+              borderRadius: `${c.radius.sm}px`,
+              background: c.bg.secondary,
+              border: `1px solid ${c.border.subtle}`,
+            }}
+          >
+            {(['apps', 'skills'] as const).map(key => {
+              const active = source === key;
+              return (
+                <ButtonBase
+                  key={key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onSwitchSource(key)}
+                  sx={{
+                    flex: 1,
+                    height: 24,
+                    borderRadius: `${c.radius.xs}px`,
+                    ...c.type.caption,
+                    fontWeight: active ? 600 : 500,
+                    textTransform: 'capitalize',
+                    color: active ? c.text.primary : c.text.tertiary,
+                    background: active ? c.bg.surface : 'transparent',
+                    boxShadow: active ? c.shadow.sm : 'none',
+                    transition: c.transition,
+                    '&:hover': { color: c.text.primary },
+                  }}
+                >
+                  {key}
+                </ButtonBase>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+
       <Box sx={{ px: '10px', pt: '10px', pb: '6px', flexShrink: 0 }}>
         <Box
           sx={{
@@ -226,7 +274,7 @@ const AppRail: React.FC<Props> = ({
           <Box
             component="input"
             value={query}
-            placeholder="Filter apps"
+            placeholder={source === 'skills' ? 'Filter skills' : 'Filter apps'}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
             sx={{
               flex: 1,
@@ -311,14 +359,16 @@ const AppRail: React.FC<Props> = ({
           </Box>
         </Box>
 
-        <Box sx={{ px: '2px', mb: '4px' }}>
-          <NavRow
-            icon={<StorefrontRoundedIcon sx={{ fontSize: 15 }} />}
-            label="Marketplace"
-            active={marketplaceActive}
-            onClick={onMarketplace}
-          />
-        </Box>
+        {source === 'apps' && (
+          <Box sx={{ px: '2px', mb: '4px' }}>
+            <NavRow
+              icon={<StorefrontRoundedIcon sx={{ fontSize: 15 }} />}
+              label="Marketplace"
+              active={marketplaceActive}
+              onClick={onMarketplace}
+            />
+          </Box>
+        )}
 
         {/* Sharing unknown: show the apps, withhold the split. */}
         {sharingPhase === 'loading' && tracked.length > 0 && (
@@ -446,7 +496,7 @@ const AppRail: React.FC<Props> = ({
               textAlign: 'center',
             }}
           >
-            {query ? 'No matches' : 'No apps yet'}
+            {query ? 'No matches' : source === 'skills' ? 'No skills yet' : 'No apps yet'}
           </Box>
         )}
       </Box>

@@ -49,6 +49,202 @@ def openswarm_data_dir() -> Path:
     ) / "OpenSwarm/data"
 
 
+# Skills live outside the OpenSwarm data dir, as plain directories under one
+# of these roots. Each skill dir holds a SKILL.md plus optional scripts/ and
+# references/ subfolders — structurally the same shape as an app workspace,
+# which is why the whole git layer works on them unchanged. `.claude/skills`
+# is the primary tree; `.openswarm/skills` is the newer one. Both are scanned.
+_SKILL_ROOTS: List[Tuple[str, Path]] = [
+    ("claude", Path.home() / ".claude" / "skills"),
+    ("openswarm", Path.home() / ".openswarm" / "skills"),
+]
+
+# An entity id names WHICH tree a directory lives in. Bare ids stay meaning
+# "app workspace" so every existing app URL keeps resolving exactly as before;
+# only skills carry a prefix. The separator is ':' because it can't appear in
+# a workspace id (a uuid hex) or a skill directory name (a slug).
+_SKILL_PREFIX = "skill:"
+
+
+@typechecked
+def skill_roots() -> List[Tuple[str, Path]]:
+    """The (tag, path) skill trees that actually exist on this machine."""
+    return [(tag, root) for tag, root in _SKILL_ROOTS if root.is_dir()]
+
+
+@typechecked
+def _skill_root_for_tag(tag: str) -> Optional[Path]:
+    for known_tag, root in _SKILL_ROOTS:
+        if known_tag == tag:
+            return root if root.is_dir() else None
+    return None
+
+
+@typechecked
+def _skill_name_from_dir(skill_dir: Path) -> str:
+    """A human title for a skill dir: its SKILL.md name, else the folder slug.
+
+    SKILL.md front matter isn't parsed — the display name in the index and
+    the folder slug already agree in practice, and reading front matter here
+    would couple this module to a format the git layer has no other reason
+    to know about. The slug is a perfectly good label.
+    """
+    return skill_dir.name
+
+
+@typechecked
+def _read_skill_description(skill_dir: Path) -> str:
+    """First non-empty prose line of SKILL.md, for the card subtitle.
+
+    Skips YAML front matter (a leading `---` fence) and markdown headings so
+    the subtitle is the skill's actual one-liner, not `# Title`. Best-effort:
+    a missing or unreadable SKILL.md just yields an empty subtitle.
+    """
+    md = skill_dir / "SKILL.md"
+    try:
+        text = md.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+    lines = text.splitlines()
+    i = 0
+    if lines and lines[0].strip() == "---":
+        # Skip to the closing fence of the front matter block.
+        i = 1
+        while i < len(lines) and lines[i].strip() != "---":
+            i += 1
+        i += 1
+
+    for line in lines[i:]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        return stripped[:280]
+    return ""
+
+
+@typechecked
+def encode_skill_id(tag: str, name: str) -> str:
+    return f"{_SKILL_PREFIX}{tag}:{name}"
+
+
+@typechecked
+def is_skill_id(entity_id: str) -> bool:
+    """Whether an entity id names a skill (vs an app workspace).
+
+    The one bit that tells the ignore layer which scope's shared list an id
+    belongs to. A bare workspace id (uuid hex) never carries the prefix.
+    """
+    return entity_id.startswith(_SKILL_PREFIX)
+
+
+@typechecked
+def _decode_skill_id(entity_id: str) -> Optional[Tuple[str, str]]:
+    """Split a `skill:<tag>:<name>` id into (tag, name), or None if it isn't one.
+
+    Only the first two ':' are structural; a name containing ':' (which a
+    directory name won't, but this is defensive) keeps its tail intact.
+    """
+    if not entity_id.startswith(_SKILL_PREFIX):
+        return None
+    rest = entity_id[len(_SKILL_PREFIX):]
+    tag, sep, name = rest.partition(":")
+    if not sep or not tag or not name:
+        return None
+    return tag, name
+
+
+@typechecked
+def list_skills() -> List[Dict[str, Any]]:
+    """Every skill directory across both trees, annotated with git availability.
+
+    Mirrors `list_apps`' output shape so the frontend's single-repo view and
+    home grid consume skills and apps through the same code path. A skill dir
+    is anything that isn't dotfile-prefixed and holds a SKILL.md — the index
+    files (`.skills_index.json`) and trash sit at the root and are skipped by
+    the dotfile rule.
+    """
+    skills: List[Dict[str, Any]] = []
+    for tag, root in skill_roots():
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            if not (entry / "SKILL.md").is_file():
+                continue
+            has_git = (entry / ".git").is_dir()
+            try:
+                updated = entry.stat().st_mtime
+            except OSError:
+                updated = 0.0
+            skills.append(
+                {
+                    "id": encode_skill_id(tag, entry.name),
+                    "name": _skill_name_from_dir(entry),
+                    "description": _read_skill_description(entry),
+                    "icon": "",
+                    "kind": "skill",
+                    "root": tag,
+                    # There is no separate registry/workspace split for skills:
+                    # the id IS the handle, and the directory always exists as
+                    # long as it's listed. Kept in the payload so the frontend
+                    # App/Skill types stay uniform.
+                    "workspace_id": encode_skill_id(tag, entry.name),
+                    "workspace_exists": True,
+                    "has_git": has_git,
+                    "output_id": None,
+                    "updated_at": _iso_from_mtime(updated),
+                }
+            )
+
+    skills.sort(key=lambda s: s["updated_at"], reverse=True)
+    return skills
+
+
+@typechecked
+def _iso_from_mtime(mtime: float) -> str:
+    """A registry-comparable ISO string from a filesystem mtime.
+
+    Apps sort on `updated_at` strings from their JSON records; skills have no
+    such record, so their mtime is projected into the same string space to
+    keep the two lists sortable by the same key.
+    """
+    from datetime import datetime, timezone
+
+    if not mtime:
+        return ""
+    try:
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+@typechecked
+def resolve_entity(entity_id: str) -> Optional[Path]:
+    """Resolve any entity id (app workspace OR skill) to its directory.
+
+    This is the single chokepoint every git operation already funnels
+    through. Bare ids resolve as app workspaces exactly as before; ids
+    carrying the `skill:` prefix resolve into a skill tree. Every path is
+    validated for containment in its allowed root, so a crafted `..` or an
+    absolute path can't point git at an arbitrary directory.
+    """
+    decoded = _decode_skill_id(entity_id)
+    if decoded is None:
+        return workspace_path(entity_id)
+
+    tag, name = decoded
+    root = _skill_root_for_tag(tag)
+    if root is None:
+        return None
+    resolved_root = root.resolve()
+    candidate = (resolved_root / name).resolve()
+    if candidate.parent != resolved_root or not candidate.is_dir():
+        return None
+    if not (candidate / "SKILL.md").is_file():
+        return None
+    return candidate
+
+
 @typechecked
 def _clear_own_index_lock(cwd: Path) -> bool:
     """Remove an index.lock left by a git process we just timed out.
@@ -200,13 +396,19 @@ def workspace_path(workspace_id: str) -> Optional[Path]:
 
 
 @typechecked
-def init_repo(path: Path) -> Tuple[bool, Dict[str, Any]]:
+def init_repo(path: Path, entity_id: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
     """Turn a plain workspace into a git repo with one initial commit.
 
     Uses `-b main` so the default branch matches what GitHub expects,
     which avoids a later rename dance when the user connects a remote.
     Refuses if `.git` already exists so a click can't quietly rewrite
     history on a repo that was set up deliberately.
+
+    `entity_id` is the id the ignore machinery keys on. For an app that's
+    the workspace id (== path.name), so it defaults to the folder name to
+    keep the app call site unchanged. For a skill the id is the full
+    `skill:<tag>:<name>` handle, which the folder name alone can't
+    reconstruct, so the caller passes it in.
     """
     if (path / ".git").is_dir():
         return False, {"detail": "This workspace is already tracked."}
@@ -223,7 +425,7 @@ def init_repo(path: Path) -> Tuple[bool, Dict[str, Any]]:
     # Deferred import: global_ignore imports this module.
     from backend.apps.gitgraph import global_ignore
 
-    global_ignore.ensure_synced_for_new_repo(path.name)
+    global_ignore.ensure_synced_for_new_repo(entity_id or path.name)
 
     # A first `add -A` hashes the entire workspace, so it gets a longer
     # budget than an incremental one. Still bounded: without a ceiling a
