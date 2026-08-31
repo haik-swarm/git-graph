@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
+import InputBase from '@mui/material/InputBase';
 import Popover from '@mui/material/Popover';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { popover, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
+import { popover, primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import {
   GITGRAPH_ICON_CONFIG_URL,
   GITGRAPH_ICON_URL,
@@ -66,6 +68,10 @@ const IconPanel: React.FC<Props> = ({
   const [engines, setEngines] = useState<string[]>(['svg']);
   const [model, setModel] = useState<(typeof MODELS)[number]>('haiku');
 
+  // A live, throwaway line the user appends to the prompt for this generation
+  // only. Never persisted; it rides along on the request and is gone on reload.
+  const [nudge, setNudge] = useState('');
+
   const [job, setJob] = useState<IconJob | null>(null);
   const [generating, setGenerating] = useState(false);
   const [applyingIdx, setApplyingIdx] = useState<number | null>(null);
@@ -103,6 +109,7 @@ const IconPanel: React.FC<Props> = ({
     setJob(null);
     setError(null);
     setDone(null);
+    setNudge('');
     setPrompt((appDescription || appName || '').trim());
   }, [workspaceId, appDescription, appName]);
 
@@ -143,12 +150,14 @@ const IconPanel: React.FC<Props> = ({
     setError(null);
     setDone(null);
     setJob(null);
+    // Fold the ephemeral nudge onto the end of the prompt for this run only.
+    const finalPrompt = [prompt.trim(), nudge.trim()].filter(Boolean).join('\n\n');
     try {
       const res = await fetch(GITGRAPH_ICON_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(),
+          prompt: finalPrompt,
           styles,
           engines,
           title: appName,
@@ -243,18 +252,18 @@ const IconPanel: React.FC<Props> = ({
           Icon
         </ButtonBase>
         <ButtonBase
-          onClick={() => (onOpenSettings ? onOpenSettings() : setSettingsOpen(true))}
+          onClick={e => setAnchor(e.currentTarget)}
           sx={{
             ...pushButton(c),
-            color: c.text.secondary,
+            color: nudge.trim() ? c.accent.primary : c.text.secondary,
             px: '6px',
             border: 'none',
             borderLeft: `1px solid ${c.border.medium}`,
             borderRadius: 0,
           }}
-          title="Global icon defaults (style, engine, model, key, templates)"
+          title="Add a live nudge appended to the prompt for this generation"
         >
-          <TuneRoundedIcon sx={{ fontSize: 15 }} />
+          <EditRoundedIcon sx={{ fontSize: 15 }} />
         </ButtonBase>
       </Box>
 
@@ -316,6 +325,28 @@ const IconPanel: React.FC<Props> = ({
             ...slimScroll(c),
           }}
         >
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
+              Live nudge (appended to the prompt, this run only)
+            </Typography>
+            <InputBase
+              value={nudge}
+              onChange={e => setNudge(e.target.value)}
+              multiline
+              minRows={2}
+              maxRows={4}
+              placeholder="e.g. bolder outline, warmer palette, no text"
+              sx={{
+                ...sunkenField(c),
+                ...c.type.body,
+                color: c.text.primary,
+                px: 1,
+                py: '6px',
+                '& textarea': { ...slimScroll(c) },
+              }}
+            />
+          </Box>
+
           <ButtonBase
             disabled={generating}
             onClick={() => void generate()}
