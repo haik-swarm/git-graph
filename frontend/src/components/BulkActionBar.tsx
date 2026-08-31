@@ -705,7 +705,13 @@ const BulkPicker: React.FC<PickerProps> = ({
                   </ButtonBase>
                 )}
 
-                <BrandGlyph seed={id} letter={app.name[0] || '?'} size={22} />
+                <BrandGlyph
+                  seed={id}
+                  letter={app.name[0] || '?'}
+                  size={22}
+                  iconId={id}
+                  hasIcon={app.has_icon}
+                />
 
                 <Box
                   component="button"

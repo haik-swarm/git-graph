@@ -82,6 +82,23 @@ export const githubPullUrl = (workspaceId: string) =>
 export const githubAbortRebaseUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/abort-rebase`;
 
+// ICON - Endpoints
+// The image engine needs an OpenAI key; the GET reports only whether one is
+// usable (never the key), the POST saves it. Generation is a durable job: POST
+// /icon starts it, the jobs endpoints poll it, and /icon/apply writes the picked
+// candidate as a committed file in the entity's repo so it pushes to GitHub.
+export const GITGRAPH_ICON_CONFIG_URL = API_URL + '/gitgraph/icon/config';
+export const GITGRAPH_ICON_URL = API_URL + '/gitgraph/icon';
+export const GITGRAPH_ICON_JOBS_URL = API_URL + '/gitgraph/icon/jobs';
+export const gitgraphIconJobUrl = (jobId: string) =>
+  `${API_URL}/gitgraph/icon/jobs/${encodeURIComponent(jobId)}`;
+export const gitgraphIconApplyUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/icon/apply/${encodeURIComponent(workspaceId)}`;
+// Streams the committed icon.* at the repo root; 404s when the app has none,
+// which the avatar treats as "fall back to the letter tile".
+export const gitgraphIconRawUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/icon/raw/${encodeURIComponent(workspaceId)}`;
+
 // COLLABORATORS - Endpoints
 // Batch sharing state for the rail's Private/Shared split. Network-bound,
 // so the rail paints ungrouped first and regroups once this lands.

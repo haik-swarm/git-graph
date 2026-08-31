@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Box from '@mui/material/Box';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { slimScroll, statusChip } from '@/shared/styles/ui';
+import { gitgraphIconRawUrl } from '@/shared/state/API_ENDPOINTS';
 
 /**
  * Two-column app frame: sidebar rail on the left, scrolling content well on
@@ -106,11 +107,21 @@ export const BrandGlyph: React.FC<{
   letter: string;
   size?: number;
   active?: boolean;
-}> = ({ seed, letter, size = 28, active }) => {
+  /**
+   * Workspace/entity id whose committed icon should be shown. When set and
+   * `hasIcon` is true, the icon image replaces the letter tile; a load error
+   * falls back to the tile so a broken/removed icon never leaves an empty box.
+   */
+  iconId?: string;
+  hasIcon?: boolean;
+}> = ({ seed, letter, size = 28, active, iconId, hasIcon }) => {
   const c = useClaudeTokens();
+  const [imgFailed, setImgFailed] = useState(false);
   const hue = seedHue(seed);
   const bg = `hsl(${hue} ${c.isDark ? '38% 30%' : '70% 93%'})`;
   const fg = `hsl(${hue} ${c.isDark ? '70% 80%' : '50% 32%'})`;
+  const showIcon = Boolean(iconId) && hasIcon === true && !imgFailed;
+
   return (
     <Box
       sx={{
@@ -118,10 +129,11 @@ export const BrandGlyph: React.FC<{
         height: size,
         flexShrink: 0,
         borderRadius: `${c.radius.sm}px`,
+        overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: bg,
+        background: showIcon ? c.bg.secondary : bg,
         color: fg,
         fontFamily: c.font.sans,
         fontSize: size * 0.42,
@@ -132,7 +144,17 @@ export const BrandGlyph: React.FC<{
         userSelect: 'none',
       }}
     >
-      {(letter || '?').toUpperCase()}
+      {showIcon ? (
+        <Box
+          component="img"
+          src={gitgraphIconRawUrl(iconId!)}
+          alt=""
+          onError={() => setImgFailed(true)}
+          sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        (letter || '?').toUpperCase()
+      )}
     </Box>
   );
 };

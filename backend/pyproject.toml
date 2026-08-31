@@ -8,6 +8,7 @@ dependencies = [
     "typeguard==4.4.2",
     "swarm-debug",
     "httpx",
+    "Pillow",
 ]
 
 [tool.setuptools]

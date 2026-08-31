@@ -41,6 +41,7 @@ import CommitList from '@/components/CommitList';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
+import IconPanel from '@/components/IconPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
 import HomeGrid from '@/components/HomeGrid';
@@ -419,7 +420,10 @@ const Home: React.FC = () => {
     // so eagerly rescan the batch too instead of waiting for the user to
     // navigate back and trigger the focus effect.
     void refreshHomeMeta();
-  }, [loadGraph, selected, refreshHomeMeta]);
+    // Applying an icon commits a file the app list reports via has_icon,
+    // so refetch it here or a freshly-set icon wouldn't show until reload.
+    void refetchApps();
+  }, [loadGraph, selected, refreshHomeMeta, refetchApps]);
 
   const runningIds = useMemo(() => {
     const set = new Set<string>();
@@ -684,6 +688,15 @@ const Home: React.FC = () => {
             // Auto-fixing leaves edits uncommitted, so the graph redraws
             // to show the newly dirty files.
             onFilesChanged={refresh}
+          />
+        )}
+
+        {selected && graph?.is_repo && (
+          <IconPanel
+            workspaceId={selected.workspace_id}
+            appName={selected.name}
+            // Applying an icon commits a file, so the graph redraws to show it.
+            onApplied={refresh}
           />
         )}
 

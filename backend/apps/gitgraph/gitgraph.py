@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
@@ -14,6 +15,7 @@ from backend.apps.gitgraph import (
     collab,
     github,
     global_ignore,
+    icons,
     magic,
     marketplace,
     restart_app,
@@ -95,6 +97,17 @@ class AutofixRequest(BaseModel):
     max_rounds: int = 3
 
 
+class ApplyIconRequest(BaseModel):
+    # A supported icon data URI (image/svg+xml, image/webp, image/png, image/jpeg).
+    data_uri: str
+    message: str = ""
+
+
+class IconConfigRequest(BaseModel):
+    # None leaves the stored key unchanged; "" clears it.
+    openai_api_key: Optional[str] = None
+
+
 @typechecked
 def _resolve(workspace_id: str) -> Path:
     # resolve_entity handles both app workspace ids (bare) and skill ids
@@ -120,6 +133,9 @@ def _app_name(workspace_id: str) -> str:
 @asynccontextmanager
 async def gitgraph_lifespan():
     debug("gitgraph SubApp lifespan starting")
+    # Relaunch any icon-generation jobs left mid-flight by a previous process so
+    # generation survives a hard restart instead of stalling forever.
+    await icons.resume_interrupted()
     yield
 
 
@@ -677,6 +693,92 @@ async def marketplace_takedown(workspace_id: str, body: TakedownRequest) -> dict
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     return result
+
+
+@gitgraph.router.get("/icon/config")
+@typechecked
+async def icon_config() -> dict:
+    """Whether an OpenAI key is usable for the image engine. Never leaks the key."""
+    return icons.config_state()
+
+
+@gitgraph.router.post("/icon/config")
+@typechecked
+async def icon_config_save(body: IconConfigRequest) -> dict:
+    return icons.save_config(body.openai_api_key)
+
+
+@gitgraph.router.post("/icon")
+async def icon_generate(body: icons.IconIn) -> dict:
+    """Kick off a durable icon-generation job for the engine×style cross product
+    and return immediately with the job record. Poll /icon/jobs/{id} for results."""
+    ok, error, job = await icons.start_job(body)
+    debug("icon generate", ok, error or (job or {}).get("id"))
+    return {"ok": ok, "error": error, "job": job}
+
+
+@gitgraph.router.get("/icon/jobs")
+@typechecked
+async def icon_jobs(entity_id: str = "") -> dict:
+    return {"jobs": icons.list_jobs(entity_id)}
+
+
+@gitgraph.router.get("/icon/jobs/{job_id}")
+@typechecked
+async def icon_job(job_id: str) -> dict:
+    job = icons.get_job(job_id)
+    if job is None:
+        return {"ok": False, "error": "No such job.", "job": None}
+    return {"ok": True, "error": "", "job": job}
+
+
+@gitgraph.router.delete("/icon/jobs/{job_id}")
+@typechecked
+async def icon_job_delete(job_id: str) -> dict:
+    return {"ok": await icons.delete_job(job_id)}
+
+
+@gitgraph.router.post("/icon/apply/{workspace_id}")
+@typechecked
+async def icon_apply(workspace_id: str, body: ApplyIconRequest) -> dict:
+    """Write the chosen icon into the entity's repo and commit it, so it pushes
+    to GitHub with the next push (or immediately if a remote is set)."""
+    path = _resolve(workspace_id)
+    ok, result = await asyncio.to_thread(icons.apply_icon, path, body.data_uri, body.message)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Apply failed."))
+    return result
+
+
+_ICON_MEDIA_TYPES = {
+    "icon.svg": "image/svg+xml",
+    "icon.webp": "image/webp",
+    "icon.png": "image/png",
+    "icon.jpg": "image/jpeg",
+}
+
+
+@gitgraph.router.get("/icon/raw/{workspace_id}")
+@typechecked
+async def icon_raw(workspace_id: str) -> FileResponse:
+    """Stream the committed icon.* at the repo root so avatars can render it.
+
+    404s when the entity has no icon file; the frontend falls back to the
+    letter tile on that status.
+    """
+    path = _resolve(workspace_id)
+    for name in icons.ICON_BASENAMES:
+        candidate = path / name
+        if candidate.is_file():
+            # no-store so re-applying a different icon under the same URL never
+            # shows the browser's cached copy of the old one.
+            return FileResponse(
+                candidate,
+                media_type=_ICON_MEDIA_TYPES[name],
+                headers={"Cache-Control": "no-store"},
+            )
+    raise HTTPException(status_code=404, detail="No icon set for this app.")
 
 
 @gitgraph.router.post("/local-delete/{workspace_id}")

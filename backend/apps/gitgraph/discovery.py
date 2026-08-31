@@ -28,6 +28,17 @@ MAX_COMMITS = 500
 
 _GIT_TIMEOUT = 15
 
+# Canonical icon filenames a repo may carry at its root, in the same
+# precedence order icons.apply_icon writes them. Kept here (rather than
+# imported) so discovery has no dependency on the icon-generation module.
+_ICON_BASENAMES = ("icon.svg", "icon.webp", "icon.png", "icon.jpg")
+
+
+@typechecked
+def _has_icon(path: Path) -> bool:
+    """True when the repo root carries a committed icon.* the UI can render."""
+    return any((path / name).is_file() for name in _ICON_BASENAMES)
+
 # The first `add -A` hashes every file in the workspace at once, which the
 # 15s budget cannot cover on a large app even after ignore rules apply.
 _GIT_FIRST_ADD_TIMEOUT = 120
@@ -182,6 +193,7 @@ def list_skills() -> List[Dict[str, Any]]:
                     "name": _skill_name_from_dir(entry),
                     "description": _read_skill_description(entry),
                     "icon": "",
+                    "has_icon": _has_icon(entry),
                     "kind": "skill",
                     "root": tag,
                     # There is no separate registry/workspace split for skills:
@@ -354,10 +366,12 @@ def list_apps() -> List[Dict[str, Any]]:
             workspace_id = ""
             exists = False
             has_git = False
+            has_icon = False
         else:
             ws_path = workspaces / workspace_id
             exists = ws_path.is_dir()
             has_git = exists and (ws_path / ".git").is_dir()
+            has_icon = exists and _has_icon(ws_path)
 
         output_id = meta.get("id")
         apps.append(
@@ -366,6 +380,7 @@ def list_apps() -> List[Dict[str, Any]]:
                 "name": meta.get("name") or "Untitled app",
                 "description": meta.get("description") or "",
                 "icon": meta.get("icon") or "",
+                "has_icon": has_icon,
                 "workspace_id": workspace_id,
                 "workspace_exists": exists,
                 "has_git": has_git,

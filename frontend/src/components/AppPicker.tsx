@@ -18,6 +18,8 @@ export interface AppEntry {
   workspace_id: string;
   workspace_exists: boolean;
   has_git: boolean;
+  /** True when the repo carries a committed icon.* the avatar can render. */
+  has_icon?: boolean;
   /** The dashboard record id: the only handle a workspace-less app has. */
   output_id?: string | null;
   updated_at: string;

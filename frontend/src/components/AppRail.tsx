@@ -622,7 +622,14 @@ const RailAppRow: React.FC<{
     >
       {app.has_git ? (
         <Box sx={{ position: 'relative', flexShrink: 0 }}>
-          <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={20} active={selected} />
+          <BrandGlyph
+            seed={app.workspace_id}
+            letter={app.name[0] || '?'}
+            size={20}
+            active={selected}
+            iconId={app.workspace_id}
+            hasIcon={app.has_icon}
+          />
           {running && (
             <Box
               title="Open in OpenSwarm"

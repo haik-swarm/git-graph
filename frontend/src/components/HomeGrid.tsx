@@ -397,7 +397,13 @@ const AppCard: React.FC<{
     >
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
         <Box sx={{ position: 'relative', flexShrink: 0 }}>
-          <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={36} />
+          <BrandGlyph
+            seed={app.workspace_id}
+            letter={app.name[0] || '?'}
+            size={36}
+            iconId={app.workspace_id}
+            hasIcon={app.has_icon}
+          />
           {meta?.runtime_running && (
             <Box
               title={meta.runtime_ready ? 'Open in OpenSwarm' : 'Starting…'}

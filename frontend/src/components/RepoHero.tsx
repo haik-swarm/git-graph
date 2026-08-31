@@ -52,7 +52,13 @@ const RepoHero: React.FC<Props> = ({
         gap: 2,
       }}
     >
-      <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={44} />
+      <BrandGlyph
+        seed={app.workspace_id}
+        letter={app.name[0] || '?'}
+        size={44}
+        iconId={app.workspace_id}
+        hasIcon={app.has_icon}
+      />
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Box
