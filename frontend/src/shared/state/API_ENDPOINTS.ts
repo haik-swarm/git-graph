@@ -89,6 +89,13 @@ export const githubAbortRebaseUrl = (workspaceId: string) =>
 // candidate as a committed file in the entity's repo so it pushes to GitHub.
 export const GITGRAPH_ICON_CONFIG_URL = API_URL + '/gitgraph/icon/config';
 export const GITGRAPH_ICON_URL = API_URL + '/gitgraph/icon';
+// The literal prompt payload each engine×style candidate will send, assembled by
+// the same backend builders generation uses, so the panel never reconstructs it.
+export const GITGRAPH_ICON_PREVIEW_URL = API_URL + '/gitgraph/icon/preview';
+// The raw prompt templates and the variables they reference, independent of any
+// form input, so the settings page can show the literal {placeholders} that get
+// filled in at generation time.
+export const GITGRAPH_ICON_TEMPLATE_URL = API_URL + '/gitgraph/icon/template';
 export const GITGRAPH_ICON_JOBS_URL = API_URL + '/gitgraph/icon/jobs';
 export const gitgraphIconJobUrl = (jobId: string) =>
   `${API_URL}/gitgraph/icon/jobs/${encodeURIComponent(jobId)}`;

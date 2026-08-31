@@ -106,6 +106,10 @@ class ApplyIconRequest(BaseModel):
 class IconConfigRequest(BaseModel):
     # None leaves the stored key unchanged; "" clears it.
     openai_api_key: Optional[str] = None
+    # Global icon defaults; None leaves each unchanged.
+    default_styles: Optional[List[str]] = None
+    default_engines: Optional[List[str]] = None
+    default_model: Optional[str] = None
 
 
 @typechecked
@@ -705,7 +709,20 @@ async def icon_config() -> dict:
 @gitgraph.router.post("/icon/config")
 @typechecked
 async def icon_config_save(body: IconConfigRequest) -> dict:
-    return icons.save_config(body.openai_api_key)
+    return icons.save_config(
+        openai_api_key=body.openai_api_key,
+        default_styles=body.default_styles,
+        default_engines=body.default_engines,
+        default_model=body.default_model,
+    )
+
+
+@gitgraph.router.get("/icon/template")
+@typechecked
+async def icon_template() -> dict:
+    """The raw prompt templates and the variables they reference, so the settings
+    page can show exactly what gets sent to the model, template and all."""
+    return icons.template_reference()
 
 
 @gitgraph.router.post("/icon")
@@ -715,6 +732,13 @@ async def icon_generate(body: icons.IconIn) -> dict:
     ok, error, job = await icons.start_job(body)
     debug("icon generate", ok, error or (job or {}).get("id"))
     return {"ok": ok, "error": error, "job": job}
+
+
+@gitgraph.router.post("/icon/preview")
+async def icon_preview(body: icons.IconIn) -> dict:
+    """The literal prompt payload each candidate will send, assembled by the same
+    builders generation uses. Lets the panel show exactly what the model sees."""
+    return {"prompts": icons.preview_prompts(body)}
 
 
 @gitgraph.router.get("/icon/jobs")

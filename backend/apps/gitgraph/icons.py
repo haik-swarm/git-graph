@@ -44,6 +44,11 @@ class Config(BaseModel):
     # Key for the gpt-image-2 icon engine. Stored here, never returned by /config;
     # an OPENAI_API_KEY env var is honored as a fallback when this is blank.
     openai_api_key: str = ""
+    # Global icon defaults the one-click button and a freshly opened panel start
+    # from. Empty lists/blank fall back to the built-in defaults in config_state.
+    default_styles: List[str] = []
+    default_engines: List[str] = []
+    default_model: str = ""
 
 
 def _read_config() -> Config:
@@ -226,26 +231,71 @@ def _icon_subject(prompt: str, title: str) -> str:
     return subject
 
 
+# ------------------------------------------------------------- prompt templates
+# The literal templates both engines fill and the panel displays. These strings
+# ARE the prompt: generation calls `.format(**vars)` on them and the settings /
+# gear UI shows the raw string beside the resolved variables, so nothing about
+# what reaches the model is reconstructed or hidden. Keep every `{name}` here in
+# sync with the keys `_template_vars` returns.
+SVG_SYSTEM_TEMPLATE = (
+    "You are an icon designer that outputs raw SVG markup only. "
+    "Return EXACTLY ONE <svg> element and nothing else: no prose, no markdown "
+    "fence, no comments. Requirements: viewBox='0 0 128 128', width and height "
+    "attributes of 128, self-contained (inline attributes/styles only), no "
+    "<script>, no <foreignObject>, no external or xlink http references, no "
+    "embedded raster images. Keep it a clean, legible, centered app icon that "
+    "reads well at 44px."
+)
+SVG_USER_TEMPLATE = "Design an app icon of: {subject}.{style_line} Output only the <svg>...</svg>."
+IMAGE_PROMPT_TEMPLATE = (
+    "A clean, centered app icon of: {subject}. Single bold subject, generous "
+    "margins, no text, no lettering, no words, reads clearly when shrunk to a "
+    "small size.{style_line}"
+)
+# Folded into {style_line} only when a style is chosen; blank styles interpolate
+# to nothing so the sentence closes cleanly.
+STYLE_LINE_TEMPLATE = " Style: {style_clause}."
+
+
+def _template_vars(prompt: str, style: str, title: str, model: str = "") -> dict:
+    """Every value that gets interpolated into a prompt template, resolved from
+    the raw form inputs. The UI shows this dict next to the raw template so the
+    substitution is fully legible."""
+    style_key = (style or "").strip().lower()
+    style_clause = ICON_STYLES.get(style_key, (style or "").strip())
+    subject = _icon_subject(prompt, title) or "an abstract mark"
+    style_line = STYLE_LINE_TEMPLATE.format(style_clause=style_clause) if style_clause else ""
+    picked = (model or "").strip().lower()
+    return {
+        "prompt": (prompt or "").strip(),
+        "title": (title or "").strip(),
+        "style": style_key,
+        "style_clause": style_clause,
+        "subject": subject,
+        "style_line": style_line,
+        # None means the host picks its default; keep that distinction visible.
+        "model": picked if picked in ICON_MODELS else None,
+    }
+
+
+def build_svg_request(prompt: str, style: str, title: str, model: str = "") -> dict:
+    """The exact request the SVG engine hands the host LLM: the system prompt, the
+    user message, and the resolved model, produced by filling the shared templates.
+    `_generate_icon_svg` and the prompt preview both build from here so what's
+    previewed is literally what's sent."""
+    v = _template_vars(prompt, style, title, model)
+    return {
+        "system": SVG_SYSTEM_TEMPLATE,
+        "user": SVG_USER_TEMPLATE.format(subject=v["subject"], style_line=v["style_line"]),
+        "model": v["model"],
+    }
+
+
 def _generate_icon_svg(prompt: str, style: str, title: str, model: str = "") -> str:
     """Ask the host LLM for a self-contained SVG icon and return cleaned markup."""
-    style_clause = ICON_STYLES.get((style or "").strip().lower(), (style or "").strip())
-    subject = _icon_subject(prompt, title)
-    system = (
-        "You are an icon designer that outputs raw SVG markup only. "
-        "Return EXACTLY ONE <svg> element and nothing else: no prose, no markdown "
-        "fence, no comments. Requirements: viewBox='0 0 128 128', width and height "
-        "attributes of 128, self-contained (inline attributes/styles only), no "
-        "<script>, no <foreignObject>, no external or xlink http references, no "
-        "embedded raster images. Keep it a clean, legible, centered app icon that "
-        "reads well at 44px."
-    )
-    parts = [f"Design an app icon of: {subject or 'an abstract mark'}."]
-    if style_clause:
-        parts.append(f"Style: {style_clause}.")
-    parts.append("Output only the <svg>...</svg>.")
-    picked = (model or "").strip().lower()
-    reply = llm(" ".join(parts), system=system, max_tokens=16000,
-                model=picked if picked in ICON_MODELS else None)
+    req = build_svg_request(prompt, style, title, model)
+    reply = llm(req["user"], system=req["system"], max_tokens=16000,
+                model=req["model"])
     return _clean_svg(reply)
 
 
@@ -265,24 +315,23 @@ def _openai_key() -> str:
     return env if env.lower() not in _PLACEHOLDER_KEYS else ""
 
 
+def build_image_prompt(prompt: str, style: str, title: str) -> str:
+    """The exact prompt string the image engine sends to gpt-image-2, produced by
+    filling IMAGE_PROMPT_TEMPLATE. Shared by `_generate_icon_image` and the
+    preview so they can never disagree."""
+    v = _template_vars(prompt, style, title)
+    return IMAGE_PROMPT_TEMPLATE.format(subject=v["subject"], style_line=v["style_line"])
+
+
 def _generate_icon_image(prompt: str, style: str, title: str) -> str:
     """Generate a raster icon with gpt-image-2, downscale it to a small square
     webp, and return a `data:image/webp;base64,...` URI."""
     key = _openai_key()
     if not key:
         raise RuntimeError("Add an OpenAI API key in the icon panel to use AI-generated image icons.")
-    style_clause = ICON_STYLES.get((style or "").strip().lower(), (style or "").strip())
-    subject = _icon_subject(prompt, title)
-    parts = [
-        f"A clean, centered app icon of: {subject or 'an abstract mark'}.",
-        "Single bold subject, generous margins, no text, no lettering, no words,",
-        "reads clearly when shrunk to a small size.",
-    ]
-    if style_clause:
-        parts.append(f"Style: {style_clause}.")
     body = {
         "model": "gpt-image-2",
-        "prompt": " ".join(parts),
+        "prompt": build_image_prompt(prompt, style, title),
         "quality": "low",
         "size": "1024x1024",
         "n": 1,
@@ -340,6 +389,71 @@ class IconIn(BaseModel):
     # Which entity this icon is for: an app workspace id or skill:<tag>:<name>.
     # Lets the form resume the right job after a reload.
     entity_id: str = "new"
+
+
+def template_reference() -> dict:
+    """The raw prompt templates and the variables they reference, independent of
+    any form input. The settings page renders this so the templates are legible
+    even before a single character is typed."""
+    return {
+        "styles": ICON_STYLES,
+        "variables": {
+            "prompt": "What you type in the description box (trimmed).",
+            "title": "The app or skill name this icon is for.",
+            "subject": "prompt + title folded into one subject line; 'an abstract mark' if both are blank.",
+            "style": "The chosen style key (flat, line, …), lowercased.",
+            "style_clause": "The expanded style guidance for that key (see the styles list).",
+            "style_line": "' Style: {style_clause}.' when a style is set, otherwise empty.",
+            "model": "Chosen host model for SVG (haiku/sonnet/opus), or host default.",
+        },
+        "svg": {
+            "system": SVG_SYSTEM_TEMPLATE,
+            "user": SVG_USER_TEMPLATE,
+        },
+        "image": {
+            "prompt": IMAGE_PROMPT_TEMPLATE,
+        },
+        "style_line": STYLE_LINE_TEMPLATE,
+    }
+
+
+def preview_prompts(body: IconIn) -> List[dict]:
+    """The literal payload each engine×style candidate will send, built from the
+    same templates generation uses, so the panel shows exactly what the model
+    receives, no reconstruction. One entry per engine×style pair.
+
+    Each entry also carries the raw `template` string(s) and the resolved `vars`
+    interpolated into them, so the UI can show template-and-substitution, not
+    just the final text.
+    """
+    engines = _dedupe(body.engines, ICON_ENGINES) or ["svg"]
+    styles = _dedupe(body.styles) or [""]
+    out: List[dict] = []
+    for engine in engines:
+        for style in styles:
+            v = _template_vars(body.prompt, style, body.title, body.model)
+            shown = {k: ("" if val is None else val) for k, val in v.items()}
+            if engine == "image":
+                out.append({
+                    "engine": "image",
+                    "style": style,
+                    "target": "gpt-image-2",
+                    "prompt": build_image_prompt(body.prompt, style, body.title),
+                    "template": {"prompt": IMAGE_PROMPT_TEMPLATE},
+                    "vars": shown,
+                })
+            else:
+                req = build_svg_request(body.prompt, style, body.title, body.model)
+                out.append({
+                    "engine": "svg",
+                    "style": style,
+                    "target": req["model"] or "host default",
+                    "system": req["system"],
+                    "user": req["user"],
+                    "template": {"system": SVG_SYSTEM_TEMPLATE, "user": SVG_USER_TEMPLATE},
+                    "vars": shown,
+                })
+    return out
 
 
 async def _one_icon(prompt: str, style: str, title: str, model: str, engine: str) -> dict:
@@ -549,16 +663,45 @@ def apply_icon(path: Path, data_uri: str, message: str = "") -> Tuple[bool, dict
 
 # --------------------------------------------------------------------- config io
 
+# Built-in fallbacks used when the user hasn't saved a global default yet, so a
+# fresh install still opens the panel with a sensible, non-empty selection.
+DEFAULT_STYLES = ["flat"]
+DEFAULT_ENGINES = ["svg"]
+DEFAULT_MODEL = "haiku"
+
+
 def config_state() -> dict:
-    """What the panel needs: whether a usable key exists, never the key itself."""
-    return {"openai_key_set": bool(_openai_key())}
+    """What the panel needs: whether a usable key exists (never the key itself)
+    and the saved global defaults, falling back to the built-ins when unset."""
+    cfg = _read_config()
+    styles = _dedupe(cfg.default_styles) or DEFAULT_STYLES
+    engines = _dedupe(cfg.default_engines, ICON_ENGINES) or DEFAULT_ENGINES
+    model = (cfg.default_model or "").strip().lower()
+    return {
+        "openai_key_set": bool(_openai_key()),
+        "default_styles": styles,
+        "default_engines": engines,
+        "default_model": model if model in ICON_MODELS else DEFAULT_MODEL,
+    }
 
 
-def save_config(openai_api_key: Optional[str]) -> dict:
-    """Persist the OpenAI key. A None field is left unchanged; an empty string
-    clears it. Returns config_state()."""
+def save_config(
+    openai_api_key: Optional[str] = None,
+    default_styles: Optional[List[str]] = None,
+    default_engines: Optional[List[str]] = None,
+    default_model: Optional[str] = None,
+) -> dict:
+    """Persist the OpenAI key and/or the global icon defaults. Any field left None
+    is unchanged; an empty string clears the key. Returns config_state()."""
     cfg = _read_config()
     if openai_api_key is not None:
         cfg.openai_api_key = openai_api_key.strip()
+    if default_styles is not None:
+        cfg.default_styles = _dedupe(default_styles)
+    if default_engines is not None:
+        cfg.default_engines = _dedupe(default_engines, ICON_ENGINES)
+    if default_model is not None:
+        m = default_model.strip().lower()
+        cfg.default_model = m if m in ICON_MODELS else ""
     _write_config(cfg)
     return config_state()

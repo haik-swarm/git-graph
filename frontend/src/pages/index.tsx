@@ -695,6 +695,7 @@ const Home: React.FC = () => {
           <IconPanel
             workspaceId={selected.workspace_id}
             appName={selected.name}
+            appDescription={selected.description}
             // Applying an icon commits a file, so the graph redraws to show it.
             onApplied={refresh}
           />

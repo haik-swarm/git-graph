@@ -3,27 +3,24 @@ import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Popover from '@mui/material/Popover';
 import Typography from '@mui/material/Typography';
-import InputBase from '@mui/material/InputBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import {
-  popover,
-  primaryButton,
-  pushButton,
-  slimScroll,
-  sunkenField,
-} from '@/shared/styles/ui';
+import { popover, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
 import {
   GITGRAPH_ICON_CONFIG_URL,
   GITGRAPH_ICON_URL,
   gitgraphIconApplyUrl,
   gitgraphIconJobUrl,
 } from '@/shared/state/API_ENDPOINTS';
+import IconSettingsSheet from '@/components/IconSettingsSheet';
 
 interface Props {
   workspaceId: string;
   appName: string;
+  /** Seeds the prompt so one-click generation carries the app's own context. */
+  appDescription?: string;
   /** A fresh apply commits a file, so the graph above has to redraw. */
   onApplied?: () => void;
 }
@@ -44,47 +41,64 @@ interface IconJob {
   error: string;
 }
 
-const STYLES = ['flat', 'gradient', 'line', '3d', 'monochrome', 'playful'];
 const MODELS = ['haiku', 'sonnet', 'opus'] as const;
 
-const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
+const IconPanel: React.FC<Props> = ({
+  workspaceId,
+  appName,
+  appDescription,
+  onApplied,
+}) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+
+  // Every generation parameter is now driven entirely by the saved global
+  // defaults — there is no per-run editing surface. The prompt still seeds from
+  // the app's own description/name so one-click generation carries context.
   const [prompt, setPrompt] = useState('');
   const [styles, setStyles] = useState<string[]>(['flat']);
   const [engines, setEngines] = useState<string[]>(['svg']);
   const [model, setModel] = useState<(typeof MODELS)[number]>('haiku');
-  const [keySet, setKeySet] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
 
   const [job, setJob] = useState<IconJob | null>(null);
   const [generating, setGenerating] = useState(false);
   const [applyingIdx, setApplyingIdx] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
+  const oneClickRef = useRef(false);
 
+  // Pull the global defaults that a one-click generate will use. Runs on mount
+  // and again whenever the settings sheet saves.
   const loadConfig = useCallback(async () => {
     try {
       const res = await fetch(GITGRAPH_ICON_CONFIG_URL);
       const data = await res.json();
-      setKeySet(Boolean(data?.openai_key_set));
+      if (Array.isArray(data?.default_styles) && data.default_styles.length)
+        setStyles(data.default_styles);
+      if (Array.isArray(data?.default_engines) && data.default_engines.length)
+        setEngines(data.default_engines);
+      const m = (data?.default_model || '').toLowerCase();
+      if ((MODELS as readonly string[]).includes(m))
+        setModel(m as (typeof MODELS)[number]);
     } catch {
-      setKeySet(false);
+      /* keep the built-in fallbacks */
     }
   }, []);
 
   useEffect(() => {
-    if (anchor) void loadConfig();
-  }, [anchor, loadConfig]);
+    void loadConfig();
+  }, [loadConfig]);
 
-  // A new entity resets the draft so one app's prompt can't leak into another.
+  // A new entity clears the last run and re-seeds the prompt from the app's own
+  // name/description so one app's context can't leak into another.
   useEffect(() => {
     setJob(null);
     setError(null);
     setDone(null);
-  }, [workspaceId]);
+    setPrompt((appDescription || appName || '').trim());
+  }, [workspaceId, appDescription, appName]);
 
   useEffect(
     () => () => {
@@ -93,56 +107,30 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
     [],
   );
 
-  const toggle = (list: string[], set: (v: string[]) => void, value: string) => {
-    set(list.includes(value) ? list.filter(v => v !== value) : [...list, value]);
-  };
-
-  const saveKey = async () => {
-    setSavingKey(true);
-    setError(null);
-    try {
-      const res = await fetch(GITGRAPH_ICON_CONFIG_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ openai_api_key: apiKey.trim() }),
-      });
-      const data = await res.json();
-      setKeySet(Boolean(data?.openai_key_set));
-      setApiKey('');
-    } catch {
-      setError('Could not save the key.');
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const poll = useCallback(
-    (jobId: string) => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
-      pollRef.current = window.setInterval(async () => {
-        try {
-          const res = await fetch(gitgraphIconJobUrl(jobId));
-          const data = await res.json();
-          const j: IconJob | null = data?.job ?? null;
-          if (!j) return;
-          setJob(j);
-          if (j.status === 'done' || j.status === 'failed') {
-            if (pollRef.current) window.clearInterval(pollRef.current);
-            pollRef.current = null;
-            setGenerating(false);
-            if (j.status === 'failed') setError(j.error || 'Generation failed.');
-          }
-        } catch {
-          /* transient; keep polling */
+  const poll = useCallback((jobId: string) => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(gitgraphIconJobUrl(jobId));
+        const data = await res.json();
+        const j: IconJob | null = data?.job ?? null;
+        if (!j) return;
+        setJob(j);
+        if (j.status === 'done' || j.status === 'failed') {
+          if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+          setGenerating(false);
+          if (j.status === 'failed') setError(j.error || 'Generation failed.');
         }
-      }, 1500);
-    },
-    [],
-  );
+      } catch {
+        /* transient; keep polling */
+      }
+    }, 1500);
+  }, []);
 
   const generate = async () => {
     if (!prompt.trim() && !appName.trim()) {
-      setError('Describe the icon first.');
+      setError('This app has no name or description to build an icon from.');
       return;
     }
     setGenerating(true);
@@ -204,29 +192,65 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
 
   const results = (job?.results ?? []).filter(r => r.ok && r.data_uri);
   const failed = (job?.results ?? []).filter(r => !r.ok);
-  const needsKey = engines.includes('image') && !keySet;
 
-  const chip = (active: boolean) => ({
-    ...c.type.caption,
-    px: 1,
-    py: '3px',
-    borderRadius: `${c.radius.sm}px`,
-    border: `1px solid ${active ? c.accent.primary : c.border.medium}`,
-    color: active ? c.accent.primary : c.text.secondary,
-    background: active ? c.bg.secondary : 'transparent',
-    cursor: 'pointer',
-  });
+  // One click: generate straight away with the saved global defaults, opening
+  // the popover so progress and results are visible. The gear opens the global
+  // defaults sheet directly — there is no per-run configuration.
+  const oneClick = (e: React.MouseEvent<HTMLElement>) => {
+    oneClickRef.current = true;
+    setAnchor(e.currentTarget);
+  };
+
+  // Fire the one-click generation once the popover is anchored, so `generate`
+  // runs against the mounted panel rather than racing the state update.
+  useEffect(() => {
+    if (anchor && oneClickRef.current) {
+      oneClickRef.current = false;
+      void generate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
 
   return (
     <>
-      <ButtonBase
-        onClick={e => setAnchor(e.currentTarget)}
-        sx={{ ...pushButton(c), color: c.text.secondary, gap: '4px' }}
-        title="Generate and commit an icon for this app"
+      <Box
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'stretch',
+          borderRadius: `${c.radius.sm}px`,
+          overflow: 'hidden',
+          border: `1px solid ${c.border.medium}`,
+        }}
       >
-        <AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />
-        Icon
-      </ButtonBase>
+        <ButtonBase
+          onClick={oneClick}
+          sx={{
+            ...pushButton(c),
+            color: c.text.secondary,
+            gap: '4px',
+            border: 'none',
+            borderRadius: 0,
+          }}
+          title="Generate an icon now with your saved defaults"
+        >
+          <AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />
+          Icon
+        </ButtonBase>
+        <ButtonBase
+          onClick={() => setSettingsOpen(true)}
+          sx={{
+            ...pushButton(c),
+            color: c.text.secondary,
+            px: '6px',
+            border: 'none',
+            borderLeft: `1px solid ${c.border.medium}`,
+            borderRadius: 0,
+          }}
+          title="Global icon defaults (style, engine, model, key, templates)"
+        >
+          <TuneRoundedIcon sx={{ fontSize: 15 }} />
+        </ButtonBase>
+      </Box>
 
       <Popover
         open={Boolean(anchor)}
@@ -241,11 +265,31 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
             px: 1.5,
             py: '8px',
             borderBottom: `1px solid ${c.border.subtle}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
           }}
         >
-          <Typography sx={{ ...c.type.headline, color: c.text.primary }}>
+          <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
             App icon
           </Typography>
+          <ButtonBase
+            onClick={() => setSettingsOpen(true)}
+            sx={{
+              ...c.type.caption,
+              color: c.accent.primary,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              px: '4px',
+              borderRadius: `${c.radius.sm}px`,
+              '&:hover': { background: c.bg.secondary },
+            }}
+            title="Edit the global defaults and view the raw prompt templates"
+          >
+            <TuneRoundedIcon sx={{ fontSize: 14 }} />
+            Global defaults
+          </ButtonBase>
         </Box>
 
         <Box
@@ -259,117 +303,15 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
             ...slimScroll(c),
           }}
         >
-          <InputBase
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder={`Describe an icon for ${appName || 'this app'}…`}
-            multiline
-            minRows={2}
-            sx={{
-              ...sunkenField(c),
-              ...c.type.body,
-              color: c.text.primary,
-              px: 1,
-              py: '6px',
-            }}
-          />
-
-          <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
-            Styles
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {STYLES.map(s => (
-              <Box
-                key={s}
-                onClick={() => toggle(styles, setStyles, s)}
-                sx={chip(styles.includes(s))}
-              >
-                {s}
-              </Box>
-            ))}
-          </Box>
-
-          <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
-            Engine
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
-            <Box
-              onClick={() => toggle(engines, setEngines, 'svg')}
-              sx={chip(engines.includes('svg'))}
-            >
-              SVG (host model)
-            </Box>
-            <Box
-              onClick={() => toggle(engines, setEngines, 'image')}
-              sx={chip(engines.includes('image'))}
-            >
-              AI image (gpt-image)
-            </Box>
-          </Box>
-
-          {engines.includes('svg') && (
-            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-              <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
-                Model
-              </Typography>
-              {MODELS.map(m => (
-                <Box key={m} onClick={() => setModel(m)} sx={chip(model === m)}>
-                  {m}
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          {needsKey && (
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0.5,
-                p: 1,
-                borderRadius: `${c.radius.sm}px`,
-                background: c.bg.secondary,
-                border: `1px solid ${c.border.subtle}`,
-              }}
-            >
-              <Typography sx={{ ...c.type.caption, color: c.text.secondary }}>
-                The AI-image engine needs an OpenAI API key.
-              </Typography>
-              <InputBase
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="sk-…"
-                type="password"
-                sx={{
-                  ...sunkenField(c),
-                  ...c.type.body,
-                  fontFamily: c.font.mono,
-                  color: c.text.primary,
-                  px: 1,
-                  py: '5px',
-                }}
-              />
-              <ButtonBase
-                disabled={savingKey || !apiKey.trim()}
-                onClick={() => void saveKey()}
-                sx={{ ...pushButton(c), alignSelf: 'flex-start' }}
-              >
-                {savingKey ? <CircularProgress size={12} /> : 'Save key'}
-              </ButtonBase>
-            </Box>
-          )}
-
           <ButtonBase
-            disabled={
-              generating ||
-              engines.length === 0 ||
-              (needsKey && !engines.includes('svg'))
-            }
+            disabled={generating}
             onClick={() => void generate()}
             sx={{ ...primaryButton(c) }}
           >
             {generating ? (
               <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+            ) : job ? (
+              'Generate again'
             ) : (
               'Generate'
             )}
@@ -378,7 +320,8 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
           {generating && (
             <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
               Generating {engines.length}×{styles.length || 1} candidate
-              {engines.length * (styles.length || 1) === 1 ? '' : 's'}…
+              {engines.length * (styles.length || 1) === 1 ? '' : 's'} from your
+              defaults…
             </Typography>
           )}
 
@@ -455,6 +398,13 @@ const IconPanel: React.FC<Props> = ({ workspaceId, appName, onApplied }) => {
           )}
         </Box>
       </Popover>
+
+      <IconSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        // Saving new defaults reseeds what a fresh one-click generate will use.
+        onSaved={() => void loadConfig()}
+      />
     </>
   );
 };
