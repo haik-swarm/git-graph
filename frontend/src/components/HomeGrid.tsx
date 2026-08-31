@@ -11,8 +11,10 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
+import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { card, primaryButton, pushButton, sunkenField } from '@/shared/styles/ui';
+import { card, primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
 import type { BulkEntry } from '@/components/BulkActionBar';
@@ -22,6 +24,17 @@ import type { AppEntry } from '@/components/AppPicker';
 
 type SortKey = 'recent' | 'name' | 'status';
 type FilterKey = 'all' | 'tracked' | 'untracked' | 'dirty' | 'unpushed' | 'unpublished';
+type ViewKey = 'cards' | 'table';
+
+const VIEW_STORAGE_KEY = 'gitgraph:homeView';
+
+function loadView(): ViewKey {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'table' ? 'table' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
 
 /**
  * Tracked, holds at least one commit, and has no remote at all — the app has
@@ -88,6 +101,15 @@ const HomeGrid: React.FC<Props> = ({
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState<FilterKey>('all');
   const [sort, setSort] = React.useState<SortKey>('recent');
+  const [view, setView] = React.useState<ViewKey>(loadView);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, view);
+    } catch {
+      /* private mode / storage disabled — the toggle still works in-session */
+    }
+  }, [view]);
   const nounPlural = source === 'skills' ? 'skills' : 'apps';
   const titleWord = source === 'skills' ? 'Your skills' : 'Your apps';
 
@@ -297,6 +319,15 @@ const HomeGrid: React.FC<Props> = ({
               { id: 'status', label: 'Status' },
             ]}
           />
+
+          <Segmented
+            value={view}
+            onChange={setView}
+            options={[
+              { id: 'cards', label: 'Cards', icon: <GridViewRoundedIcon sx={{ fontSize: 15 }} /> },
+              { id: 'table', label: 'Table', icon: <TableRowsRoundedIcon sx={{ fontSize: 15 }} /> },
+            ]}
+          />
         </Box>
       </Box>
 
@@ -336,6 +367,15 @@ const HomeGrid: React.FC<Props> = ({
                     ? `Every tracked ${source === 'skills' ? 'skill' : 'app'} already has a GitHub remote.`
                     : 'Switch filters to see the rest of your workspace.'
           }
+        />
+      ) : view === 'table' ? (
+        <AppTable
+          rows={rows}
+          meta={meta}
+          metaBusy={metaBusy}
+          onOpen={onOpen}
+          onTrack={onTrack}
+          trackingId={trackingId}
         />
       ) : (
         <Box
@@ -592,13 +632,297 @@ const AppCard: React.FC<{
   );
 };
 
+const AppTable: React.FC<{
+  rows: AppEntry[];
+  meta: Record<string, Meta>;
+  metaBusy: boolean;
+  onOpen: (app: AppEntry) => void;
+  onTrack: (app: AppEntry) => Promise<void> | void;
+  trackingId: string | null;
+}> = ({ rows, meta, metaBusy, onOpen, onTrack, trackingId }) => {
+  const c = useClaudeTokens();
+
+  const headCell = {
+    ...c.type.caption,
+    fontWeight: 500,
+    color: c.text.muted,
+    textAlign: 'left' as const,
+    px: 1.5,
+    py: 1,
+    whiteSpace: 'nowrap' as const,
+    userSelect: 'none' as const,
+  };
+  const bodyCell = {
+    px: 1.5,
+    py: 1.25,
+    verticalAlign: 'middle' as const,
+    borderTop: `1px solid ${c.border.subtle}`,
+  };
+
+  return (
+    <Box sx={{ ...card(c), overflow: 'hidden' }}>
+      <Box sx={{ overflowX: 'auto', ...slimScroll(c) }}>
+        <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <Box component="thead">
+            <Box component="tr" sx={{ background: c.bg.secondary }}>
+              <Box component="th" sx={headCell}>Name</Box>
+              <Box component="th" sx={headCell}>Branch</Box>
+              <Box component="th" sx={headCell}>Status</Box>
+              <Box component="th" sx={{ ...headCell, textAlign: 'right' }}>Commits</Box>
+              <Box component="th" sx={headCell}>Changes</Box>
+              <Box component="th" sx={headCell}>Last commit</Box>
+              <Box component="th" sx={{ ...headCell, textAlign: 'right' }} />
+            </Box>
+          </Box>
+          <Box component="tbody">
+            {rows.map(app => (
+              <AppRow
+                key={app.workspace_id}
+                app={app}
+                meta={meta[app.workspace_id]}
+                loading={metaBusy && meta[app.workspace_id] === undefined}
+                onOpen={() => onOpen(app)}
+                onTrack={onTrack}
+                tracking={trackingId === app.workspace_id}
+                bodyCell={bodyCell}
+              />
+            ))}
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+const AppRow: React.FC<{
+  app: AppEntry;
+  meta?: Meta;
+  loading: boolean;
+  onOpen: () => void;
+  onTrack: (app: AppEntry) => Promise<void> | void;
+  tracking: boolean;
+  bodyCell: Record<string, unknown>;
+}> = ({ app, meta, loading, onOpen, onTrack, tracking, bodyCell }) => {
+  const c = useClaudeTokens();
+  const missing = !app.workspace_exists;
+  const tracked = app.has_git && !missing;
+  const dirty = meta?.dirty_count ?? 0;
+  const commits = meta?.commit_count ?? 0;
+  const unpushed = meta?.unpushed ?? 0;
+  const needsPublish = isUnpublished(app, meta);
+
+  return (
+    <Box
+      component="tr"
+      onClick={onOpen}
+      sx={{
+        cursor: 'pointer',
+        transition: c.transition,
+        '&:hover': { background: c.bg.secondary },
+        '&:focus-visible': { outline: 'none', background: `rgba(${c.accentRgb},0.06)` },
+      }}
+      tabIndex={0}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <Box component="td" sx={bodyCell}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+          <Box sx={{ position: 'relative', flexShrink: 0 }}>
+            <BrandGlyph
+              seed={app.workspace_id}
+              letter={app.name[0] || '?'}
+              size={28}
+              iconId={app.workspace_id}
+              hasIcon={app.has_icon}
+            />
+            {meta?.runtime_running && (
+              <Box
+                title={meta.runtime_ready ? 'Open in OpenSwarm' : 'Starting…'}
+                sx={{
+                  position: 'absolute',
+                  right: -2,
+                  bottom: -2,
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: meta.runtime_ready ? c.status.success : c.status.warning,
+                  border: `2px solid ${c.bg.surface}`,
+                }}
+              />
+            )}
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Box
+              sx={{
+                ...c.type.body,
+                fontWeight: 500,
+                color: c.text.primary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: 220,
+              }}
+            >
+              {app.name}
+            </Box>
+            {app.description && (
+              <Box
+                sx={{
+                  ...c.type.caption,
+                  color: c.text.tertiary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 260,
+                }}
+              >
+                {app.description}
+              </Box>
+            )}
+          </Box>
+        </Box>
+      </Box>
+
+      <Box component="td" sx={bodyCell}>
+        {tracked && meta?.current_branch ? (
+          <Box
+            component="span"
+            sx={{
+              ...c.type.caption,
+              fontFamily: c.font.mono,
+              color: c.text.secondary,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            <CallSplitRoundedIcon sx={{ fontSize: 13, color: c.text.tertiary }} />
+            {meta.current_branch}
+          </Box>
+        ) : (
+          <Box component="span" sx={{ ...c.type.caption, color: c.text.tertiary }}>
+            —
+          </Box>
+        )}
+      </Box>
+
+      <Box component="td" sx={bodyCell}>
+        {loading && !meta ? (
+          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <CircularProgress size={10} sx={{ color: c.text.tertiary }} />
+            <Box component="span" sx={{ ...c.type.caption, color: c.text.tertiary }}>
+              Reading…
+            </Box>
+          </Box>
+        ) : missing ? (
+          <Pill tone="danger">missing</Pill>
+        ) : !tracked ? (
+          <Pill tone="ghost">not tracked</Pill>
+        ) : dirty > 0 ? (
+          <Pill tone="warning">
+            <RadioButtonCheckedRoundedIcon />
+            uncommitted
+          </Pill>
+        ) : needsPublish ? (
+          <Pill tone="accent">
+            <PublishRoundedIcon />
+            unpublished
+          </Pill>
+        ) : (
+          <Pill tone="success">
+            <CheckCircleRoundedIcon />
+            clean
+          </Pill>
+        )}
+      </Box>
+
+      <Box component="td" sx={{ ...bodyCell, textAlign: 'right' }}>
+        <Box
+          component="span"
+          sx={{ ...c.type.body, fontVariantNumeric: 'tabular-nums', color: tracked ? c.text.primary : c.text.tertiary }}
+        >
+          {tracked ? commits.toLocaleString() : '—'}
+        </Box>
+      </Box>
+
+      <Box component="td" sx={bodyCell}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {dirty > 0 && (
+            <Pill tone="warning">
+              <RadioButtonCheckedRoundedIcon />
+              {dirty}
+            </Pill>
+          )}
+          {unpushed > 0 && (
+            <Pill tone="warning">
+              <CloudUploadRoundedIcon />
+              {unpushed}
+            </Pill>
+          )}
+          {tracked && dirty === 0 && unpushed === 0 && (
+            <Box component="span" sx={{ ...c.type.caption, color: c.text.tertiary }}>
+              —
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      <Box component="td" sx={bodyCell}>
+        {tracked && meta?.head_date ? (
+          <Box
+            title={absoluteTime(meta.head_date)}
+            sx={{
+              ...c.type.caption,
+              color: c.text.tertiary,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <ScheduleRoundedIcon sx={{ fontSize: 13 }} />
+            {relativeTime(meta.head_date)}
+          </Box>
+        ) : (
+          <Box component="span" sx={{ ...c.type.caption, color: c.text.tertiary }}>
+            —
+          </Box>
+        )}
+      </Box>
+
+      <Box component="td" sx={{ ...bodyCell, textAlign: 'right' }}>
+        {!tracked && !missing ? (
+          <Box
+            component="span"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              void onTrack(app);
+            }}
+            sx={{ ...primaryButton(c), minHeight: 28, px: 1.5 }}
+          >
+            {tracking ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Track'}
+          </Box>
+        ) : tracked ? (
+          <Box component="span" sx={{ ...pushButton(c), minHeight: 28, px: 1.5 }}>
+            Open
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
+  );
+};
+
 function Segmented<T extends string>({
   value,
   options,
   onChange,
 }: {
   value: T;
-  options: { id: T; label: string }[];
+  options: { id: T; label: string; icon?: React.ReactNode }[];
   onChange: (v: T) => void;
 }) {
   const c = useClaudeTokens();
@@ -635,13 +959,21 @@ function Segmented<T extends string>({
                 fontWeight: 500,
                 visibility: 'hidden',
                 pointerEvents: 'none',
+                paddingLeft: o.icon ? '21px' : 0,
               },
             }}
           >
             <Box
               component="span"
-              sx={{ gridArea: '1 / 1', fontWeight: on ? 500 : 400 }}
+              sx={{
+                gridArea: '1 / 1',
+                fontWeight: on ? 500 : 400,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
             >
+              {o.icon}
               {o.label}
             </Box>
           </Box>
