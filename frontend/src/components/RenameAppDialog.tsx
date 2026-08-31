@@ -264,6 +264,31 @@ const RenameAppDialog: React.FC<Props> = ({
           </Box>
         )}
 
+        {hasRemote && preview?.slug_would_change && !renameRemote && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 1,
+              px: 1.25,
+              py: 1,
+              borderRadius: `${c.radius.md}px`,
+              background: c.status.warningBg,
+              border: `1px solid ${c.status.warning}`,
+            }}
+          >
+            <ErrorOutlineRoundedIcon
+              sx={{ fontSize: 16, color: c.status.warning, mt: '1px' }}
+            />
+            <Box sx={{ ...c.type.caption, color: c.status.warning, lineHeight: 1.5 }}>
+              The GitHub repo will keep its old name while this app is called{' '}
+              <code>{name.trim()}</code>. There's no functional difference, but
+              leaving the repo slug out of sync with the app name is very bad
+              practice — you almost always want them to match.
+            </Box>
+          </Box>
+        )}
+
         {preview && preview.files.length > 0 && (
           <Box>
             <Box sx={{ ...c.type.caption, color: c.text.tertiary, mb: '4px' }}>
