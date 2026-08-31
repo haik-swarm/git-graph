@@ -19,6 +19,7 @@ import {
   GITGRAPH_ICON_PREVIEW_URL,
   GITGRAPH_ICON_TEMPLATE_URL,
 } from '@/shared/state/API_ENDPOINTS';
+import TemplateEditor, { type TemplateVar } from '@/components/TemplateEditor';
 
 interface Props {
   open: boolean;
@@ -27,14 +28,24 @@ interface Props {
   onSaved?: () => void;
 }
 
-// The raw templates and variable glossary, independent of any form input, so the
-// {placeholders} are shown literally.
+// The current templates (saved override or built-in default) plus the variable
+// glossary and the built-in defaults each field resets to.
+interface TemplateDefault {
+  template: string;
+  variables: string[];
+}
 interface TemplateRef {
   styles: Record<string, string>;
   variables: Record<string, string>;
   svg: { system: string; user: string };
   image: { prompt: string };
   style_line: string;
+  defaults: {
+    svg_system: TemplateDefault;
+    svg_user: TemplateDefault;
+    image_prompt: TemplateDefault;
+    style_line: TemplateDefault;
+  };
 }
 
 interface ConfigState {
@@ -42,10 +53,16 @@ interface ConfigState {
   default_styles: string[];
   default_engines: string[];
   default_model: string;
+  template_svg_system: string;
+  template_svg_user: string;
+  template_image_prompt: string;
+  template_style_line: string;
 }
 
-// One resolved candidate: the exact payload one engine×style combo will send,
-// with the {placeholders} already filled from the sample subject.
+// One resolved candidate: the exact payload one engine×style combo will send.
+// `vars` are the values the backend resolved (subject, style_line, …); the
+// preview fills the *live-edited* templates against them client-side so unsaved
+// edits show immediately, matching what a save-then-generate would send.
 interface ResolvedPreview {
   engine: 'svg' | 'image';
   style: string;
@@ -53,6 +70,15 @@ interface ResolvedPreview {
   system?: string;
   user?: string;
   prompt?: string;
+  vars?: Record<string, string>;
+}
+
+const TOKEN = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+
+// Mirror of the backend `_render_template`: fill known {name} tokens, leave any
+// other braces literal, render a missing/undefined value as empty.
+function renderTemplate(tpl: string, vars: Record<string, string>): string {
+  return tpl.replace(TOKEN, (_m, name) => vars[name] ?? '');
 }
 
 const STYLES = ['flat', 'gradient', 'line', '3d', 'monochrome', 'playful'];
@@ -76,6 +102,11 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
   const [model, setModel] = useState('haiku');
   const [keySet, setKeySet] = useState(false);
   const [apiKey, setApiKey] = useState('');
+  // Live-edited templates (canonical {var} form), seeded from config_state.
+  const [svgSystem, setSvgSystem] = useState('');
+  const [svgUser, setSvgUser] = useState('');
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [styleLine, setStyleLine] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -101,6 +132,10 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
       setEngines(cfg.default_engines || []);
       setModel(cfg.default_model || 'haiku');
       setKeySet(Boolean(cfg.openai_key_set));
+      setSvgSystem(cfg.template_svg_system || '');
+      setSvgUser(cfg.template_svg_user || '');
+      setImagePrompt(cfg.template_image_prompt || '');
+      setStyleLine(cfg.template_style_line || '');
       setTpl(t);
     } catch {
       setError("Couldn't load the icon settings.");
@@ -166,6 +201,10 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
         default_styles: styles,
         default_engines: engines,
         default_model: model,
+        template_svg_system: svgSystem,
+        template_svg_user: svgUser,
+        template_image_prompt: imagePrompt,
+        template_style_line: styleLine,
       };
       // Only send the key when the user typed one, so a blank field never
       // clears an already-saved key.
@@ -202,6 +241,37 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
   const label = (text: string) => (
     <Box sx={{ ...c.type.caption, color: c.text.tertiary, mt: 0.5 }}>{text}</Box>
   );
+
+  // Variable lists offered in the editors' @ pickers, from the glossary. The SVG
+  // and image bodies take every variable; the style-line wrapper only fills
+  // {style_clause}.
+  const allVars: TemplateVar[] = tpl
+    ? Object.entries(tpl.variables).map(([name, desc]) => ({ name, desc }))
+    : [];
+  const styleLineVars: TemplateVar[] = allVars.filter(v => v.name === 'style_clause');
+
+  // Editing a template invalidates the "Saved" chip, like the chip toggles do.
+  const editTemplate = (set: (v: string) => void) => (v: string) => {
+    setSaved(false);
+    set(v);
+  };
+
+  // Fill the *live-edited* templates against the values the backend resolved, so
+  // the preview reflects unsaved edits exactly as a save-then-generate would.
+  // style_line is recomputed here from the edited wrapper so its edits show too.
+  const renderPreview = (p: ResolvedPreview) => {
+    const vars = { ...(p.vars ?? {}) };
+    vars.style_line = vars.style_clause
+      ? renderTemplate(styleLine, { style_clause: vars.style_clause })
+      : '';
+    if (p.engine === 'image') {
+      return { system: '', body: renderTemplate(imagePrompt, vars) };
+    }
+    return {
+      system: renderTemplate(svgSystem, vars),
+      body: renderTemplate(svgUser, vars),
+    };
+  };
 
   const mono = (text: string) => (
     <Box
@@ -400,21 +470,50 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
             Prompt templates
           </Box>
           <Box sx={{ ...c.type.caption, color: c.text.tertiary, lineHeight: 1.5 }}>
-            These raw strings ARE the prompt. At generation the {'{placeholders}'}{' '}
-            below are filled by <code>.format()</code> and sent verbatim — nothing
-            is reconstructed or hidden.
+            These strings ARE the prompt. Edit them freely — variables show as{' '}
+            pills; type <code>@</code> (or “Insert variable”) to add one. At
+            generation each pill is filled with its value and the text is sent
+            verbatim. Clear a field to fall back to the built-in default.
           </Box>
 
           {tpl && (
             <>
               {label('SVG engine · system')}
-              {mono(tpl.svg.system)}
+              <TemplateEditor
+                value={svgSystem}
+                onChange={editTemplate(setSvgSystem)}
+                variables={allVars}
+                defaultValue={tpl.defaults.svg_system.template}
+                requiredVars={tpl.defaults.svg_system.variables}
+                onReset={() => editTemplate(setSvgSystem)(tpl.defaults.svg_system.template)}
+              />
               {label('SVG engine · user')}
-              {mono(tpl.svg.user)}
+              <TemplateEditor
+                value={svgUser}
+                onChange={editTemplate(setSvgUser)}
+                variables={allVars}
+                defaultValue={tpl.defaults.svg_user.template}
+                requiredVars={tpl.defaults.svg_user.variables}
+                onReset={() => editTemplate(setSvgUser)(tpl.defaults.svg_user.template)}
+              />
               {label('Image engine · prompt')}
-              {mono(tpl.image.prompt)}
+              <TemplateEditor
+                value={imagePrompt}
+                onChange={editTemplate(setImagePrompt)}
+                variables={allVars}
+                defaultValue={tpl.defaults.image_prompt.template}
+                requiredVars={tpl.defaults.image_prompt.variables}
+                onReset={() => editTemplate(setImagePrompt)(tpl.defaults.image_prompt.template)}
+              />
               {label('Style line (folded in only when a style is set)')}
-              {mono(tpl.style_line)}
+              <TemplateEditor
+                value={styleLine}
+                onChange={editTemplate(setStyleLine)}
+                variables={styleLineVars}
+                defaultValue={tpl.defaults.style_line.template}
+                requiredVars={tpl.defaults.style_line.variables}
+                onReset={() => editTemplate(setStyleLine)(tpl.defaults.style_line.template)}
+              />
 
               {label('Variables')}
               <Box
@@ -534,43 +633,46 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
                   {label(
                     `${previews.length} combination${previews.length === 1 ? '' : 's'} (${(styles.length || 1)} style × ${engines.length} engine)`,
                   )}
-                  {previews.map((p, i) => (
-                    <Box
-                      key={`${p.engine}-${p.style}-${i}`}
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 0.5,
-                        p: 1,
-                        borderRadius: `${c.radius.sm}px`,
-                        background: c.bg.secondary,
-                        border: `1px solid ${c.border.subtle}`,
-                      }}
-                    >
+                  {previews.map((p, i) => {
+                    const rp = renderPreview(p);
+                    return (
                       <Box
+                        key={`${p.engine}-${p.style}-${i}`}
                         sx={{
-                          ...c.type.caption,
-                          color: c.text.secondary,
-                          fontWeight: 600,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 0.5,
+                          p: 1,
+                          borderRadius: `${c.radius.sm}px`,
+                          background: c.bg.secondary,
+                          border: `1px solid ${c.border.subtle}`,
                         }}
                       >
-                        {p.engine.toUpperCase()}
-                        {p.style ? ` · ${p.style}` : ' · no style'} → {p.target}
+                        <Box
+                          sx={{
+                            ...c.type.caption,
+                            color: c.text.secondary,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {p.engine.toUpperCase()}
+                          {p.style ? ` · ${p.style}` : ' · no style'} → {p.target}
+                        </Box>
+                        {rp.system && (
+                          <>
+                            <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                              system
+                            </Box>
+                            {mono(rp.system)}
+                          </>
+                        )}
+                        <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                          {rp.system ? 'user' : 'prompt'}
+                        </Box>
+                        {mono(rp.body)}
                       </Box>
-                      {p.system && (
-                        <>
-                          <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
-                            system
-                          </Box>
-                          {mono(p.system)}
-                        </>
-                      )}
-                      <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
-                        {p.system ? 'user' : 'prompt'}
-                      </Box>
-                      {mono(p.user ?? p.prompt ?? '')}
-                    </Box>
-                  ))}
+                    );
+                  })}
                 </>
               )}
             </>

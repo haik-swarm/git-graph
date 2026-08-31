@@ -49,6 +49,12 @@ class Config(BaseModel):
     default_styles: List[str] = []
     default_engines: List[str] = []
     default_model: str = ""
+    # User-edited prompt templates. Blank = fall back to the built-in *_TEMPLATE
+    # constant, so clearing a field restores the default.
+    template_svg_system: str = ""
+    template_svg_user: str = ""
+    template_image_prompt: str = ""
+    template_style_line: str = ""
 
 
 def _read_config() -> Config:
@@ -256,6 +262,57 @@ IMAGE_PROMPT_TEMPLATE = (
 # to nothing so the sentence closes cleanly.
 STYLE_LINE_TEMPLATE = " Style: {style_clause}."
 
+# Which variables each default template references. Drives the settings editor's
+# "you dropped {x}" warning and the variable pickers offered per field.
+TEMPLATE_DEFAULTS = {
+    "svg_system": SVG_SYSTEM_TEMPLATE,
+    "svg_user": SVG_USER_TEMPLATE,
+    "image_prompt": IMAGE_PROMPT_TEMPLATE,
+    "style_line": STYLE_LINE_TEMPLATE,
+}
+
+_TOKEN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def _template_var_names(tpl: str) -> List[str]:
+    """Ordered, de-duplicated {name} tokens a template references."""
+    seen: Set[str] = set()
+    out: List[str] = []
+    for m in _TOKEN.finditer(tpl or ""):
+        name = m.group(1)
+        if name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
+def _render_template(tpl: str, variables: dict) -> str:
+    """Fill only known {name} tokens from `variables`; leave any other brace text
+    literal. Unlike str.format this never raises on stray braces a user typed, and
+    a None value renders empty (matching how a blank style_line closes cleanly)."""
+    def sub(m: "re.Match[str]") -> str:
+        val = variables.get(m.group(1))
+        return "" if val is None else str(val)
+    return _TOKEN.sub(sub, tpl or "")
+
+
+def _tpl_svg_system() -> str:
+    return (_read_config().template_svg_system or "").strip() or SVG_SYSTEM_TEMPLATE
+
+
+def _tpl_svg_user() -> str:
+    return (_read_config().template_svg_user or "").strip() or SVG_USER_TEMPLATE
+
+
+def _tpl_image_prompt() -> str:
+    return (_read_config().template_image_prompt or "").strip() or IMAGE_PROMPT_TEMPLATE
+
+
+def _tpl_style_line() -> str:
+    # Not stripped: leading whitespace before " Style:" is significant here.
+    saved = _read_config().template_style_line
+    return saved if (saved or "").strip() else STYLE_LINE_TEMPLATE
+
 
 def _template_vars(prompt: str, style: str, title: str, model: str = "") -> dict:
     """Every value that gets interpolated into a prompt template, resolved from
@@ -264,7 +321,7 @@ def _template_vars(prompt: str, style: str, title: str, model: str = "") -> dict
     style_key = (style or "").strip().lower()
     style_clause = ICON_STYLES.get(style_key, (style or "").strip())
     subject = _icon_subject(prompt, title) or "an abstract mark"
-    style_line = STYLE_LINE_TEMPLATE.format(style_clause=style_clause) if style_clause else ""
+    style_line = _render_template(_tpl_style_line(), {"style_clause": style_clause}) if style_clause else ""
     picked = (model or "").strip().lower()
     return {
         "prompt": (prompt or "").strip(),
@@ -285,8 +342,8 @@ def build_svg_request(prompt: str, style: str, title: str, model: str = "") -> d
     previewed is literally what's sent."""
     v = _template_vars(prompt, style, title, model)
     return {
-        "system": SVG_SYSTEM_TEMPLATE,
-        "user": SVG_USER_TEMPLATE.format(subject=v["subject"], style_line=v["style_line"]),
+        "system": _render_template(_tpl_svg_system(), v),
+        "user": _render_template(_tpl_svg_user(), v),
         "model": v["model"],
     }
 
@@ -320,7 +377,7 @@ def build_image_prompt(prompt: str, style: str, title: str) -> str:
     filling IMAGE_PROMPT_TEMPLATE. Shared by `_generate_icon_image` and the
     preview so they can never disagree."""
     v = _template_vars(prompt, style, title)
-    return IMAGE_PROMPT_TEMPLATE.format(subject=v["subject"], style_line=v["style_line"])
+    return _render_template(_tpl_image_prompt(), v)
 
 
 def _generate_icon_image(prompt: str, style: str, title: str) -> str:
@@ -407,13 +464,19 @@ def template_reference() -> dict:
             "model": "Chosen host model for SVG (haiku/sonnet/opus), or host default.",
         },
         "svg": {
-            "system": SVG_SYSTEM_TEMPLATE,
-            "user": SVG_USER_TEMPLATE,
+            "system": _tpl_svg_system(),
+            "user": _tpl_svg_user(),
         },
         "image": {
-            "prompt": IMAGE_PROMPT_TEMPLATE,
+            "prompt": _tpl_image_prompt(),
         },
-        "style_line": STYLE_LINE_TEMPLATE,
+        "style_line": _tpl_style_line(),
+        # Built-in constants plus the variables each references, so the editor can
+        # offer "Reset to default" and warn when an edit drops a variable.
+        "defaults": {
+            key: {"template": tpl, "variables": _template_var_names(tpl)}
+            for key, tpl in TEMPLATE_DEFAULTS.items()
+        },
     }
 
 
@@ -439,7 +502,7 @@ def preview_prompts(body: IconIn) -> List[dict]:
                     "style": style,
                     "target": "gpt-image-2",
                     "prompt": build_image_prompt(body.prompt, style, body.title),
-                    "template": {"prompt": IMAGE_PROMPT_TEMPLATE},
+                    "template": {"prompt": _tpl_image_prompt()},
                     "vars": shown,
                 })
             else:
@@ -450,7 +513,7 @@ def preview_prompts(body: IconIn) -> List[dict]:
                     "target": req["model"] or "host default",
                     "system": req["system"],
                     "user": req["user"],
-                    "template": {"system": SVG_SYSTEM_TEMPLATE, "user": SVG_USER_TEMPLATE},
+                    "template": {"system": _tpl_svg_system(), "user": _tpl_svg_user()},
                     "vars": shown,
                 })
     return out
@@ -682,6 +745,12 @@ def config_state() -> dict:
         "default_styles": styles,
         "default_engines": engines,
         "default_model": model if model in ICON_MODELS else DEFAULT_MODEL,
+        # Resolved templates (saved override, else built-in default) so the editor
+        # loads the current value; blank in config still surfaces as the default.
+        "template_svg_system": _tpl_svg_system(),
+        "template_svg_user": _tpl_svg_user(),
+        "template_image_prompt": _tpl_image_prompt(),
+        "template_style_line": _tpl_style_line(),
     }
 
 
@@ -690,9 +759,14 @@ def save_config(
     default_styles: Optional[List[str]] = None,
     default_engines: Optional[List[str]] = None,
     default_model: Optional[str] = None,
+    template_svg_system: Optional[str] = None,
+    template_svg_user: Optional[str] = None,
+    template_image_prompt: Optional[str] = None,
+    template_style_line: Optional[str] = None,
 ) -> dict:
     """Persist the OpenAI key and/or the global icon defaults. Any field left None
-    is unchanged; an empty string clears the key. Returns config_state()."""
+    is unchanged; an empty string clears the key. For templates, a blank string
+    resets that field to its built-in default. Returns config_state()."""
     cfg = _read_config()
     if openai_api_key is not None:
         cfg.openai_api_key = openai_api_key.strip()
@@ -703,5 +777,18 @@ def save_config(
     if default_model is not None:
         m = default_model.strip().lower()
         cfg.default_model = m if m in ICON_MODELS else ""
+    # A saved value equal to the default is stored blank so a later change to the
+    # built-in default flows through instead of being pinned to a stale copy.
+    if template_svg_system is not None:
+        v = template_svg_system.strip()
+        cfg.template_svg_system = "" if v == SVG_SYSTEM_TEMPLATE else v
+    if template_svg_user is not None:
+        v = template_svg_user.strip()
+        cfg.template_svg_user = "" if v == SVG_USER_TEMPLATE else v
+    if template_image_prompt is not None:
+        v = template_image_prompt.strip()
+        cfg.template_image_prompt = "" if v == IMAGE_PROMPT_TEMPLATE else v
+    if template_style_line is not None:
+        cfg.template_style_line = "" if template_style_line == STYLE_LINE_TEMPLATE else template_style_line
     _write_config(cfg)
     return config_state()

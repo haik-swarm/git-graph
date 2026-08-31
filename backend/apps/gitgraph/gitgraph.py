@@ -110,6 +110,11 @@ class IconConfigRequest(BaseModel):
     default_styles: Optional[List[str]] = None
     default_engines: Optional[List[str]] = None
     default_model: Optional[str] = None
+    # Edited prompt templates; None leaves each unchanged, blank/default resets it.
+    template_svg_system: Optional[str] = None
+    template_svg_user: Optional[str] = None
+    template_image_prompt: Optional[str] = None
+    template_style_line: Optional[str] = None
 
 
 @typechecked
@@ -714,6 +719,10 @@ async def icon_config_save(body: IconConfigRequest) -> dict:
         default_styles=body.default_styles,
         default_engines=body.default_engines,
         default_model=body.default_model,
+        template_svg_system=body.template_svg_system,
+        template_svg_user=body.template_svg_user,
+        template_image_prompt=body.template_image_prompt,
+        template_style_line=body.template_style_line,
     )
 
 
