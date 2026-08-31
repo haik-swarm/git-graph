@@ -23,6 +23,11 @@ interface Props {
   appDescription?: string;
   /** A fresh apply commits a file, so the graph above has to redraw. */
   onApplied?: () => void;
+  /**
+   * Route the gear / "Global defaults" affordances to the Settings tab, which
+   * now owns the icon config. Without it, they fall back to the inline sheet.
+   */
+  onOpenSettings?: () => void;
 }
 
 interface IconResult {
@@ -48,6 +53,7 @@ const IconPanel: React.FC<Props> = ({
   appName,
   appDescription,
   onApplied,
+  onOpenSettings,
 }) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -237,7 +243,7 @@ const IconPanel: React.FC<Props> = ({
           Icon
         </ButtonBase>
         <ButtonBase
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => (onOpenSettings ? onOpenSettings() : setSettingsOpen(true))}
           sx={{
             ...pushButton(c),
             color: c.text.secondary,
@@ -274,7 +280,14 @@ const IconPanel: React.FC<Props> = ({
             App icon
           </Typography>
           <ButtonBase
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              if (onOpenSettings) {
+                setAnchor(null);
+                onOpenSettings();
+              } else {
+                setSettingsOpen(true);
+              }
+            }}
             sx={{
               ...c.type.caption,
               color: c.accent.primary,

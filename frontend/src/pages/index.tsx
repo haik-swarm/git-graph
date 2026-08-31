@@ -45,7 +45,7 @@ import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
 import IconPanel from '@/components/IconPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
-import GlobalIgnoreSheet from '@/components/GlobalIgnoreSheet';
+import SettingsPage from '@/components/SettingsPage';
 import HomeGrid from '@/components/HomeGrid';
 import RepoHero from '@/components/RepoHero';
 import { RestartNotice } from '@/components/RestartNotice';
@@ -95,7 +95,7 @@ const Home: React.FC = () => {
   const [source, setSource] = useState<'apps' | 'skills'>('apps');
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
-  const [mode, setMode] = useState<'home' | 'app' | 'marketplace'>('home');
+  const [mode, setMode] = useState<'home' | 'app' | 'marketplace' | 'settings'>('home');
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +122,6 @@ const Home: React.FC = () => {
   // background sync lands, every unpushed count is a local-only guess.
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
-  const [ignoreOpen, setIgnoreOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   // Bumped after an install/delete to re-poll the restart notice immediately.
   const [noticeKey, setNoticeKey] = useState(0);
@@ -401,6 +400,11 @@ const Home: React.FC = () => {
     setSelectedSha(null);
   }, []);
 
+  const goSettings = useCallback(() => {
+    setMode('settings');
+    setSelectedSha(null);
+  }, []);
+
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
     [graph],
@@ -458,7 +462,9 @@ const Home: React.FC = () => {
       selected={mode === 'app' ? selected : null}
       homeActive={mode === 'home'}
       marketplaceActive={mode === 'marketplace'}
+      settingsActive={mode === 'settings'}
       onMarketplace={goMarketplace}
+      onSettings={goSettings}
       onHome={goHome}
       onSelect={openApp}
       runningIds={runningIds}
@@ -573,6 +579,14 @@ const Home: React.FC = () => {
     );
   }
 
+  if (mode === 'settings') {
+    return (
+      <Shell rail={rail}>
+        <SettingsPage source={source} onIgnoreSaved={() => void refreshHomeMeta()} />
+      </Shell>
+    );
+  }
+
   if (mode === 'home') {
     return (
       <Shell rail={rail}>
@@ -602,7 +616,7 @@ const Home: React.FC = () => {
           </Tooltip>
           <Tooltip title="Global .gitignore — one list, mirrored into every tracked app">
             <ButtonBase
-              onClick={() => setIgnoreOpen(true)}
+              onClick={goSettings}
               sx={{
                 ...pushButton(c),
                 gap: '6px',
@@ -660,14 +674,6 @@ const Home: React.FC = () => {
             />
           )}
         </Scroller>
-        <GlobalIgnoreSheet
-          open={ignoreOpen}
-          source={source}
-          onClose={() => setIgnoreOpen(false)}
-          // Editing the shared list can change what git sees as dirty, so
-          // rescan meta once the sheet reports a save.
-          onSaved={() => void refreshHomeMeta()}
-        />
         <CloudSheet
           open={cloudOpen}
           onClose={() => setCloudOpen(false)}
@@ -718,6 +724,9 @@ const Home: React.FC = () => {
             appDescription={selected.description}
             // Applying an icon commits a file, so the graph redraws to show it.
             onApplied={refresh}
+            // The gear / "Global defaults" link now lands on the Settings tab,
+            // which owns the icon config, instead of the inline sheet.
+            onOpenSettings={goSettings}
           />
         )}
 

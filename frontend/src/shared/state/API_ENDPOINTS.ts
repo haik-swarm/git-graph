@@ -67,6 +67,9 @@ export const gitgraphGlobalIgnoreToggleUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/global-ignore/apps/${encodeURIComponent(workspaceId)}`;
 
 // GITHUB - Endpoints
+// Workspace-independent: whether the GitHub integration is installed at all, so
+// the Settings page can warn the user to connect it before any repo action fails.
+export const GITGRAPH_GITHUB_CONNECTION_URL = API_URL + '/gitgraph/github-connection';
 export const githubStatusUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}`;
 export const githubCreateRepoUrl = (workspaceId: string) =>

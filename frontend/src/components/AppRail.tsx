@@ -11,6 +11,7 @@ import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, RailLabel } from '@/components/Chrome';
@@ -58,7 +59,9 @@ interface Props {
   selected: AppEntry | null;
   homeActive: boolean;
   marketplaceActive: boolean;
+  settingsActive: boolean;
   onMarketplace: () => void;
+  onSettings: () => void;
   onHome: () => void;
   onSelect: (app: AppEntry) => void;
   onTracked: (app: AppEntry) => void;
@@ -97,7 +100,9 @@ const AppRail: React.FC<Props> = ({
   selected,
   homeActive,
   marketplaceActive,
+  settingsActive,
   onMarketplace,
+  onSettings,
   onHome,
   onSelect,
   onTracked,
@@ -369,6 +374,15 @@ const AppRail: React.FC<Props> = ({
             />
           </Box>
         )}
+
+        <Box sx={{ px: '2px', mb: '4px' }}>
+          <NavRow
+            icon={<SettingsRoundedIcon sx={{ fontSize: 15 }} />}
+            label="Settings"
+            active={settingsActive}
+            onClick={onSettings}
+          />
+        </Box>
 
         {/* Sharing unknown: show the apps, withhold the split. */}
         {sharingPhase === 'loading' && tracked.length > 0 && (

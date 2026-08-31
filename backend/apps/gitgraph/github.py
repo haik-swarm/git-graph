@@ -99,6 +99,16 @@ def _account_label() -> Optional[str]:
 
 
 @typechecked
+def connection_state() -> Dict[str, Any]:
+    """Whether the GitHub integration is installed at all, independent of any one
+    workspace. The whole module reaches GitHub through the token the user's
+    connected "github" tool exposes; with no such tool, every per-app repo action
+    would fail the same way, so the Settings page surfaces this once, up front.
+    """
+    return {"connected": bool(read_token()), "account": _account_label()}
+
+
+@typechecked
 def _headers(token: str) -> Dict[str, str]:
     return {
         "Authorization": f"token {token}",

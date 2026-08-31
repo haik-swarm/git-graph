@@ -467,6 +467,18 @@ async def discard(workspace_id: str) -> dict:
     return result
 
 
+@gitgraph.router.get("/github-connection")
+@typechecked
+async def github_connection() -> dict:
+    """Whether the GitHub integration is installed at all, workspace-independent.
+
+    Every per-app GitHub action reads the same connected-tool token, so the
+    Settings page checks this once and warns the user to install the integration
+    rather than letting each repo action fail on its own.
+    """
+    return await asyncio.to_thread(github.connection_state)
+
+
 @gitgraph.router.get("/github/{workspace_id}")
 @typechecked
 async def github_status(workspace_id: str) -> dict:
