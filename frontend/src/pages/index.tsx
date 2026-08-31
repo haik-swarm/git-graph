@@ -11,6 +11,7 @@ import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import RuleFolderRoundedIcon from '@mui/icons-material/RuleFolderRounded';
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import DriveFileRenameOutlineRoundedIcon from '@mui/icons-material/DriveFileRenameOutlineRounded';
 import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { iconButton, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
@@ -39,6 +40,7 @@ import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
 import CommitList from '@/components/CommitList';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
+import RenameAppDialog from '@/components/RenameAppDialog';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
 import IconPanel from '@/components/IconPanel';
@@ -125,6 +127,7 @@ const Home: React.FC = () => {
   // Bumped after an install/delete to re-poll the restart notice immediately.
   const [noticeKey, setNoticeKey] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
@@ -498,6 +501,23 @@ const Home: React.FC = () => {
     [selected, refetchApps, refreshHomeMeta],
   );
 
+  const handleRenamed = useCallback(
+    async (newName: string) => {
+      setNoticeKey(k => k + 1);
+      // Refetch the app list so the new name flows into `selected` (its name,
+      // the toolbar title, and the hero all read from that record).
+      const list = await refetchApps().catch(() => null);
+      void refreshHomeMeta();
+      if (selected && list) {
+        const fresh = list.find(a => a.workspace_id === selected.workspace_id);
+        // A slug rename rewrites origin, so refresh the GitHub status strip too.
+        setGitHubKey(k => k + 1);
+        setSelected(fresh ?? { ...selected, name: newName });
+      }
+    },
+    [selected, refetchApps, refreshHomeMeta],
+  );
+
   const handleInstalled = useCallback(
     async (workspaceId: string) => {
       setNoticeKey(k => k + 1);
@@ -712,6 +732,25 @@ const Home: React.FC = () => {
         )}
 
         {selected && (
+          <Tooltip title="Rename this app everywhere its name lives">
+            <ButtonBase
+              onClick={() => setRenameOpen(true)}
+              sx={{
+                ...pushButton(c),
+                gap: '4px',
+                color: c.text.secondary,
+                '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
+                '& svg': { fontSize: 16 },
+              }}
+              aria-label="Rename app"
+            >
+              <DriveFileRenameOutlineRoundedIcon />
+              Rename
+            </ButtonBase>
+          </Tooltip>
+        )}
+
+        {selected && (
           <Tooltip title="Delete this app locally (workspace + dashboard entry)">
             <ButtonBase
               onClick={() => setDeleteOpen(true)}
@@ -860,6 +899,17 @@ const Home: React.FC = () => {
           </>
         )}
       </Scroller>
+
+      {selected && (
+        <RenameAppDialog
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+          workspaceId={selected.workspace_id}
+          appName={selected.name}
+          hasRemote={hasRemote}
+          onRenamed={handleRenamed}
+        />
+      )}
 
       {selected && (
         <DeleteAppDialog

@@ -129,6 +129,11 @@ export const gitgraphLocalDeleteUrl = (workspaceId: string) =>
 // leaves): no workspace id to key on, so these delete by output id.
 export const gitgraphOrphanDeleteUrl = (outputId: string) =>
   `${API_URL}/gitgraph/orphan-delete/${encodeURIComponent(outputId)}`;
+// Dry-run: what a rename would touch (slug move + files mentioning the name).
+export const gitgraphRenamePreviewUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/rename-preview/${encodeURIComponent(workspaceId)}`;
+export const gitgraphRenameUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/rename/${encodeURIComponent(workspaceId)}`;
 
 // MARKETPLACE - Endpoints (a public GitHub org IS the marketplace)
 export const GITGRAPH_MARKETPLACE_LISTINGS_URL =

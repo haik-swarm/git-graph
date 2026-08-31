@@ -307,6 +307,118 @@ async def create_repo(
 
 
 @typechecked
+async def update_description(path: Path, app_name: str) -> Tuple[bool, str]:
+    """Repoint the repo's description at a new display name.
+
+    The description prefix ("OpenSwarm app: ...") is the only durable signal
+    that a repo is one of ours (see list_openswarm_repos), so a rename has to
+    keep it in step or the app drops out of Your cloud.
+    """
+    token = read_token()
+    if not token:
+        return False, "GitHub isn't connected."
+    url = remote_url(path)
+    if not url:
+        return False, "This workspace has no GitHub repo yet."
+    parsed = parse_remote(url)
+    if not parsed:
+        return False, "Couldn't read the GitHub repo from the remote URL."
+    owner, repo = parsed
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        res = await client.patch(
+            f"{API_ROOT}/repos/{owner}/{repo}",
+            headers=_headers(token),
+            json={"description": f"OpenSwarm app: {app_name}"},
+        )
+    if res.status_code != 200:
+        detail = ""
+        try:
+            detail = res.json().get("message", "")
+        except ValueError:
+            pass
+        return False, detail or f"GitHub returned {res.status_code}."
+    return True, "ok"
+
+
+@typechecked
+async def rename_repo(path: Path, new_display_name: str) -> Tuple[bool, Any]:
+    """Rename the GitHub repo to match a new display name and re-point origin.
+
+    Safe by construction: GitHub keeps a permanent redirect from the old
+    name, so collaborators' existing clones keep fetching and pushing
+    untouched. The redirect only dies if the old name is later reclaimed, and
+    a free slug is picked here the same way create_repo does, so this can
+    never squat the name it just vacated.
+
+    Returns ok=True with {"unchanged": True} when the slug already matches, so
+    the caller can treat "nothing to do" as success rather than an error.
+    """
+    token = read_token()
+    if not token:
+        return False, "GitHub isn't connected."
+    url = remote_url(path)
+    if not url:
+        return False, "This workspace has no GitHub repo yet."
+    parsed = parse_remote(url)
+    if not parsed:
+        return False, "Couldn't read the GitHub repo from the remote URL."
+    owner, repo = parsed
+
+    desired = slugify(new_display_name)
+    if desired == repo.lower():
+        return True, {
+            "owner": owner,
+            "repo": repo,
+            "old_repo": repo,
+            "unchanged": True,
+            "html_url": f"https://github.com/{owner}/{repo}",
+        }
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        name = desired
+        for suffix in range(2, 12):
+            if not await _repo_exists(client, token, owner, name):
+                break
+            name = f"{desired}-{suffix}"
+        else:
+            return False, f"Every name from {desired} to {desired}-11 is taken."
+
+        res = await client.patch(
+            f"{API_ROOT}/repos/{owner}/{repo}",
+            headers=_headers(token),
+            json={"name": name},
+        )
+        if res.status_code != 200:
+            detail = ""
+            try:
+                detail = res.json().get("message", "")
+            except ValueError:
+                pass
+            return False, detail or f"GitHub returned {res.status_code}."
+        data = res.json()
+
+    # GitHub has renamed; the local remote still points at the old URL until
+    # we move it. If this fails the repo is renamed but origin is stale — the
+    # redirect keeps pushes working, but we report it so the user knows.
+    new_url = data.get("clone_url") or f"https://github.com/{owner}/{name}.git"
+    ok, _, err = _run_git_result(["remote", "set-url", "origin", new_url], path)
+    if not ok:
+        return False, (
+            err.strip()
+            or "Renamed on GitHub, but couldn't update the local remote URL."
+        )
+
+    return True, {
+        "owner": owner,
+        "repo": name,
+        "old_repo": repo,
+        "unchanged": False,
+        "html_url": data.get("html_url", f"https://github.com/{owner}/{name}"),
+    }
+
+
+@typechecked
 def push(path: Path) -> Tuple[bool, Any]:
     """Push the current branch to origin, setting upstream on first push."""
     token = read_token()

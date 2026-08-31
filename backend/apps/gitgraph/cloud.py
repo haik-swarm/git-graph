@@ -31,11 +31,13 @@ from backend.apps.gitgraph.discovery import (
     openswarm_data_dir,
     workspace_path,
 )
+from backend.apps.gitgraph import github
 from backend.apps.gitgraph.github import (
     API_ROOT,
     _CREDENTIAL_HELPER,
     _headers,
     read_token,
+    slugify,
 )
 from backend.apps.openswarm_host.openswarm_host import HOST, host_token
 
@@ -348,6 +350,99 @@ def _host_create_output(
 
 
 @typechecked
+def _host_update_output(
+    output_id: str, name: Optional[str], description: Optional[str]
+) -> Tuple[bool, str]:
+    """Update an app's display name/description on the live host.
+
+    The host owns the registry JSON and the in-memory dashboard list, so this
+    is what makes a rename show up on the user's dashboard without a restart.
+    Only the fields passed are sent; None leaves a field untouched.
+    """
+    token = host_token()
+    if not token:
+        return False, "no host token"
+    body: Dict[str, Any] = {}
+    if name is not None:
+        body["name"] = name
+    if description is not None:
+        body["description"] = description
+    if not body:
+        return True, "ok"
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            res = client.put(
+                f"{HOST}/api/outputs/{output_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=body,
+            )
+    except (httpx.HTTPError, OSError) as exc:
+        return False, str(exc)
+    if res.status_code >= 400:
+        return False, f"{res.status_code}: {res.text[:200]}"
+    return True, "ok"
+
+
+@typechecked
+def _write_registry_name(
+    output_id: str, name: Optional[str], description: Optional[str]
+) -> Tuple[bool, str]:
+    """Rewrite name/description straight into the registry JSON on disk.
+
+    The fallback for when the host is unreachable: the dashboard stays stale
+    until a restart, but the on-disk source of truth is at least correct so
+    the next boot reads the new name.
+    """
+    entry = openswarm_data_dir() / "outputs" / f"{output_id}.json"
+    if not entry.is_file():
+        return False, "no registry entry"
+    try:
+        meta = json.loads(entry.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, str(exc)
+    if not isinstance(meta, dict):
+        return False, "registry entry is not an object"
+    if name is not None:
+        meta["name"] = name
+    if description is not None:
+        meta["description"] = description
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        entry.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    except OSError as exc:
+        return False, str(exc)
+    return True, "ok"
+
+
+@typechecked
+def _write_meta_json(
+    workspace_id: str, name: Optional[str], description: Optional[str]
+) -> Tuple[bool, str]:
+    """Update the workspace's own meta.json (the copy that travels with the repo)."""
+    ws = openswarm_data_dir() / "outputs_workspace" / workspace_id
+    if not ws.is_dir():
+        return False, "no workspace"
+    meta_path = ws / "meta.json"
+    meta: Dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    if name is not None:
+        meta["name"] = name
+    if description is not None:
+        meta["description"] = description
+    try:
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        return False, str(exc)
+    return True, "ok"
+
+
+@typechecked
 def _output_id_from_create(data: Any) -> Optional[str]:
     """Pull the new output id out of the host's create response.
 
@@ -619,3 +714,314 @@ def delete_local(workspace_id: str) -> Tuple[bool, Dict[str, Any]]:
         "registry_entries_removed": len(entries),
         "host_errors": host_errors or None,
     }
+
+
+@typechecked
+def _current_display_name(workspace_id: str) -> Optional[str]:
+    """The app's current display name, read from the registry then meta.json."""
+    for output_id in _output_ids_for(workspace_id):
+        entry = openswarm_data_dir() / "outputs" / f"{output_id}.json"
+        try:
+            meta = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(meta, dict) and isinstance(meta.get("name"), str) and meta["name"].strip():
+            return meta["name"].strip()
+    _, name = _workspace_identity(workspace_id)
+    return name
+
+
+# Files whose contents a display-name/slug rewrite may touch. Deliberately
+# narrow: binary blobs, lockfiles, and the git dir are never rewritten, and
+# anything past a sane size cap is skipped so a vendored bundle can't turn a
+# rename into a multi-megabyte diff.
+_REWRITE_MAX_BYTES = 512_000
+
+
+@typechecked
+def _grep_references(
+    workspace_id: str, old_name: str, old_slug: Optional[str]
+) -> List[Dict[str, Any]]:
+    """Tracked files that literally contain the old display name or old slug.
+
+    Uses `git grep` so only tracked files are searched (never node_modules or
+    build output), and matching is literal (`-F`) so a name with regex-special
+    characters can't misfire. Returns one row per file with the hit count for
+    each term, so the UI can let the user pick which files to rewrite.
+    """
+    ws = openswarm_data_dir() / "outputs_workspace" / workspace_id
+    if not (ws / ".git").is_dir():
+        return []
+
+    terms: List[Tuple[str, str]] = [("name", old_name)]
+    # Only offer the slug as a separate term when it differs from the name;
+    # otherwise its hits are the name's hits counted twice.
+    if old_slug and old_slug.lower() != old_name.lower():
+        terms.append(("slug", old_slug))
+
+    by_file: Dict[str, Dict[str, Any]] = {}
+    for kind, term in terms:
+        if not term:
+            continue
+        ok, out, _ = _run_git_result(
+            ["grep", "-F", "-I", "-c", "-e", term], ws
+        )
+        if not ok:
+            continue  # grep exits non-zero when there are no matches
+        for line in out.splitlines():
+            # Format: path:count
+            if ":" not in line:
+                continue
+            path, _, count = line.rpartition(":")
+            try:
+                n = int(count)
+            except ValueError:
+                continue
+            row = by_file.setdefault(
+                path, {"path": path, "name_hits": 0, "slug_hits": 0}
+            )
+            row["name_hits" if kind == "name" else "slug_hits"] += n
+    return sorted(by_file.values(), key=lambda r: r["path"])
+
+
+@typechecked
+def rename_preview(workspace_id: str, new_name: str) -> Tuple[bool, Dict[str, Any]]:
+    """What a rename to `new_name` would touch, without changing anything.
+
+    Reports the current name, whether the GitHub slug would move (and to
+    what), and every tracked file that mentions the old name or slug so the
+    user can choose which to rewrite before committing to the operation.
+    """
+    new_name = new_name.strip()
+    if not new_name:
+        return False, {"detail": "Give the app a name."}
+    if len(new_name) > 200:
+        return False, {"detail": "That name is too long."}
+
+    ws = openswarm_data_dir() / "outputs_workspace" / workspace_id
+    if not ws.is_dir():
+        return False, {"detail": "That workspace doesn't exist."}
+
+    old_name = _current_display_name(workspace_id) or workspace_id
+    old_slug, _ = _workspace_identity(workspace_id)
+    has_remote = old_slug is not None
+    new_slug = slugify(new_name) if new_name else None
+    slug_would_change = bool(
+        has_remote and old_slug and new_slug and new_slug != old_slug.split("/")[-1]
+    )
+
+    files = _grep_references(workspace_id, old_name, (old_slug or "").split("/")[-1] or None)
+
+    return True, {
+        "workspace_id": workspace_id,
+        "old_name": old_name,
+        "new_name": new_name,
+        "old_slug": old_slug,
+        "new_slug": new_slug,
+        "has_remote": has_remote,
+        "slug_would_change": slug_would_change,
+        "files": files,
+    }
+
+
+@typechecked
+def _rewrite_file(
+    ws: Path, rel_path: str, old_name: str, new_name: str,
+    old_slug: Optional[str], new_slug: Optional[str],
+) -> Tuple[bool, str]:
+    """Literal-replace old name/slug with the new ones inside one tracked file.
+
+    Never auto-commits: the change lands as an uncommitted edit so the user
+    reviews it as a normal diff in the graph. Skips binary or oversized files.
+    """
+    target = (ws / rel_path).resolve()
+    # Refuse anything that escapes the workspace (rel_path came from the client).
+    if ws.resolve() not in target.parents and target != ws.resolve():
+        return False, "path escapes workspace"
+    if not target.is_file():
+        return False, "not a file"
+    try:
+        raw = target.read_bytes()
+    except OSError as exc:
+        return False, str(exc)
+    if len(raw) > _REWRITE_MAX_BYTES:
+        return False, "file too large"
+    if b"\x00" in raw:
+        return False, "binary file"
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False, "not utf-8"
+
+    updated = text
+    if old_slug and new_slug and old_slug != new_slug:
+        updated = updated.replace(old_slug, new_slug)
+    if old_name and new_name and old_name != new_name:
+        updated = updated.replace(old_name, new_name)
+    if updated == text:
+        return True, "unchanged"
+    try:
+        target.write_text(updated, encoding="utf-8")
+    except OSError as exc:
+        return False, str(exc)
+    return True, "rewritten"
+
+
+@typechecked
+async def rename_app(
+    workspace_id: str,
+    new_name: str,
+    rename_remote: bool = False,
+    rewrite_paths: Optional[List[str]] = None,
+) -> Tuple[bool, Dict[str, Any]]:
+    """Rename an app across every surface, ordered reversible -> irreversible.
+
+    Best-effort with a per-step report (same contract as delete_local): each
+    step records ok/skip/fail and the whole thing returns a checklist rather
+    than throwing on the first hiccup, because the surfaces are independent
+    and a half-done rename is still worth reporting honestly.
+
+    Order matters. The cheap, reversible local writes go first (registry,
+    host, meta.json), then the reversible GitHub description, then the
+    user-picked file rewrites (which land as an uncommitted diff, never a
+    commit), and finally the one irreversible step — moving the GitHub repo
+    slug and re-pointing origin — so any earlier failure leaves the app in
+    the most recoverable state.
+    """
+    new_name = new_name.strip()
+    if not new_name:
+        return False, {"detail": "Give the app a name."}
+    if len(new_name) > 200:
+        return False, {"detail": "That name is too long."}
+    if workspace_id == _self_workspace_id():
+        return False, {"detail": "Can't rename the app that's running this backend."}
+
+    ws = openswarm_data_dir() / "outputs_workspace" / workspace_id
+    if not ws.is_dir():
+        return False, {"detail": "That workspace doesn't exist."}
+
+    old_name = _current_display_name(workspace_id) or workspace_id
+    old_slug_full, _ = _workspace_identity(workspace_id)
+    old_slug = (old_slug_full or "").split("/")[-1] or None
+    new_slug = slugify(new_name)
+
+    steps: List[Dict[str, Any]] = []
+
+    def record(step: str, ok: bool, detail: str = "ok", skipped: bool = False) -> None:
+        steps.append(
+            {"step": step, "ok": ok, "skipped": skipped, "detail": detail}
+        )
+
+    # 1. Registry + live host (reversible). Update every record that points at
+    #    this workspace so a husk copy can't keep the old name.
+    output_ids = _output_ids_for(workspace_id)
+    if not output_ids:
+        record("registry", False, "no registry record found for this app")
+    for output_id in output_ids:
+        ok_host, msg = _host_update_output(output_id, new_name, None)
+        if ok_host:
+            record(f"host:{output_id}", True)
+        else:
+            # Host down or refused: write the registry JSON straight to disk so
+            # the on-disk truth is right even if the dashboard stays stale.
+            ok_fs, fs_msg = _write_registry_name(output_id, new_name, None)
+            record(
+                f"registry:{output_id}",
+                ok_fs,
+                "written to disk (host unreachable; restart to refresh dashboard)"
+                if ok_fs else f"host: {msg}; disk: {fs_msg}",
+            )
+
+    # 2. meta.json (reversible) — the name copy that travels with the repo.
+    ok_meta, meta_msg = _write_meta_json(workspace_id, new_name, None)
+    record("meta.json", ok_meta, "ok" if ok_meta else meta_msg)
+
+    has_remote = old_slug_full is not None
+
+    # 3. GitHub description (reversible). Keeps the "OpenSwarm app: <name>"
+    #    prefix in step so the app stays recognisable in Your cloud.
+    if has_remote:
+        ok_desc, desc_msg = await github.update_description(ws, new_name)
+        record("github-description", ok_desc, "ok" if ok_desc else desc_msg)
+    else:
+        record("github-description", True, "no remote", skipped=True)
+
+    # 4. In-file rewrites (user-picked). Lands as an uncommitted diff; never
+    #    committed here, so the user reviews it in the graph.
+    rewritten: List[str] = []
+    if rewrite_paths:
+        for rel in rewrite_paths:
+            ok_rw, rw_msg = _rewrite_file(
+                ws, rel, old_name, new_name, old_slug, new_slug
+            )
+            if ok_rw and rw_msg == "rewritten":
+                rewritten.append(rel)
+            record(f"file:{rel}", ok_rw, rw_msg)
+
+    # 5. GitHub repo slug + origin URL (IRREVERSIBLE-ish; GitHub keeps a
+    #    permanent redirect, so collaborators' clones keep working). Last on
+    #    purpose: everything above is recoverable, this moves the remote.
+    slug_changed = False
+    new_html_url: Optional[str] = None
+    if rename_remote and has_remote:
+        ok_slug, slug_result = await github.rename_repo(ws, new_name)
+        if ok_slug and isinstance(slug_result, dict):
+            slug_changed = not slug_result.get("unchanged", False)
+            new_html_url = slug_result.get("html_url")
+            # Refresh the cached slug on any husk/installed_from record so the
+            # marketplace "is mine published" match stays keyed on the live
+            # remote rather than a stale slug.
+            if slug_changed:
+                _refresh_installed_from_slug(workspace_id, slug_result)
+            record(
+                "github-repo",
+                True,
+                "unchanged" if not slug_changed else f"renamed to {slug_result.get('repo')}",
+                skipped=not slug_changed,
+            )
+        else:
+            record("github-repo", False, str(slug_result))
+    elif rename_remote and not has_remote:
+        record("github-repo", True, "no remote", skipped=True)
+
+    ok_overall = all(s["ok"] for s in steps)
+    return ok_overall, {
+        "workspace_id": workspace_id,
+        "old_name": old_name,
+        "new_name": new_name,
+        "slug_changed": slug_changed,
+        "new_html_url": new_html_url,
+        "rewritten_files": rewritten,
+        "steps": steps,
+    }
+
+
+@typechecked
+def _refresh_installed_from_slug(workspace_id: str, slug_result: Dict[str, Any]) -> None:
+    """Point any installed_from.slug at the app's new owner/repo after a re-slug.
+
+    installed_from records the origin an app was cloned from; the marketplace
+    husk-match reads it. Left stale, a renamed app could stop being recognised
+    as the user's own published copy. Best-effort: a miss here only affects
+    that one cosmetic match.
+    """
+    owner = slug_result.get("owner")
+    repo = slug_result.get("repo")
+    if not owner or not repo:
+        return
+    new_slug_full = f"{owner}/{repo}".lower()
+    for entry in _entry_paths_for(workspace_id):
+        try:
+            meta = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        installed_from = meta.get("installed_from")
+        if not isinstance(installed_from, dict) or not installed_from.get("slug"):
+            continue
+        installed_from["slug"] = new_slug_full
+        try:
+            entry.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except OSError:
+            pass

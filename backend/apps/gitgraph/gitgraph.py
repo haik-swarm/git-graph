@@ -97,6 +97,20 @@ class AutofixRequest(BaseModel):
     max_rounds: int = 3
 
 
+class RenamePreviewRequest(BaseModel):
+    new_name: str
+
+
+class RenameRequest(BaseModel):
+    new_name: str
+    # Move the GitHub repo slug + origin URL too. Off by default: it's the
+    # one irreversible-ish surface, so the UI opts into it explicitly.
+    rename_remote: bool = False
+    # Tracked files the user chose to rewrite the old name/slug inside. Left
+    # empty, no file contents are touched — the rename stays pure metadata.
+    rewrite_paths: List[str] = []
+
+
 class ApplyIconRequest(BaseModel):
     # A supported icon data URI (image/svg+xml, image/webp, image/png, image/jpeg).
     data_uri: str
@@ -824,6 +838,51 @@ async def local_delete(workspace_id: str) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))
     restart_notice.mark_pending("deleted", name)
+    return result
+
+
+@gitgraph.router.post("/rename-preview/{workspace_id}")
+@typechecked
+async def rename_preview(workspace_id: str, body: RenamePreviewRequest) -> dict:
+    """What a rename would touch, without changing anything.
+
+    Feeds the rename dialog: current name, whether the GitHub slug moves, and
+    the tracked files that mention the old name/slug so the user can pick
+    which to rewrite.
+    """
+    ok, result = await asyncio.to_thread(
+        cloud.rename_preview, workspace_id, body.new_name
+    )
+    debug(workspace_id, ok, result.get("slug_would_change") if ok else result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result.get("detail", "Preview failed."))
+    return result
+
+
+@gitgraph.router.post("/rename/{workspace_id}")
+@typechecked
+async def rename(workspace_id: str, body: RenameRequest) -> dict:
+    """Rename an app across registry, host, meta.json, GitHub, and picked files.
+
+    Best-effort, reversibility-ordered; returns a per-step checklist rather
+    than failing on the first hiccup (same contract as local-delete).
+    """
+    ok, result = await cloud.rename_app(
+        workspace_id,
+        body.new_name,
+        rename_remote=body.rename_remote,
+        rewrite_paths=body.rewrite_paths,
+    )
+    debug(workspace_id, ok, result.get("new_name") if isinstance(result, dict) else result)
+    if not ok and "detail" in result and "steps" not in result:
+        # A hard precondition failure (bad name, missing workspace) — nothing ran.
+        raise HTTPException(status_code=400, detail=result.get("detail", "Rename failed."))
+    # Only owe a restart when a registry write fell back to disk because the
+    # host was unreachable; a host-path rename already updated the live
+    # dashboard, so a "reload OpenSwarm" banner there would just be noise.
+    steps = result.get("steps", []) if isinstance(result, dict) else []
+    if any(str(s.get("step", "")).startswith("registry:") for s in steps):
+        restart_notice.mark_pending("renamed", result.get("new_name", workspace_id))
     return result
 
 
