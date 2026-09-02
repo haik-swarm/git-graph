@@ -35,6 +35,7 @@ import AppRail, {
   type SharingPhase,
 } from '@/components/AppRail';
 import Marketplace from '@/components/Marketplace';
+import Releases from '@/components/Releases';
 import PublishPanel from '@/components/PublishPanel';
 import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
@@ -96,7 +97,7 @@ const Home: React.FC = () => {
   const [source, setSource] = useState<'apps' | 'skills'>('apps');
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
-  const [mode, setMode] = useState<'home' | 'app' | 'marketplace' | 'settings'>('home');
+  const [mode, setMode] = useState<'home' | 'app' | 'marketplace' | 'releases' | 'settings'>('home');
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -401,6 +402,11 @@ const Home: React.FC = () => {
     setSelectedSha(null);
   }, []);
 
+  const goReleases = useCallback(() => {
+    setMode('releases');
+    setSelectedSha(null);
+  }, []);
+
   const goSettings = useCallback(() => {
     setMode('settings');
     setSelectedSha(null);
@@ -463,8 +469,10 @@ const Home: React.FC = () => {
       selected={mode === 'app' ? selected : null}
       homeActive={mode === 'home'}
       marketplaceActive={mode === 'marketplace'}
+      releasesActive={mode === 'releases'}
       settingsActive={mode === 'settings'}
       onMarketplace={goMarketplace}
+      onReleases={goReleases}
       onSettings={goSettings}
       onHome={goHome}
       onSelect={openApp}
@@ -574,6 +582,19 @@ const Home: React.FC = () => {
           onInstalled={() => {
             void refetchApps();
             setNoticeKey(k => k + 1);
+          }}
+        />
+      </Shell>
+    );
+  }
+
+  if (mode === 'releases') {
+    return (
+      <Shell rail={rail}>
+        <Releases
+          onOpen={workspaceId => {
+            const app = apps.find(a => a.workspace_id === workspaceId);
+            if (app) openApp(app);
           }}
         />
       </Shell>

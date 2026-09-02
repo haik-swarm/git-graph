@@ -91,6 +91,9 @@ export const githubAbortRebaseUrl = (workspaceId: string) =>
 // versioned GitHub Release with it attached as the asset.
 export const gitgraphReleaseUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/release/${encodeURIComponent(workspaceId)}`;
+// Every app that has cut at least one GitHub Release, keyed by workspace.
+// The reverse of the per-app release panel — feeds the Releases tab.
+export const GITGRAPH_RELEASES_SWEEP_URL = API_URL + '/gitgraph/releases-sweep';
 
 // ICON - Endpoints
 // The image engine needs an OpenAI key; the GET reports only whether one is

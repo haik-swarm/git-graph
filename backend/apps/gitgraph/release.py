@@ -267,6 +267,41 @@ def status(path: Path, workspace_id: str, app_name: str) -> Dict[str, Any]:
 
 
 @typechecked
+def app_releases(path: Path, app_name: str) -> Optional[Dict[str, Any]]:
+    """This app's published GitHub Releases, or None if it has none.
+
+    The per-app half of the Releases-tab sweep. Only apps carrying a remote
+    are queried, and draft releases don't count: the tab lists what has
+    actually shipped, so an app with only drafts (or none) is dropped by
+    returning None rather than an empty card.
+    """
+    token = github.read_token()
+    if not token or not (path / ".git").is_dir():
+        return None
+    url = github.remote_url(path)
+    parsed = github.parse_remote(url) if url else None
+    if not parsed:
+        return None
+    owner, repo = parsed
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            releases = _list_releases(client, token, owner, repo)
+    except httpx.HTTPError:
+        return None
+    published = [r for r in releases if not r.get("draft")]
+    if not published:
+        return None
+    return {
+        "owner": owner,
+        "repo": repo,
+        "html_url": f"https://github.com/{owner}/{repo}",
+        "latest": published[0],
+        "releases": published,
+        "count": len(published),
+    }
+
+
+@typechecked
 def cut_release(
     path: Path,
     workspace_id: str,

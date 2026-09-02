@@ -589,6 +589,43 @@ async def release_cut(workspace_id: str, body: ReleaseRequest) -> dict:
     return result
 
 
+@gitgraph.router.get("/releases-sweep")
+@typechecked
+async def releases_sweep() -> dict:
+    """Every app that has cut at least one GitHub Release, keyed by workspace.
+
+    Feeds the Releases tab: the reverse of the per-app release panel. Each
+    app's remote is queried on a thread so N apps resolve concurrently, and
+    apps with no releases (or no remote) are dropped rather than listed
+    empty. `connected` gates the tab's "connect GitHub" empty state.
+    """
+    token = github.read_token()
+    entries = list_apps()
+
+    async def probe(entry: Dict) -> tuple:
+        wid = entry["workspace_id"]
+        path = workspace_path(wid)
+        if path is None:
+            return wid, entry, None
+        data = await asyncio.to_thread(
+            release.app_releases, path, str(entry.get("name") or wid)
+        )
+        return wid, entry, data
+
+    pairs = await asyncio.gather(*(probe(e) for e in entries))
+    released: Dict[str, Dict] = {}
+    for wid, entry, data in pairs:
+        if data is not None:
+            released[wid] = {
+                "name": entry.get("name"),
+                "description": entry.get("description"),
+                "has_icon": bool(entry.get("has_icon")),
+                **data,
+            }
+    debug(len(released))
+    return {"connected": bool(token), "released": released}
+
+
 @gitgraph.router.get("/collab/{workspace_id}")
 @typechecked
 async def collab_list(workspace_id: str) -> dict:

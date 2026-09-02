@@ -11,6 +11,7 @@ import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
+import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
@@ -59,8 +60,10 @@ interface Props {
   selected: AppEntry | null;
   homeActive: boolean;
   marketplaceActive: boolean;
+  releasesActive: boolean;
   settingsActive: boolean;
   onMarketplace: () => void;
+  onReleases: () => void;
   onSettings: () => void;
   onHome: () => void;
   onSelect: (app: AppEntry) => void;
@@ -100,8 +103,10 @@ const AppRail: React.FC<Props> = ({
   selected,
   homeActive,
   marketplaceActive,
+  releasesActive,
   settingsActive,
   onMarketplace,
+  onReleases,
   onSettings,
   onHome,
   onSelect,
@@ -371,6 +376,17 @@ const AppRail: React.FC<Props> = ({
               label="Marketplace"
               active={marketplaceActive}
               onClick={onMarketplace}
+            />
+          </Box>
+        )}
+
+        {source === 'apps' && (
+          <Box sx={{ px: '2px', mb: '4px' }}>
+            <NavRow
+              icon={<LocalOfferRoundedIcon sx={{ fontSize: 15 }} />}
+              label="Releases"
+              active={releasesActive}
+              onClick={onReleases}
             />
           </Box>
         )}
