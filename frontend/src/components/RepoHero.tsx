@@ -58,6 +58,8 @@ const RepoHero: React.FC<Props> = ({
         size={44}
         iconId={app.workspace_id}
         hasIcon={app.has_icon}
+        downloadable
+        downloadName={app.name}
       />
 
       <Box sx={{ flex: 1, minWidth: 0 }}>

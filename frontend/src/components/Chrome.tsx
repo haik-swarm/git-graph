@@ -1,8 +1,48 @@
 import React, { useState } from 'react';
 import Box from '@mui/material/Box';
+import ButtonBase from '@mui/material/ButtonBase';
+import Popover from '@mui/material/Popover';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { slimScroll, statusChip } from '@/shared/styles/ui';
+import { menuItem, menuSurface, slimScroll, statusChip } from '@/shared/styles/ui';
 import { gitgraphIconRawUrl } from '@/shared/state/API_ENDPOINTS';
+
+const ICON_EXT_BY_TYPE: Record<string, string> = {
+  'image/svg+xml': 'svg',
+  'image/webp': 'webp',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+};
+
+function slugify(name: string): string {
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'app'
+  );
+}
+
+/**
+ * Pull the committed icon and hand it to the browser's save dialog. Deriving
+ * the extension from the response's own MIME type keeps the saved file honest
+ * whether the repo committed an svg, webp, png, or jpg.
+ */
+async function downloadIcon(iconId: string, baseName: string): Promise<void> {
+  const res = await fetch(gitgraphIconRawUrl(iconId));
+  if (!res.ok) throw new Error(`icon ${res.status}`);
+  const blob = await res.blob();
+  const ext = ICON_EXT_BY_TYPE[blob.type] ?? 'png';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugify(baseName)}-icon.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /**
  * Two-column app frame: sidebar rail on the left, scrolling content well on
@@ -114,15 +154,26 @@ export const BrandGlyph: React.FC<{
    */
   iconId?: string;
   hasIcon?: boolean;
-}> = ({ seed, letter, size = 28, active, iconId, hasIcon }) => {
+  /**
+   * When true and an icon is actually showing, clicking the glyph opens a
+   * small menu offering to save the committed icon to the local device.
+   * `downloadName` seeds the saved file's name.
+   */
+  downloadable?: boolean;
+  downloadName?: string;
+}> = ({ seed, letter, size = 28, active, iconId, hasIcon, downloadable, downloadName }) => {
   const c = useClaudeTokens();
   const [imgFailed, setImgFailed] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const hue = seedHue(seed);
   const bg = `hsl(${hue} ${c.isDark ? '38% 30%' : '70% 93%'})`;
   const fg = `hsl(${hue} ${c.isDark ? '70% 80%' : '50% 32%'})`;
   const showIcon = Boolean(iconId) && hasIcon === true && !imgFailed;
+  const canSave = Boolean(downloadable) && showIcon;
 
-  return (
+  const tile = (
     <Box
       sx={{
         width: size,
@@ -156,6 +207,62 @@ export const BrandGlyph: React.FC<{
         (letter || '?').toUpperCase()
       )}
     </Box>
+  );
+
+  if (!canSave) return tile;
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await downloadIcon(iconId!, downloadName || letter || 'app');
+      setAnchor(null);
+    } catch {
+      setSaveError("Couldn't save the icon.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <ButtonBase
+        onClick={e => setAnchor(e.currentTarget)}
+        title="Save this icon to your device"
+        sx={{ borderRadius: `${c.radius.sm}px`, display: 'block', flexShrink: 0 }}
+      >
+        {tile}
+      </ButtonBase>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { ...menuSurface(c), mt: 0.5, minWidth: 200 } } }}
+      >
+        <ButtonBase
+          onClick={() => void save()}
+          disabled={saving}
+          sx={{
+            ...menuItem(c),
+            width: '100%',
+            justifyContent: 'flex-start',
+            gap: 1,
+            ...c.type.body,
+            color: c.text.primary,
+          }}
+        >
+          <DownloadRoundedIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
+          {saving ? 'Saving…' : 'Save icon to device'}
+        </ButtonBase>
+        {saveError && (
+          <Box sx={{ ...c.type.caption, color: c.status.error, px: '8px', py: '4px' }}>
+            {saveError}
+          </Box>
+        )}
+      </Popover>
+    </>
   );
 };
 
