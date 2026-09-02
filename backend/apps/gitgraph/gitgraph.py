@@ -18,6 +18,7 @@ from backend.apps.gitgraph import (
     icons,
     magic,
     marketplace,
+    release,
     restart_app,
     restart_notice,
 )
@@ -95,6 +96,13 @@ class TakedownRequest(BaseModel):
 
 class AutofixRequest(BaseModel):
     max_rounds: int = 3
+
+
+class ReleaseRequest(BaseModel):
+    # Blank auto-increments from the latest release (or v0.1.0). Otherwise a
+    # vX.Y.Z (or X.Y.Z) override the backend validates before tagging.
+    version: str = ""
+    notes: str = ""
 
 
 class RenamePreviewRequest(BaseModel):
@@ -544,6 +552,37 @@ async def github_pull(workspace_id: str) -> dict:
 async def github_abort_rebase(workspace_id: str) -> dict:
     path = _resolve(workspace_id)
     ok, result = await asyncio.to_thread(github.abort_rebase, path)
+    debug(workspace_id, ok, result)
+    if not ok:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@gitgraph.router.get("/release/{workspace_id}")
+@typechecked
+async def release_status(workspace_id: str) -> dict:
+    """Release readiness, next version, and past releases for one app."""
+    path = _resolve(workspace_id)
+    result = await asyncio.to_thread(
+        release.status, path, workspace_id, _app_name(workspace_id)
+    )
+    debug(workspace_id, result["can_release"], result["next_version"])
+    return result
+
+
+@gitgraph.router.post("/release/{workspace_id}")
+@typechecked
+async def release_cut(workspace_id: str, body: ReleaseRequest) -> dict:
+    """Build the .swarm, tag the pushed HEAD, and create the GitHub Release."""
+    path = _resolve(workspace_id)
+    ok, result = await asyncio.to_thread(
+        release.cut_release,
+        path,
+        workspace_id,
+        _app_name(workspace_id),
+        body.version,
+        body.notes,
+    )
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result)

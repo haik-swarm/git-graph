@@ -27,7 +27,7 @@ import httpx
 from pydantic import BaseModel
 from swarm_debug import debug
 
-from backend.apps.gitgraph.discovery import commit_paths
+from backend.apps.gitgraph.discovery import commit_paths, openswarm_data_dir
 from backend.apps.openswarm_host.openswarm_host import llm
 
 # backend/data/gitgraph — gitignored (see .gitignore `backend/data/`), so the
@@ -36,6 +36,16 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data" / "gitgraph"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = DATA_DIR / "config.json"
 JOBS_PATH = DATA_DIR / "jobs.json"
+
+# The OpenAI key lives OUTSIDE the workspace, in the OpenSwarm data dir. Being
+# gitignored keeps a value out of the repo, but the .swarm exporter bundles the
+# whole workspace folder (gitignored files included), so a key inside it would
+# ship to anyone who installs a release. Kept here it is never swept into a
+# bundle, while still surviving app restarts and reinstalls. `_openai_key`
+# migrates any legacy key found in the workspace CONFIG_PATH into this file and
+# blanks the original, so an app built before this split becomes exportable on
+# first read without losing its key.
+SECRETS_PATH = openswarm_data_dir() / "gitgraph" / "secrets.json"
 
 
 # --------------------------------------------------------------------- config
@@ -362,14 +372,51 @@ ICON_RASTER_EDGE = 128
 _PLACEHOLDER_KEYS = {"", "todo", "null", "none", "changeme"}
 
 
+def _read_secret_key() -> str:
+    """The OpenAI key from the external (non-exported) secrets file, if present."""
+    try:
+        import json
+        data = json.loads(SECRETS_PATH.read_text())
+        return str(data.get("openai_api_key") or "").strip()
+    except Exception:
+        return ""
+
+
+def _write_secret_key(key: str) -> None:
+    """Persist the OpenAI key to the external secrets file (outside the workspace)."""
+    import json
+    SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SECRETS_PATH.write_text(json.dumps({"openai_api_key": key.strip()}, indent=2))
+
+
+def _migrate_legacy_key() -> None:
+    """Move any key still sitting in the in-workspace config.json to the external
+    secrets file, then blank it in config.json so the workspace no longer carries
+    a secret. A one-time, idempotent step that makes older apps exportable."""
+    cfg = _read_config()
+    legacy = (cfg.openai_api_key or "").strip()
+    if legacy.lower() in _PLACEHOLDER_KEYS:
+        return
+    if not _read_secret_key():
+        _write_secret_key(legacy)
+    cfg.openai_api_key = ""
+    _write_config(cfg)
+
+
 def _openai_key() -> str:
-    """Key for the AI-image engine: the saved key wins, else OPENAI_API_KEY from
-    the environment. Placeholder values count as absent."""
-    saved = (_read_config().openai_api_key or "").strip()
-    if saved.lower() not in _PLACEHOLDER_KEYS:
-        return saved
+    """Key for the AI-image engine, resolved without ever reading it from a file
+    the .swarm exporter would bundle. Order: the external secrets file, then
+    OPENAI_API_KEY from the environment, then (legacy) the in-workspace config,
+    which is migrated out on sight. Placeholder values count as absent."""
+    _migrate_legacy_key()
+    secret = _read_secret_key()
+    if secret.lower() not in _PLACEHOLDER_KEYS:
+        return secret
     env = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    return env if env.lower() not in _PLACEHOLDER_KEYS else ""
+    if env.lower() not in _PLACEHOLDER_KEYS:
+        return env
+    saved = (_read_config().openai_api_key or "").strip()
+    return saved if saved.lower() not in _PLACEHOLDER_KEYS else ""
 
 
 def build_image_prompt(prompt: str, style: str, title: str) -> str:
@@ -769,7 +816,11 @@ def save_config(
     resets that field to its built-in default. Returns config_state()."""
     cfg = _read_config()
     if openai_api_key is not None:
-        cfg.openai_api_key = openai_api_key.strip()
+        # The key goes to the external secrets file, never the workspace config,
+        # so it can't be swept into a release .swarm. Any stale copy in config
+        # is cleared to keep the workspace free of the secret.
+        _write_secret_key(openai_api_key.strip())
+        cfg.openai_api_key = ""
     if default_styles is not None:
         cfg.default_styles = _dedupe(default_styles)
     if default_engines is not None:

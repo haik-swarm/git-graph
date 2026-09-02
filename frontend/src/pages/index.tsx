@@ -43,6 +43,7 @@ import DeleteAppDialog from '@/components/DeleteAppDialog';
 import RenameAppDialog from '@/components/RenameAppDialog';
 import DirtyWorkCard from '@/components/DirtyWorkCard';
 import GitHubPanel from '@/components/GitHubPanel';
+import ReleasePanel from '@/components/ReleasePanel';
 import IconPanel from '@/components/IconPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import SettingsPage from '@/components/SettingsPage';
@@ -737,6 +738,15 @@ const Home: React.FC = () => {
             refreshKey={gitHubKey}
             // A pull rewrites local history, so the graph has to redraw.
             onSynced={refresh}
+          />
+        )}
+
+        {selected && graph?.is_repo && (
+          <ReleasePanel
+            workspaceId={selected.workspace_id}
+            appName={selected.name}
+            refreshKey={gitHubKey}
+            onReleased={refresh}
           />
         )}
 

@@ -85,6 +85,13 @@ export const githubPullUrl = (workspaceId: string) =>
 export const githubAbortRebaseUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/github/${encodeURIComponent(workspaceId)}/abort-rebase`;
 
+// RELEASE - Endpoints
+// GET reports release readiness (clean tree, fully pushed, exportable), the
+// computed next version, and past releases. POST builds the .swarm and cuts a
+// versioned GitHub Release with it attached as the asset.
+export const gitgraphReleaseUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/release/${encodeURIComponent(workspaceId)}`;
+
 // ICON - Endpoints
 // The image engine needs an OpenAI key; the GET reports only whether one is
 // usable (never the key), the POST saves it. Generation is a durable job: POST
