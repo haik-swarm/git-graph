@@ -103,6 +103,9 @@ class ReleaseRequest(BaseModel):
     # vX.Y.Z (or X.Y.Z) override the backend validates before tagging.
     version: str = ""
     notes: str = ""
+    # Workspace-relative paths the author chose to leave OUT of the .swarm.
+    # A directory path drops everything under it. Empty ships the whole app.
+    exclude: List[str] = []
 
 
 class RenamePreviewRequest(BaseModel):
@@ -570,6 +573,17 @@ async def release_status(workspace_id: str) -> dict:
     return result
 
 
+@gitgraph.router.get("/release/{workspace_id}/files")
+@typechecked
+async def release_files(workspace_id: str) -> dict:
+    """The workspace file tree the release exclude-picker lists, plus the app's
+    saved exclude selection. Locked rows are files that never reach the .swarm."""
+    path = _resolve(workspace_id)
+    result = await asyncio.to_thread(release.list_workspace_files, path, workspace_id)
+    debug(workspace_id, len(result["files"]), len(result["excluded"]))
+    return result
+
+
 @gitgraph.router.post("/release/{workspace_id}")
 @typechecked
 async def release_cut(workspace_id: str, body: ReleaseRequest) -> dict:
@@ -582,6 +596,7 @@ async def release_cut(workspace_id: str, body: ReleaseRequest) -> dict:
         _app_name(workspace_id),
         body.version,
         body.notes,
+        body.exclude,
     )
     debug(workspace_id, ok, result)
     if not ok:

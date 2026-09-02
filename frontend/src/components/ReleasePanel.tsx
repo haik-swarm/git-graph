@@ -8,6 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import DownloadIcon from '@mui/icons-material/Download';
+import RuleFolderRoundedIcon from '@mui/icons-material/RuleFolderRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   popover,
@@ -16,7 +17,11 @@ import {
   slimScroll,
   sunkenField,
 } from '@/shared/styles/ui';
-import { gitgraphReleaseUrl } from '@/shared/state/API_ENDPOINTS';
+import {
+  gitgraphReleaseFilesUrl,
+  gitgraphReleaseUrl,
+} from '@/shared/state/API_ENDPOINTS';
+import ReleaseExcludeSheet from '@/components/ReleaseExcludeSheet';
 
 interface ReleaseEntry {
   tag: string | null;
@@ -72,6 +77,8 @@ const ReleasePanel: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +88,19 @@ const ReleasePanel: React.FC<Props> = ({
       setStatus(data);
     } catch {
       setStatus(null);
+    }
+  }, [workspaceId]);
+
+  // Preload this app's remembered exclude selection so the count and picker
+  // reflect last release without waiting for the user to open the sheet.
+  const loadExcluded = useCallback(async () => {
+    try {
+      const res = await fetch(gitgraphReleaseFilesUrl(workspaceId));
+      if (!res.ok) return;
+      const data = await res.json();
+      setExcluded(Array.isArray(data.excluded) ? (data.excluded as string[]) : []);
+    } catch {
+      /* leave whatever the user has set */
     }
   }, [workspaceId]);
 
@@ -95,7 +115,9 @@ const ReleasePanel: React.FC<Props> = ({
   useEffect(() => {
     setVersion('');
     setNotes('');
-  }, [workspaceId]);
+    setExcluded([]);
+    void loadExcluded();
+  }, [workspaceId, loadExcluded]);
 
   const cut = async () => {
     setBusy(true);
@@ -105,7 +127,11 @@ const ReleasePanel: React.FC<Props> = ({
       const res = await fetch(gitgraphReleaseUrl(workspaceId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: version.trim(), notes: notes.trim() }),
+        body: JSON.stringify({
+          version: version.trim(),
+          notes: notes.trim(),
+          exclude: excluded,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -226,6 +252,29 @@ const ReleasePanel: React.FC<Props> = ({
               />
 
               <ButtonBase
+                onClick={() => setPickerOpen(true)}
+                sx={{
+                  ...pushButton(c),
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  color:
+                    excluded.length > 0 ? c.accent.primary : c.text.secondary,
+                  borderColor:
+                    excluded.length > 0 ? c.accent.primary : c.border.medium,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                  <RuleFolderRoundedIcon sx={{ fontSize: 15 }} />
+                  Included files
+                </Box>
+                <Typography sx={{ ...c.type.caption }}>
+                  {excluded.length > 0
+                    ? `${excluded.length} left out`
+                    : 'All'}
+                </Typography>
+              </ButtonBase>
+
+              <ButtonBase
                 disabled={busy}
                 onClick={() => void cut()}
                 sx={{ ...primaryButton(c) }}
@@ -318,6 +367,15 @@ const ReleasePanel: React.FC<Props> = ({
           )}
         </Box>
       </Popover>
+
+      <ReleaseExcludeSheet
+        open={pickerOpen}
+        workspaceId={workspaceId}
+        appName={appName}
+        excluded={excluded}
+        onChange={setExcluded}
+        onClose={() => setPickerOpen(false)}
+      />
     </>
   );
 };

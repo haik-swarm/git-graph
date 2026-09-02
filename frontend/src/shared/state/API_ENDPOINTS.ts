@@ -91,6 +91,10 @@ export const githubAbortRebaseUrl = (workspaceId: string) =>
 // versioned GitHub Release with it attached as the asset.
 export const gitgraphReleaseUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/release/${encodeURIComponent(workspaceId)}`;
+// The workspace file tree the release exclude-picker lists, plus the app's
+// saved exclude selection. `locked` rows are files the export always strips.
+export const gitgraphReleaseFilesUrl = (workspaceId: string) =>
+  `${API_URL}/gitgraph/release/${encodeURIComponent(workspaceId)}/files`;
 // Every app that has cut at least one GitHub Release, keyed by workspace.
 // The reverse of the per-app release panel — feeds the Releases tab.
 export const GITGRAPH_RELEASES_SWEEP_URL = API_URL + '/gitgraph/releases-sweep';

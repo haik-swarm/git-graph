@@ -17,7 +17,12 @@ world can't actually check out.
 """
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import os
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,6 +33,157 @@ from typeguard import typechecked
 from backend.apps.gitgraph import github
 from backend.apps.gitgraph.discovery import _run_git, list_apps, read_dirty
 from backend.apps.openswarm_host.openswarm_host import HOST, host_token
+
+# Where the per-app release-exclude selection is remembered (keyed by workspace
+# id). Lives next to the icon config so both share the gitgraph data dir.
+_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "gitgraph"
+_EXCLUDE_STORE = _DATA_DIR / "release_exclude.json"
+
+# Dirs/files the host export drops no matter what (mirrors WALK_SKIP_DIRS /
+# WALK_SKIP_FILES in the host's workspace_io). They never reach the .swarm, so
+# the picker shows them as locked-off rows the user can't add back.
+_LOCKED_DIRS = frozenset({
+    "node_modules", ".vite", ".vite-cache", ".vite_cache", ".git", "dist",
+    ".next", "__pycache__", ".venv", "venv", ".pytest_cache", ".mypy_cache",
+    ".ruff_cache", ".openswarm",
+})
+_LOCKED_FILES = frozenset({".DS_Store", "Thumbs.db"})
+# Per-entry cap the host applies (P_MAX_APP_FILE); bigger files are dropped by
+# the export itself, so we mark them locked-off too.
+_MAX_FILE_BYTES = 25 * 1024 * 1024
+# Marker that separates the app's workspace files from bundle scaffolding inside
+# a .swarm entry path: entities/<bundle_id>/files/workspace/<rel>.
+_WS_MARKER = "/files/workspace/"
+
+
+@typechecked
+def _load_exclude_store() -> Dict[str, Any]:
+    try:
+        with open(_EXCLUDE_STORE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+@typechecked
+def saved_excludes(workspace_id: str) -> List[str]:
+    """The paths this app excluded last time, so the picker reopens pre-set."""
+    val = _load_exclude_store().get(workspace_id)
+    return [str(p) for p in val] if isinstance(val, list) else []
+
+
+@typechecked
+def _save_excludes(workspace_id: str, paths: List[str]) -> None:
+    """Remember (or clear) this app's exclude selection, written atomically."""
+    store = _load_exclude_store()
+    cleaned = sorted({p.strip().strip("/").replace("\\", "/") for p in paths if p.strip()})
+    if cleaned:
+        store[workspace_id] = cleaned
+    else:
+        store.pop(workspace_id, None)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _EXCLUDE_STORE.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+    os.replace(tmp, _EXCLUDE_STORE)
+
+
+@typechecked
+def list_workspace_files(path: Path, workspace_id: str) -> Dict[str, Any]:
+    """Every file the release picker offers, plus the app's saved selection.
+
+    Walks the whole workspace, but collapses each host-skipped directory
+    (node_modules, .git, .venv, ...) into a single `locked` row rather than
+    descending it — those files never enter the .swarm, and expanding
+    node_modules would mean thousands of rows. `.env`, editor junk, symlinks,
+    and oversized files are locked at the file level for the same reason: the
+    export already strips them, so the user can look but can't re-include.
+    """
+    files: List[Dict[str, Any]] = []
+    for root, dirs, fnames in os.walk(path):
+        rel_root = os.path.relpath(root, path)
+        rel_root = "" if rel_root == "." else rel_root.replace(os.sep, "/")
+        locked_here = sorted(d for d in dirs if d in _LOCKED_DIRS)
+        for d in locked_here:
+            files.append({
+                "path": f"{rel_root}/{d}" if rel_root else d,
+                "size": 0,
+                "locked": True,
+                "type": "dir",
+            })
+        # Don't descend into the collapsed dirs.
+        dirs[:] = sorted(d for d in dirs if d not in _LOCKED_DIRS)
+        for fn in sorted(fnames):
+            rel = f"{rel_root}/{fn}" if rel_root else fn
+            full = os.path.join(root, fn)
+            is_link = os.path.islink(full)
+            try:
+                size = 0 if is_link else os.path.getsize(full)
+            except OSError:
+                size = 0
+            locked = (
+                fn == ".env"
+                or fn in _LOCKED_FILES
+                or is_link
+                or size > _MAX_FILE_BYTES
+            )
+            files.append({"path": rel, "size": size, "locked": bool(locked), "type": "file"})
+    files.sort(key=lambda e: e["path"].lower())
+    return {"files": files, "excluded": saved_excludes(workspace_id)}
+
+
+@typechecked
+def _content_digest(entries: Dict[str, bytes]) -> str:
+    """Order-independent sha256 over every entry — identical to the host's
+    ziputil.p_content_digest, so a stripped bundle re-checksums to a value the
+    importer will accept."""
+    h = hashlib.sha256()
+    for path in sorted(entries):
+        h.update(path.encode("utf-8"))
+        h.update(b"\0")
+        h.update(entries[path])
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+@typechecked
+def _strip_bundle(blob: bytes, exclude: List[str]) -> bytes:
+    """Remove the chosen workspace files from a built .swarm and re-checksum it.
+
+    The host builds the whole bundle; here we drop the entries the user
+    unchecked (`entities/<bid>/files/workspace/<rel>`) and rewrite the
+    manifest checksum over what remains. The manifest itself is otherwise
+    untouched, so the bundle stays a valid, importable .swarm minus the files.
+    """
+    excl = {e.strip().strip("/").replace("\\", "/") for e in exclude if e.strip()}
+    if not excl:
+        return blob
+
+    def _drop(name: str) -> bool:
+        if _WS_MARKER not in name:
+            return False
+        rel = name.split(_WS_MARKER, 1)[1]
+        return rel in excl or any(rel.startswith(f"{p}/") for p in excl)
+
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        manifest_raw = zf.read("manifest.json")
+        entries: Dict[str, bytes] = {}
+        for name in zf.namelist():
+            if name == "manifest.json" or name.endswith("/"):
+                continue
+            if _drop(name):
+                continue
+            entries[name] = zf.read(name)
+
+    manifest = json.loads(manifest_raw)
+    manifest["checksum"] = _content_digest(entries)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+        for path in sorted(entries):
+            zf.writestr(path, entries[path])
+    return buf.getvalue()
 
 # Where an app's version series starts. Patch-increments from here on every
 # subsequent release unless the caller overrides the version explicitly.
@@ -174,12 +330,16 @@ def _export_error(res: "httpx.Response") -> str:
 
 
 @typechecked
-def _build_swarm(output_id: str) -> Tuple[bytes, str]:
+def _build_swarm(output_id: str, exclude: Optional[List[str]] = None) -> Tuple[bytes, str]:
     """Build the `.swarm` for an app via the host export API.
 
     Returns (bytes, filename). Raises RuntimeError with the host's own
     explanation on failure — most importantly the secret-scan refusal, which
     the caller turns into a blocking message rather than a stack trace.
+
+    When `exclude` is given, the host bundle is repacked minus those workspace
+    files (and re-checksummed) before it's returned, so the shipped .swarm
+    carries only what the author chose to include.
     """
     with httpx.Client(timeout=300.0) as client:
         res = client.post(
@@ -192,7 +352,8 @@ def _build_swarm(output_id: str) -> Tuple[bytes, str]:
     disposition = res.headers.get("content-disposition", "")
     match = re.search(r'filename="?([^"]+)"?', disposition)
     filename = match.group(1) if match else f"{output_id}.swarm"
-    return res.content, filename
+    blob = _strip_bundle(res.content, exclude) if exclude else res.content
+    return blob, filename
 
 
 @typechecked
@@ -308,6 +469,7 @@ def cut_release(
     app_name: str,
     version_override: str = "",
     notes: str = "",
+    exclude: Optional[List[str]] = None,
 ) -> Tuple[bool, Any]:
     """Build the `.swarm`, tag the pushed HEAD, and create a GitHub Release.
 
@@ -358,10 +520,15 @@ def cut_release(
             return False, f"Couldn't reach GitHub: {exc}"
         version = _next_version([r["tag"] for r in existing if r.get("tag")])
 
+    # Remember the exclude selection up front, so the picker reopens pre-set
+    # next time even if the GitHub half fails after this point.
+    excl = list(exclude or [])
+    _save_excludes(workspace_id, excl)
+
     # Build the bundle before touching GitHub. A secret-scan refusal (or any
     # export error) stops here, leaving no half-made tag or release behind.
     try:
-        blob, filename = _build_swarm(output_id)
+        blob, filename = _build_swarm(output_id, excl)
     except RuntimeError as exc:
         return False, str(exc)
 
