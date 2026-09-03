@@ -9,6 +9,7 @@ import CloudOffRoundedIcon from '@mui/icons-material/CloudOffRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import RuleFolderRoundedIcon from '@mui/icons-material/RuleFolderRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DriveFileRenameOutlineRoundedIcon from '@mui/icons-material/DriveFileRenameOutlineRounded';
@@ -39,6 +40,7 @@ import Releases from '@/components/Releases';
 import PublishPanel from '@/components/PublishPanel';
 import type { AppEntry } from '@/components/AppPicker';
 import CloudSheet from '@/components/CloudSheet';
+import BulkIconSheet from '@/components/BulkIconSheet';
 import CommitList from '@/components/CommitList';
 import DeleteAppDialog from '@/components/DeleteAppDialog';
 import RenameAppDialog from '@/components/RenameAppDialog';
@@ -125,6 +127,7 @@ const Home: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [iconSheetOpen, setIconSheetOpen] = useState(false);
   // Bumped after an install/delete to re-poll the restart notice immediately.
   const [noticeKey, setNoticeKey] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -636,6 +639,20 @@ const Home: React.FC = () => {
               Your cloud
             </ButtonBase>
           </Tooltip>
+          <Tooltip title="Generate icons — make icons for many apps at once with your saved defaults">
+            <ButtonBase
+              onClick={() => setIconSheetOpen(true)}
+              sx={{
+                ...pushButton(c),
+                gap: '6px',
+                '& svg': { fontSize: 16 },
+              }}
+              aria-label="Generate icons"
+            >
+              <AutoAwesomeRoundedIcon />
+              Generate icons
+            </ButtonBase>
+          </Tooltip>
           <Tooltip title="Global .gitignore — one list, mirrored into every tracked app">
             <ButtonBase
               onClick={goSettings}
@@ -700,6 +717,13 @@ const Home: React.FC = () => {
           open={cloudOpen}
           onClose={() => setCloudOpen(false)}
           onInstalled={id => void handleInstalled(id)}
+        />
+        <BulkIconSheet
+          open={iconSheetOpen}
+          onClose={() => setIconSheetOpen(false)}
+          apps={apps}
+          source={source}
+          onDone={refreshHome}
         />
       </Shell>
     );
