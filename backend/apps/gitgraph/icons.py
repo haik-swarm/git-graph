@@ -764,11 +764,42 @@ def apply_icon(path: Path, data_uri: str, message: str = "") -> Tuple[bool, dict
     (path / filename).write_bytes(raw)
     touched.append(filename)
 
+    # Record the icon in the repo's own meta.json, the source of truth current
+    # OpenSwarm reads for the dashboard title/icon. Writing only the file left
+    # meta.json's `icon` pointing at a stale variant (or empty), so the card
+    # kept the old icon until a rename happened to rewrite meta.json.
+    if _write_meta_icon(path, filename):
+        touched.append("meta.json")
+
     commit_message = (message or "").strip() or "Set app icon"
     ok, result = commit_paths(path, commit_message, touched)
     if not ok:
         return False, {"detail": result}
     return True, {"sha": result, "icon_path": filename}
+
+
+def _write_meta_icon(path: Path, filename: str) -> bool:
+    """Point the repo's meta.json `icon` at `filename`. Returns True if the file
+    was written (so it can be added to the commit), False if nothing changed."""
+    import json
+
+    meta_path = path / "meta.json"
+    meta: Dict[str, object] = {}
+    if meta_path.is_file():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    if meta.get("icon") == filename:
+        return False
+    meta["icon"] = filename
+    try:
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 # --------------------------------------------------------------------- config io
