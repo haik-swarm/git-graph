@@ -98,6 +98,9 @@ export const gitgraphReleaseFilesUrl = (workspaceId: string) =>
 // Every app that has cut at least one GitHub Release, keyed by workspace.
 // The reverse of the per-app release panel — feeds the Releases tab.
 export const GITGRAPH_RELEASES_SWEEP_URL = API_URL + '/gitgraph/releases-sweep';
+// The skill twin of the above — feeds the Releases tab when scoped to skills.
+export const GITGRAPH_SKILLS_RELEASES_SWEEP_URL =
+  API_URL + '/gitgraph/skills-releases-sweep';
 
 // ICON - Endpoints
 // The image engine needs an OpenAI key; the GET reports only whether one is

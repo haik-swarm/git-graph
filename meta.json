@@ -1,4 +1,5 @@
 {
   "name": "Git Graph",
-  "description": "Browse any OpenSwarm app's git history as a commit graph, with a picker for every app on the dashboard."
+  "description": "Browse any OpenSwarm app's git history as a commit graph, with a picker for every app on the dashboard.",
+  "icon": "icon.webp"
 }

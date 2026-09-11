@@ -595,6 +595,7 @@ const Home: React.FC = () => {
     return (
       <Shell rail={rail}>
         <Releases
+          source={source}
           onOpen={workspaceId => {
             const app = apps.find(a => a.workspace_id === workspaceId);
             if (app) openApp(app);

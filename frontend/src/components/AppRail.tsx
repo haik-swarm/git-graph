@@ -380,16 +380,14 @@ const AppRail: React.FC<Props> = ({
           </Box>
         )}
 
-        {source === 'apps' && (
-          <Box sx={{ px: '2px', mb: '4px' }}>
-            <NavRow
-              icon={<LocalOfferRoundedIcon sx={{ fontSize: 15 }} />}
-              label="Releases"
-              active={releasesActive}
-              onClick={onReleases}
-            />
-          </Box>
-        )}
+        <Box sx={{ px: '2px', mb: '4px' }}>
+          <NavRow
+            icon={<LocalOfferRoundedIcon sx={{ fontSize: 15 }} />}
+            label="Releases"
+            active={releasesActive}
+            onClick={onReleases}
+          />
+        </Box>
 
         <Box sx={{ px: '2px', mb: '4px' }}>
           <NavRow

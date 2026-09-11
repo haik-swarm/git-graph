@@ -28,7 +28,9 @@ from typeguard import typechecked
 
 from backend.apps.gitgraph.discovery import (
     _run_git_result,
+    list_skills,
     openswarm_data_dir,
+    resolve_entity,
     workspace_path,
 )
 from backend.apps.gitgraph import github
@@ -82,6 +84,26 @@ def _installed_remotes() -> Dict[str, str]:
         slug = _slug_from_url(url)
         if slug:
             installed[slug] = wid
+
+    # Skills are tracked git repos too, but they carry no registry record in
+    # outputs/*.json, so the app scan above never sees them. Without this a
+    # skill that was just tracked and pushed still shows as installable in the
+    # cloud picker, and a second install would clone it into a fresh app
+    # workspace, orphaning the original skill directory. Keying skills by their
+    # origin slug puts them in the same greyed-out set as apps.
+    for skill in list_skills():
+        if not skill.get("has_git"):
+            continue
+        sid = skill["workspace_id"]
+        path = resolve_entity(sid)
+        if path is None:
+            continue
+        ok, out, _ = _run_git_result(["remote", "get-url", "origin"], path)
+        if not ok:
+            continue
+        slug = _slug_from_url(out.strip())
+        if slug and slug not in installed:
+            installed[slug] = sid
     return installed
 
 

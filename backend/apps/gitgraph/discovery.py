@@ -39,6 +39,23 @@ def _has_icon(path: Path) -> bool:
     """True when the repo root carries a committed icon.* the UI can render."""
     return any((path / name).is_file() for name in _ICON_BASENAMES)
 
+
+@typechecked
+def _read_workspace_meta(ws_path: Path) -> Dict[str, Any]:
+    """The app's own meta.json (name/description/icon), or {} if unreadable.
+
+    Current OpenSwarm keeps an app's display metadata in a meta.json at the
+    root of its workspace, not in the registry record under data/outputs.
+    Older builds stored it in the registry, so callers fall back to the
+    registry value only when the workspace has nothing to say.
+    """
+    meta_file = ws_path / "meta.json"
+    try:
+        data = json.loads(meta_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
 # The first `add -A` hashes every file in the workspace at once, which the
 # 15s budget cannot cover on a large app even after ignore rules apply.
 _GIT_FIRST_ADD_TIMEOUT = 120
@@ -163,6 +180,18 @@ def _decode_skill_id(entity_id: str) -> Optional[Tuple[str, str]]:
     if not sep or not tag or not name:
         return None
     return tag, name
+
+
+@typechecked
+def skill_export_id(entity_id: str) -> Optional[str]:
+    """The id the host export API wants for a skill: its bare folder name.
+
+    The host keys skill export on the directory name (`music`), not gitgraph's
+    internal `skill:<tag>:<name>` handle. Returns None for anything that isn't
+    a skill id.
+    """
+    decoded = _decode_skill_id(entity_id)
+    return decoded[1] if decoded else None
 
 
 @typechecked
@@ -357,6 +386,7 @@ def list_apps() -> List[Dict[str, Any]]:
             continue
 
         workspace_id = meta.get("workspace_id")
+        ws_meta: Dict[str, Any] = {}
         if not isinstance(workspace_id, str) or not workspace_id:
             # A record pointing at no workspace: the husk a half-failed
             # cloud install leaves behind. Skipping it hid the one thing
@@ -372,14 +402,19 @@ def list_apps() -> List[Dict[str, Any]]:
             exists = ws_path.is_dir()
             has_git = exists and (ws_path / ".git").is_dir()
             has_icon = exists and _has_icon(ws_path)
+            if exists:
+                ws_meta = _read_workspace_meta(ws_path)
 
+        # Display metadata now lives in the app's own workspace meta.json;
+        # the registry record only carries it on legacy installs, so it is
+        # the fallback rather than the source of truth.
         output_id = meta.get("id")
         apps.append(
             {
                 "id": output_id or workspace_id,
-                "name": meta.get("name") or "Untitled app",
-                "description": meta.get("description") or "",
-                "icon": meta.get("icon") or "",
+                "name": ws_meta.get("name") or meta.get("name") or "Untitled app",
+                "description": ws_meta.get("description") or meta.get("description") or "",
+                "icon": ws_meta.get("icon") or meta.get("icon") or "",
                 "has_icon": has_icon,
                 "workspace_id": workspace_id,
                 "workspace_exists": exists,

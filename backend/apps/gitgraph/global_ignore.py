@@ -23,7 +23,6 @@ from backend.apps.gitgraph.discovery import (
     list_skills,
     openswarm_data_dir,
     resolve_entity,
-    workspace_path,
 )
 
 _HEAD = "# >>> openswarm-managed (edit in Git Graph → Global .gitignore) >>>"
@@ -392,7 +391,7 @@ def ignore_paths(
     only governs files git isn't already tracking, so without it a rule on
     a tracked file changes nothing the user can see.
     """
-    path = workspace_path(workspace_id)
+    path = resolve_entity(workspace_id)
     if path is None:
         raise RuntimeError("Workspace not found")
     if not (path / ".git").is_dir():

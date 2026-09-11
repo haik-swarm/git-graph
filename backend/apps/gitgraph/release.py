@@ -31,7 +31,13 @@ from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.gitgraph import github
-from backend.apps.gitgraph.discovery import _run_git, list_apps, read_dirty
+from backend.apps.gitgraph.discovery import (
+    _run_git,
+    is_skill_id,
+    list_apps,
+    read_dirty,
+    skill_export_id,
+)
 from backend.apps.openswarm_host.openswarm_host import HOST, host_token
 
 # Where the per-app release-exclude selection is remembered (keyed by workspace
@@ -212,6 +218,27 @@ def _output_id_for(workspace_id: str) -> Optional[str]:
 
 
 @typechecked
+def _export_target(workspace_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve an entity id to the (export_type, export_id) the host wants.
+
+    Apps and skills are exported through the same host endpoint but keyed
+    differently: an app by its registry output id, a skill by its bare folder
+    name. Returns (type, id, None) when resolvable, or (None, None, reason)
+    with a user-facing reason when it isn't.
+    """
+    if is_skill_id(workspace_id):
+        skill_id = skill_export_id(workspace_id)
+        if not skill_id:
+            return None, None, "This skill's id is malformed, so it can't be exported."
+        return "skill", skill_id, None
+
+    output_id = _output_id_for(workspace_id)
+    if not output_id:
+        return None, None, "This app isn't in the registry, so it can't be exported."
+    return "app", output_id, None
+
+
+@typechecked
 def _parse_semver(tag: str) -> Optional[Tuple[int, int, int]]:
     match = _SEMVER_RE.match(tag.strip())
     if not match:
@@ -291,8 +318,8 @@ def _list_releases(
 
 
 @typechecked
-def _preflight(output_id: str) -> Tuple[bool, str]:
-    """Ask the host whether this app is exportable right now (secret scan et al).
+def _preflight(export_type: str, export_id: str) -> Tuple[bool, str]:
+    """Ask the host whether this entity is exportable right now (secret scan et al).
 
     Surfaced in status so the panel can warn BEFORE the user clicks release,
     rather than failing the whole cut halfway through. A host that can't be
@@ -303,7 +330,7 @@ def _preflight(output_id: str) -> Tuple[bool, str]:
         with httpx.Client(timeout=60.0) as client:
             res = client.post(
                 f"{HOST}/api/swarm/export/preflight",
-                json={"type": "app", "id": output_id},
+                json={"type": export_type, "id": export_id},
                 headers={"Authorization": f"Bearer {host_token()}"},
             )
     except httpx.HTTPError:
@@ -313,7 +340,7 @@ def _preflight(output_id: str) -> Tuple[bool, str]:
     body = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
     if isinstance(body, dict) and body.get("ok") is False:
         reqs = body.get("summary", {}).get("requirements") or []
-        return False, "; ".join(str(r) for r in reqs) or "This app can't be exported yet."
+        return False, "; ".join(str(r) for r in reqs) or "This can't be exported yet."
     return True, ""
 
 
@@ -330,8 +357,10 @@ def _export_error(res: "httpx.Response") -> str:
 
 
 @typechecked
-def _build_swarm(output_id: str, exclude: Optional[List[str]] = None) -> Tuple[bytes, str]:
-    """Build the `.swarm` for an app via the host export API.
+def _build_swarm(
+    export_type: str, export_id: str, exclude: Optional[List[str]] = None
+) -> Tuple[bytes, str]:
+    """Build the `.swarm` for an app or skill via the host export API.
 
     Returns (bytes, filename). Raises RuntimeError with the host's own
     explanation on failure — most importantly the secret-scan refusal, which
@@ -344,14 +373,14 @@ def _build_swarm(output_id: str, exclude: Optional[List[str]] = None) -> Tuple[b
     with httpx.Client(timeout=300.0) as client:
         res = client.post(
             f"{HOST}/api/swarm/export",
-            json={"type": "app", "id": output_id},
+            json={"type": export_type, "id": export_id},
             headers={"Authorization": f"Bearer {host_token()}"},
         )
     if res.status_code >= 400:
         raise RuntimeError(_export_error(res))
     disposition = res.headers.get("content-disposition", "")
     match = re.search(r'filename="?([^"]+)"?', disposition)
-    filename = match.group(1) if match else f"{output_id}.swarm"
+    filename = match.group(1) if match else f"{export_id}.swarm"
     blob = _strip_bundle(res.content, exclude) if exclude else res.content
     return blob, filename
 
@@ -372,7 +401,7 @@ def status(path: Path, workspace_id: str, app_name: str) -> Dict[str, Any]:
     dirty = read_dirty(path) if is_repo else []
     clean = not dirty
     unpushed = gh.get("unpushed") if gh.get("has_remote") else None
-    output_id = _output_id_for(workspace_id)
+    export_type, export_id, export_target_err = _export_target(workspace_id)
 
     releases: List[Dict[str, Any]] = []
     next_version = _FIRST_VERSION
@@ -386,8 +415,8 @@ def status(path: Path, workspace_id: str, app_name: str) -> Dict[str, Any]:
 
     exportable = True
     export_reason = ""
-    if output_id:
-        exportable, export_reason = _preflight(output_id)
+    if export_type and export_id:
+        exportable, export_reason = _preflight(export_type, export_id)
 
     blocked: Optional[str] = None
     if not token:
@@ -400,8 +429,8 @@ def status(path: Path, workspace_id: str, app_name: str) -> Dict[str, Any]:
         blocked = "Commit or discard your changes — a release must be a clean tree."
     elif unpushed:
         blocked = f"Push your {unpushed} unpushed commit(s) before releasing."
-    elif not output_id:
-        blocked = "This app isn't in the registry, so it can't be exported."
+    elif export_target_err:
+        blocked = export_target_err
     elif not exportable:
         blocked = export_reason or "This app can't be exported yet."
 
@@ -504,9 +533,9 @@ def cut_release(
     if not head:
         return False, "This repo has no commits to release."
 
-    output_id = _output_id_for(workspace_id)
-    if not output_id:
-        return False, "This app isn't in the registry, so it can't be exported."
+    export_type, export_id, export_target_err = _export_target(workspace_id)
+    if export_target_err or not export_type or not export_id:
+        return False, export_target_err or "This can't be exported."
 
     if version_override.strip():
         version = normalize_version(version_override)
@@ -528,7 +557,7 @@ def cut_release(
     # Build the bundle before touching GitHub. A secret-scan refusal (or any
     # export error) stops here, leaving no half-made tag or release behind.
     try:
-        blob, filename = _build_swarm(output_id, excl)
+        blob, filename = _build_swarm(export_type, export_id, excl)
     except RuntimeError as exc:
         return False, str(exc)
 

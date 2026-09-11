@@ -641,6 +641,43 @@ async def releases_sweep() -> dict:
     return {"connected": bool(token), "released": released}
 
 
+@gitgraph.router.get("/skills-releases-sweep")
+@typechecked
+async def skills_releases_sweep() -> dict:
+    """The skill twin of /releases-sweep, keyed by skill id.
+
+    Iterates the on-disk skill trees instead of the app registry and resolves
+    each through `resolve_entity` (skills carry a `skill:<tag>:<name>` id, not
+    a bare workspace path). Otherwise identical: skills with no remote or no
+    published release are dropped rather than listed empty.
+    """
+    token = github.read_token()
+    entries = list_skills()
+
+    async def probe(entry: Dict) -> tuple:
+        eid = entry["workspace_id"]
+        path = resolve_entity(eid)
+        if path is None:
+            return eid, entry, None
+        data = await asyncio.to_thread(
+            release.app_releases, path, str(entry.get("name") or eid)
+        )
+        return eid, entry, data
+
+    pairs = await asyncio.gather(*(probe(e) for e in entries))
+    released: Dict[str, Dict] = {}
+    for eid, entry, data in pairs:
+        if data is not None:
+            released[eid] = {
+                "name": entry.get("name"),
+                "description": entry.get("description"),
+                "has_icon": bool(entry.get("has_icon")),
+                **data,
+            }
+    debug(len(released))
+    return {"connected": bool(token), "released": released}
+
+
 @gitgraph.router.get("/collab/{workspace_id}")
 @typechecked
 async def collab_list(workspace_id: str) -> dict:

@@ -13,7 +13,10 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { card, pushButton, statusChip, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Placeholder, Toolbar, Scroller } from '@/components/Chrome';
 import { relativeTime } from '@/shared/graphLayout';
-import { GITGRAPH_RELEASES_SWEEP_URL } from '@/shared/state/API_ENDPOINTS';
+import {
+  GITGRAPH_RELEASES_SWEEP_URL,
+  GITGRAPH_SKILLS_RELEASES_SWEEP_URL,
+} from '@/shared/state/API_ENDPOINTS';
 
 interface ReleaseEntry {
   tag: string | null;
@@ -40,6 +43,8 @@ interface ReleasedApp {
 interface Props {
   /** Jump to an app's git-graph view when its card is clicked. */
   onOpen: (workspaceId: string) => void;
+  /** Which entity tree to list releases for; skills use their own sweep. */
+  source?: 'apps' | 'skills';
 }
 
 /**
@@ -47,7 +52,7 @@ interface Props {
  * The reverse of the per-app Release panel: that panel publishes a release,
  * this tab is the shelf of everything already shipped, newest release first.
  */
-const Releases: React.FC<Props> = ({ onOpen }) => {
+const Releases: React.FC<Props> = ({ onOpen, source = 'apps' }) => {
   const c = useClaudeTokens();
   const [released, setReleased] = useState<Record<string, ReleasedApp> | null>(null);
   const [connected, setConnected] = useState(true);
@@ -59,7 +64,11 @@ const Releases: React.FC<Props> = ({ onOpen }) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(GITGRAPH_RELEASES_SWEEP_URL);
+      const res = await fetch(
+        source === 'skills'
+          ? GITGRAPH_SKILLS_RELEASES_SWEEP_URL
+          : GITGRAPH_RELEASES_SWEEP_URL,
+      );
       if (!res.ok) throw new Error(`load ${res.status}`);
       const data = await res.json();
       setConnected(Boolean(data?.connected));
@@ -70,7 +79,7 @@ const Releases: React.FC<Props> = ({ onOpen }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     void load();
