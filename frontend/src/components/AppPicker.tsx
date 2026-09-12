@@ -18,6 +18,12 @@ export interface AppEntry {
   workspace_id: string;
   workspace_exists: boolean;
   has_git: boolean;
+  /**
+   * True for a flat `<name>.md` skill that has no folder to git-init.
+   * Tracking one converts it to a `<name>/SKILL.md` folder under the hood,
+   * so the same Track button covers both flat skills and normal apps.
+   */
+  is_flat?: boolean;
   /** True when the repo carries a committed icon.* the avatar can render. */
   has_icon?: boolean;
   /** The dashboard record id: the only handle a workspace-less app has. */
@@ -38,11 +44,15 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
 
+  // A flat skill has no workspace to git-init; its id is the handle the init
+  // endpoint uses to convert-then-track it, so route flat ids by `id` and
+  // everything else by `workspace_id`.
   const trackApp = async (app: AppEntry) => {
-    setTrackingId(app.workspace_id);
+    const handle = app.is_flat ? app.id : app.workspace_id;
+    setTrackingId(handle);
     setTrackError(null);
     try {
-      const res = await fetch(gitgraphInitUrl(app.workspace_id), { method: 'POST' });
+      const res = await fetch(gitgraphInitUrl(handle), { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.detail || `init ${res.status}`);
@@ -79,12 +89,14 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
         }}
       >
         {apps.map(app => {
-          const isSelected = selected?.workspace_id === app.workspace_id;
-          const canTrack = app.workspace_exists && !app.has_git;
-          const isTracking = trackingId === app.workspace_id;
+          const isSelected = app.workspace_id
+            ? selected?.workspace_id === app.workspace_id
+            : selected?.id === app.id;
+          const canTrack = app.is_flat || (app.workspace_exists && !app.has_git);
+          const isTracking = trackingId === (app.is_flat ? app.id : app.workspace_id);
           return (
             <Box
-              key={app.workspace_id}
+              key={app.id}
               sx={{
                 ...menuItem(c),
                 height: 'auto',
@@ -120,7 +132,11 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                   <Typography sx={{ ...c.type.body, color: c.text.primary, lineHeight: 1.35 }}>
                     {app.name}
                   </Typography>
-                  {!app.workspace_exists ? (
+                  {app.is_flat ? (
+                    <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                      single file &middot; track to convert
+                    </Typography>
+                  ) : !app.workspace_exists ? (
                     <Typography sx={{ ...c.type.caption, color: c.status.error }}>
                       workspace missing
                     </Typography>
@@ -131,7 +147,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                   ) : null}
                 </Box>
               </ButtonBase>
-              {canTrack && (
+              {canTrack ? (
                 <ButtonBase
                   onClick={e => {
                     e.stopPropagation();
@@ -152,7 +168,7 @@ const AppPicker: React.FC<Props> = ({ apps, selected, onSelect, onTracked }) => 
                     'Track'
                   )}
                 </ButtonBase>
-              )}
+              ) : null}
             </Box>
           );
         })}

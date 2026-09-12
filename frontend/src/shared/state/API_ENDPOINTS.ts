@@ -34,6 +34,8 @@ export const gitgraphRestoreUrl = (workspaceId: string, sha: string) =>
   `${API_URL}/gitgraph/restore/${encodeURIComponent(workspaceId)}/${encodeURIComponent(sha)}`;
 export const gitgraphDiscardUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/discard/${encodeURIComponent(workspaceId)}`;
+// Tracks an app, or, for a flat `<name>.md` skill id, promotes it to a
+// `<name>/SKILL.md` folder and tracks that, returning the new folder-skill id.
 export const gitgraphInitUrl = (workspaceId: string) =>
   `${API_URL}/gitgraph/init/${encodeURIComponent(workspaceId)}`;
 

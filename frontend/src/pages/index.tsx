@@ -343,7 +343,7 @@ const Home: React.FC = () => {
   const trackApp = useCallback(
     async (app: AppEntry) => {
       setInitBusy(true);
-      setTrackingId(app.workspace_id);
+      setTrackingId(app.is_flat ? app.id : app.workspace_id);
       setInitError(null);
       try {
         const res = await fetch(gitgraphInitUrl(app.workspace_id), { method: 'POST' });
@@ -351,9 +351,15 @@ const Home: React.FC = () => {
           const data = await res.json().catch(() => ({}));
           throw new Error(data?.detail || `init ${res.status}`);
         }
+        // Tracking a flat skill converts it server-side, so the record we
+        // re-select is the new folder skill named by the returned id, not the
+        // flat id we started from. A normal app keeps its workspace_id.
+        const data = await res.json().catch(() => ({}));
         const list = await refetchApps();
-        const fresh = list.find(a => a.workspace_id === app.workspace_id) ?? app;
-        setSelected(fresh);
+        const fresh = app.is_flat
+          ? list.find(a => a.id === data?.id)
+          : list.find(a => a.workspace_id === app.workspace_id);
+        setSelected(fresh ?? app);
         setMode('app');
       } catch (err) {
         setInitError(err instanceof Error ? err.message : "We couldn't track that app.");
@@ -366,6 +372,9 @@ const Home: React.FC = () => {
   );
 
   const openApp = useCallback((app: AppEntry) => {
+    // A flat skill has no repo to show a graph for; opening it would load an
+    // empty workspace. Its only action is Convert, so a body click is a no-op.
+    if (app.is_flat) return;
     setSelected(app);
     setMode('app');
   }, []);
@@ -902,6 +911,7 @@ const Home: React.FC = () => {
               commitCount={layout.nodes.length}
               dirtyCount={graph.dirty?.length ?? 0}
               commitDates={commitDates}
+              onIconChange={refresh}
             />
 
             {graph.dirty && graph.dirty.length > 0 && (
@@ -985,6 +995,7 @@ const Home: React.FC = () => {
           hasRemote={hasRemote}
           remoteHtmlUrl={remoteHtmlUrl}
           orphanOutputId={selected.workspace_id ? null : selected.output_id ?? selected.id}
+          isSkill={source === 'skills'}
           onDeleted={handleDeleted}
         />
       )}

@@ -387,13 +387,13 @@ const HomeGrid: React.FC<Props> = ({
         >
           {rows.map(app => (
             <AppCard
-              key={app.workspace_id}
+              key={app.id}
               app={app}
               meta={meta[app.workspace_id]}
               loading={metaBusy && meta[app.workspace_id] === undefined}
               onOpen={() => onOpen(app)}
               onTrack={onTrack}
-              tracking={trackingId === app.workspace_id}
+              tracking={trackingId === (app.is_flat ? app.id : app.workspace_id)}
             />
           ))}
         </Box>
@@ -411,8 +411,9 @@ const AppCard: React.FC<{
   tracking: boolean;
 }> = ({ app, meta, loading, onOpen, onTrack, tracking }) => {
   const c = useClaudeTokens();
-  const missing = !app.workspace_exists;
-  const tracked = app.has_git && !missing;
+  const flat = Boolean(app.is_flat);
+  const missing = !app.workspace_exists && !flat;
+  const tracked = app.has_git && !missing && !flat;
   const dirty = meta?.dirty_count ?? 0;
   const commits = meta?.commit_count ?? 0;
   const unpushed = meta?.unpushed ?? 0;
@@ -547,6 +548,8 @@ const AppCard: React.FC<{
               Reading graph…
             </Box>
           </Box>
+        ) : flat ? (
+          <Pill tone="ghost">single file</Pill>
         ) : missing ? (
           <Pill tone="danger">workspace missing</Pill>
         ) : !tracked ? (
@@ -677,13 +680,13 @@ const AppTable: React.FC<{
           <Box component="tbody">
             {rows.map(app => (
               <AppRow
-                key={app.workspace_id}
+                key={app.id}
                 app={app}
                 meta={meta[app.workspace_id]}
                 loading={metaBusy && meta[app.workspace_id] === undefined}
                 onOpen={() => onOpen(app)}
                 onTrack={onTrack}
-                tracking={trackingId === app.workspace_id}
+                tracking={trackingId === (app.is_flat ? app.id : app.workspace_id)}
                 bodyCell={bodyCell}
               />
             ))}
@@ -704,8 +707,9 @@ const AppRow: React.FC<{
   bodyCell: Record<string, unknown>;
 }> = ({ app, meta, loading, onOpen, onTrack, tracking, bodyCell }) => {
   const c = useClaudeTokens();
-  const missing = !app.workspace_exists;
-  const tracked = app.has_git && !missing;
+  const flat = Boolean(app.is_flat);
+  const missing = !app.workspace_exists && !flat;
+  const tracked = app.has_git && !missing && !flat;
   const dirty = meta?.dirty_count ?? 0;
   const commits = meta?.commit_count ?? 0;
   const unpushed = meta?.unpushed ?? 0;
@@ -818,6 +822,8 @@ const AppRow: React.FC<{
               Reading…
             </Box>
           </Box>
+        ) : flat ? (
+          <Pill tone="ghost">single file</Pill>
         ) : missing ? (
           <Pill tone="danger">missing</Pill>
         ) : !tracked ? (

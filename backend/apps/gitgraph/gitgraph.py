@@ -25,8 +25,11 @@ from backend.apps.gitgraph import (
 from backend.apps.openswarm_host.openswarm_host import runtime_status
 from backend.apps.gitgraph.discovery import (
     commit_paths,
+    convert_flat_skill,
     discard_dirty,
     init_repo,
+    is_flat_skill_id,
+    is_skill_id,
     list_apps,
     list_skills,
     read_commit_detail,
@@ -407,6 +410,18 @@ async def magic_update(workspace_id: str, body: MagicUpdateRequest) -> dict:
 @gitgraph.router.post("/init/{workspace_id}")
 @typechecked
 async def init(workspace_id: str) -> dict:
+    # A flat `<name>.md` skill has no folder to git-init, so tracking it means
+    # first promoting it to a `<name>/SKILL.md` folder. That conversion inits
+    # the repo itself, so Track and Convert are one action from the client's
+    # side; the new folder-skill id rides back so it can re-select the record.
+    if is_flat_skill_id(workspace_id):
+        ok, result = convert_flat_skill(workspace_id)
+        debug(workspace_id, ok, result)
+        if not ok:
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Convert failed.")
+            )
+        return result
     path = _resolve(workspace_id)
     ok, result = init_repo(path, workspace_id)
     debug(workspace_id, ok, result)
@@ -973,7 +988,13 @@ async def icon_raw(workspace_id: str) -> FileResponse:
 async def local_delete(workspace_id: str) -> dict:
     # Resolve the name before the delete; afterwards there's no record to read it from.
     name = _app_name(workspace_id)
-    ok, result = cloud.delete_local(workspace_id)
+    # Skills share this endpoint (their id lands in workspace_id), but they have
+    # no registry/host/workspace triple for delete_local to key on, so route them
+    # to the skill remover, which deletes the folder or flat file directly.
+    if is_skill_id(workspace_id):
+        ok, result = cloud.delete_skill(workspace_id)
+    else:
+        ok, result = cloud.delete_local(workspace_id)
     debug(workspace_id, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result.get("detail", "Delete failed."))

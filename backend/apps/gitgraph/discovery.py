@@ -93,6 +93,13 @@ _SKILL_ROOTS: List[Tuple[str, Path]] = [
 # a workspace id (a uuid hex) or a skill directory name (a slug).
 _SKILL_PREFIX = "skill:"
 
+# A skill can also live as a single `<name>.md` file at a root instead of a
+# `<name>/SKILL.md` folder. Such a file has no directory to `git init`, so it
+# carries a distinct prefix that routes it to the flat-file resolver and marks
+# it convertible. `.md` is stripped from the name, so the id holds the slug
+# (`flatskill:claude:bug-reports`), matching folder-skill ids one-for-one.
+_FLAT_SKILL_PREFIX = "flatskill:"
+
 
 @typechecked
 def skill_roots() -> List[Tuple[str, Path]]:
@@ -122,13 +129,19 @@ def _skill_name_from_dir(skill_dir: Path) -> str:
 
 @typechecked
 def _read_skill_description(skill_dir: Path) -> str:
-    """First non-empty prose line of SKILL.md, for the card subtitle.
+    """First non-empty prose line of a folder skill's SKILL.md."""
+    return _read_skill_description_file(skill_dir / "SKILL.md")
+
+
+@typechecked
+def _read_skill_description_file(md: Path) -> str:
+    """First non-empty prose line of a skill markdown file, for the subtitle.
 
     Skips YAML front matter (a leading `---` fence) and markdown headings so
     the subtitle is the skill's actual one-liner, not `# Title`. Best-effort:
-    a missing or unreadable SKILL.md just yields an empty subtitle.
+    a missing or unreadable file just yields an empty subtitle. Works for both
+    a folder skill's SKILL.md and a flat `<name>.md` skill file.
     """
-    md = skill_dir / "SKILL.md"
     try:
         text = md.read_text(encoding="utf-8")
     except OSError:
@@ -157,13 +170,28 @@ def encode_skill_id(tag: str, name: str) -> str:
 
 
 @typechecked
+def encode_flat_skill_id(tag: str, name: str) -> str:
+    """Id for a flat `<name>.md` skill file. `name` is the slug, sans `.md`."""
+    return f"{_FLAT_SKILL_PREFIX}{tag}:{name}"
+
+
+@typechecked
 def is_skill_id(entity_id: str) -> bool:
     """Whether an entity id names a skill (vs an app workspace).
 
     The one bit that tells the ignore layer which scope's shared list an id
-    belongs to. A bare workspace id (uuid hex) never carries the prefix.
+    belongs to. A bare workspace id (uuid hex) never carries a prefix. Both
+    folder skills and flat-file skills count as skills here.
     """
-    return entity_id.startswith(_SKILL_PREFIX)
+    return entity_id.startswith(_SKILL_PREFIX) or entity_id.startswith(
+        _FLAT_SKILL_PREFIX
+    )
+
+
+@typechecked
+def is_flat_skill_id(entity_id: str) -> bool:
+    """Whether an entity id names a flat `<name>.md` skill file."""
+    return entity_id.startswith(_FLAT_SKILL_PREFIX)
 
 
 @typechecked
@@ -176,6 +204,18 @@ def _decode_skill_id(entity_id: str) -> Optional[Tuple[str, str]]:
     if not entity_id.startswith(_SKILL_PREFIX):
         return None
     rest = entity_id[len(_SKILL_PREFIX):]
+    tag, sep, name = rest.partition(":")
+    if not sep or not tag or not name:
+        return None
+    return tag, name
+
+
+@typechecked
+def _decode_flat_skill_id(entity_id: str) -> Optional[Tuple[str, str]]:
+    """Split a `flatskill:<tag>:<name>` id into (tag, name), or None otherwise."""
+    if not entity_id.startswith(_FLAT_SKILL_PREFIX):
+        return None
+    rest = entity_id[len(_FLAT_SKILL_PREFIX):]
     tag, sep, name = rest.partition(":")
     if not sep or not tag or not name:
         return None
@@ -206,11 +246,13 @@ def list_skills() -> List[Dict[str, Any]]:
     """
     skills: List[Dict[str, Any]] = []
     for tag, root in skill_roots():
+        folder_slugs: set[str] = set()
         for entry in sorted(root.iterdir()):
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
             if not (entry / "SKILL.md").is_file():
                 continue
+            folder_slugs.add(entry.name)
             has_git = (entry / ".git").is_dir()
             try:
                 updated = entry.stat().st_mtime
@@ -232,6 +274,43 @@ def list_skills() -> List[Dict[str, Any]]:
                     "workspace_id": encode_skill_id(tag, entry.name),
                     "workspace_exists": True,
                     "has_git": has_git,
+                    "is_flat": False,
+                    "output_id": None,
+                    "updated_at": _iso_from_mtime(updated),
+                }
+            )
+
+        # Flat `<name>.md` skills: a single markdown file at the root with no
+        # folder to git-init. Surfaced as convertible, never versioned in place.
+        # A flat file whose slug already exists as a folder is skipped so the
+        # folder (the real, trackable skill) wins.
+        for entry in sorted(root.iterdir()):
+            if not entry.is_file() or entry.name.startswith("."):
+                continue
+            if entry.suffix != ".md":
+                continue
+            slug = entry.stem
+            if slug in folder_slugs:
+                continue
+            try:
+                updated = entry.stat().st_mtime
+            except OSError:
+                updated = 0.0
+            skills.append(
+                {
+                    "id": encode_flat_skill_id(tag, slug),
+                    "name": slug,
+                    "description": _read_skill_description_file(entry),
+                    "icon": "",
+                    "has_icon": False,
+                    "kind": "skill",
+                    "root": tag,
+                    "workspace_id": encode_flat_skill_id(tag, slug),
+                    "workspace_exists": True,
+                    # A flat file can't be git-tracked in place; it must be
+                    # converted to a folder first. Never reports has_git.
+                    "has_git": False,
+                    "is_flat": True,
                     "output_id": None,
                     "updated_at": _iso_from_mtime(updated),
                 }
@@ -269,6 +348,12 @@ def resolve_entity(entity_id: str) -> Optional[Path]:
     validated for containment in its allowed root, so a crafted `..` or an
     absolute path can't point git at an arbitrary directory.
     """
+    # A flat-skill id names a `<name>.md` file, not a directory. It has no
+    # git-trackable location, so it doesn't resolve as an entity — git ops on
+    # it must fail closed until it's converted to a folder skill.
+    if is_flat_skill_id(entity_id):
+        return None
+
     decoded = _decode_skill_id(entity_id)
     if decoded is None:
         return workspace_path(entity_id)
@@ -284,6 +369,81 @@ def resolve_entity(entity_id: str) -> Optional[Path]:
     if not (candidate / "SKILL.md").is_file():
         return None
     return candidate
+
+
+@typechecked
+def resolve_flat_skill_file(entity_id: str) -> Optional[Path]:
+    """Resolve a `flatskill:<tag>:<name>` id to its `<name>.md` file on disk.
+
+    Contained to the tagged skill root the same way `resolve_entity` guards
+    folder skills, so a crafted name can't escape the root. Returns None for
+    any non-flat id or if the file is missing.
+    """
+    decoded = _decode_flat_skill_id(entity_id)
+    if decoded is None:
+        return None
+    tag, name = decoded
+    root = _skill_root_for_tag(tag)
+    if root is None:
+        return None
+    resolved_root = root.resolve()
+    candidate = (resolved_root / f"{name}.md").resolve()
+    if candidate.parent != resolved_root or not candidate.is_file():
+        return None
+    return candidate
+
+
+@typechecked
+def convert_flat_skill(entity_id: str) -> Tuple[bool, Dict[str, Any]]:
+    """Turn a flat `<name>.md` skill into a `<name>/SKILL.md` folder skill.
+
+    Creates the slug folder, moves the markdown into it as SKILL.md, then
+    git-inits the new folder so it tracks like any other skill. Returns the
+    folder-skill id so the caller can re-select the now-trackable skill.
+    Fails closed and rolls back the move if the folder can't be initialised.
+    """
+    src = resolve_flat_skill_file(entity_id)
+    if src is None:
+        return False, {"error": "not a flat skill"}
+    decoded = _decode_flat_skill_id(entity_id)
+    assert decoded is not None  # resolve_flat_skill_file already validated it
+    tag, name = decoded
+
+    folder = src.parent / name
+    if folder.exists():
+        return False, {"error": f"'{name}' already exists as a folder"}
+
+    dest = folder / "SKILL.md"
+    try:
+        folder.mkdir(parents=False, exist_ok=False)
+        os.replace(src, dest)
+    except OSError as exc:
+        # Undo a partial conversion so the flat file is never lost.
+        if dest.is_file() and not src.exists():
+            try:
+                os.replace(dest, src)
+            except OSError:
+                pass
+        if folder.is_dir():
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+        return False, {"error": f"could not create folder: {exc}"}
+
+    new_id = encode_skill_id(tag, name)
+    ok, info = init_repo(folder, entity_id=new_id)
+    if not ok:
+        # Move the file back and remove the folder so a failed init doesn't
+        # strand the skill in a half-converted, untracked folder.
+        try:
+            os.replace(dest, src)
+            folder.rmdir()
+        except OSError:
+            pass
+        return False, {"error": info.get("error", "could not initialise repo")}
+
+    return True, {"id": new_id, "name": name, "root": tag}
 
 
 @typechecked

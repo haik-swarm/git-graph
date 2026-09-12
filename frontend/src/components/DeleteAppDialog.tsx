@@ -20,6 +20,8 @@ interface Props {
   remoteHtmlUrl: string | null;
   /** Set when the record has no workspace at all; delete then goes by output id. */
   orphanOutputId?: string | null;
+  /** True when the target is a skill (a folder/flat file), not an app workspace. */
+  isSkill?: boolean;
   onDeleted: (workspaceId: string) => void;
 }
 
@@ -37,6 +39,7 @@ const DeleteAppDialog: React.FC<Props> = ({
   hasRemote,
   remoteHtmlUrl,
   orphanOutputId,
+  isSkill,
   onDeleted,
 }) => {
   const c = useClaudeTokens();
@@ -117,8 +120,9 @@ const DeleteAppDialog: React.FC<Props> = ({
         </Box>
 
         <Box sx={{ ...c.type.body, color: c.text.secondary, lineHeight: 1.5 }}>
-          Removes the workspace and the dashboard entry on this machine.
-          Uncommitted changes will be lost.
+          {isSkill
+            ? 'Removes this skill directory from this machine. Uncommitted changes will be lost.'
+            : 'Removes the workspace and the dashboard entry on this machine. Uncommitted changes will be lost.'}
           {hasRemote && (
             <>
               {' '}The GitHub repo is <b>not</b> deleted — the app will still

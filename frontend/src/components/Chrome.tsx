@@ -3,9 +3,11 @@ import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Popover from '@mui/material/Popover';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import CropRoundedIcon from '@mui/icons-material/CropRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { menuItem, menuSurface, slimScroll, statusChip } from '@/shared/styles/ui';
 import { gitgraphIconRawUrl } from '@/shared/state/API_ENDPOINTS';
+import IconCropDialog from '@/components/IconCropDialog';
 
 const ICON_EXT_BY_TYPE: Record<string, string> = {
   'image/svg+xml': 'svg',
@@ -161,17 +163,38 @@ export const BrandGlyph: React.FC<{
    */
   downloadable?: boolean;
   downloadName?: string;
-}> = ({ seed, letter, size = 28, active, iconId, hasIcon, downloadable, downloadName }) => {
+  /**
+   * When true and an icon is showing, the click menu also offers to crop the
+   * committed icon and set the result as the new icon. `onIconChange` fires
+   * after a successful crop so the parent can refetch and cache-bust the tile.
+   */
+  croppable?: boolean;
+  onIconChange?: () => void;
+}> = ({
+  seed,
+  letter,
+  size = 28,
+  active,
+  iconId,
+  hasIcon,
+  downloadable,
+  downloadName,
+  croppable,
+  onIconChange,
+}) => {
   const c = useClaudeTokens();
   const [imgFailed, setImgFailed] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const hue = seedHue(seed);
   const bg = `hsl(${hue} ${c.isDark ? '38% 30%' : '70% 93%'})`;
   const fg = `hsl(${hue} ${c.isDark ? '70% 80%' : '50% 32%'})`;
   const showIcon = Boolean(iconId) && hasIcon === true && !imgFailed;
   const canSave = Boolean(downloadable) && showIcon;
+  const canCrop = Boolean(croppable) && showIcon;
+  const hasMenu = canSave || canCrop;
 
   const tile = (
     <Box
@@ -209,7 +232,7 @@ export const BrandGlyph: React.FC<{
     </Box>
   );
 
-  if (!canSave) return tile;
+  if (!hasMenu) return tile;
 
   const save = async () => {
     setSaving(true);
@@ -228,7 +251,7 @@ export const BrandGlyph: React.FC<{
     <>
       <ButtonBase
         onClick={e => setAnchor(e.currentTarget)}
-        title="Save this icon to your device"
+        title={canCrop ? 'Icon options' : 'Save this icon to your device'}
         sx={{ borderRadius: `${c.radius.sm}px`, display: 'block', flexShrink: 0 }}
       >
         {tile}
@@ -241,27 +264,57 @@ export const BrandGlyph: React.FC<{
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         slotProps={{ paper: { sx: { ...menuSurface(c), mt: 0.5, minWidth: 200 } } }}
       >
-        <ButtonBase
-          onClick={() => void save()}
-          disabled={saving}
-          sx={{
-            ...menuItem(c),
-            width: '100%',
-            justifyContent: 'flex-start',
-            gap: 1,
-            ...c.type.body,
-            color: c.text.primary,
-          }}
-        >
-          <DownloadRoundedIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
-          {saving ? 'Saving…' : 'Save icon to device'}
-        </ButtonBase>
+        {canCrop && (
+          <ButtonBase
+            onClick={() => {
+              setAnchor(null);
+              setCropOpen(true);
+            }}
+            sx={{
+              ...menuItem(c),
+              width: '100%',
+              justifyContent: 'flex-start',
+              gap: 1,
+              ...c.type.body,
+              color: c.text.primary,
+            }}
+          >
+            <CropRoundedIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
+            Crop icon
+          </ButtonBase>
+        )}
+        {canSave && (
+          <ButtonBase
+            onClick={() => void save()}
+            disabled={saving}
+            sx={{
+              ...menuItem(c),
+              width: '100%',
+              justifyContent: 'flex-start',
+              gap: 1,
+              ...c.type.body,
+              color: c.text.primary,
+            }}
+          >
+            <DownloadRoundedIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
+            {saving ? 'Saving…' : 'Save icon to device'}
+          </ButtonBase>
+        )}
         {saveError && (
           <Box sx={{ ...c.type.caption, color: c.status.error, px: '8px', py: '4px' }}>
             {saveError}
           </Box>
         )}
       </Popover>
+      {canCrop && (
+        <IconCropDialog
+          open={cropOpen}
+          onClose={() => setCropOpen(false)}
+          iconId={iconId!}
+          appName={downloadName || letter || 'this app'}
+          onApplied={() => onIconChange?.()}
+        />
+      )}
     </>
   );
 };

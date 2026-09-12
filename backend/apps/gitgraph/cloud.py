@@ -28,9 +28,12 @@ from typeguard import typechecked
 
 from backend.apps.gitgraph.discovery import (
     _run_git_result,
+    is_flat_skill_id,
+    is_skill_id,
     list_skills,
     openswarm_data_dir,
     resolve_entity,
+    resolve_flat_skill_file,
     workspace_path,
 )
 from backend.apps.gitgraph import github
@@ -662,6 +665,36 @@ def delete_orphan_record(output_id: str) -> Tuple[bool, Dict[str, Any]]:
         "via_host": ok_host,
         "host_error": None if ok_host else msg,
     }
+
+
+@typechecked
+def delete_skill(entity_id: str) -> Tuple[bool, Dict[str, Any]]:
+    """Remove a skill from disk: its folder, or its single `<name>.md` file.
+
+    Skills aren't apps: there's no dashboard record or registry entry to
+    clear, and no OpenSwarm host call to make. The id IS the handle, and the
+    directory (or flat file) is the only thing to remove. The resolvers here
+    already validate containment within a known skill root, so a crafted id
+    can't point this at a directory outside the skill trees.
+    """
+    if is_flat_skill_id(entity_id):
+        path = resolve_flat_skill_file(entity_id)
+        if path is None:
+            return False, {"detail": "No such skill."}
+        try:
+            path.unlink()
+        except OSError as exc:
+            return False, {"detail": f"Couldn't remove skill: {exc}"}
+        return True, {"entity_id": entity_id, "skill_removed": True, "was_flat": True}
+
+    path = resolve_entity(entity_id)
+    if path is None:
+        return False, {"detail": "No such skill."}
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        return False, {"detail": f"Couldn't remove skill: {exc}"}
+    return True, {"entity_id": entity_id, "skill_removed": True, "was_flat": False}
 
 
 @typechecked

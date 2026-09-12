@@ -21,6 +21,7 @@ interface Props {
   commitCount: number;
   dirtyCount: number;
   commitDates: string[];
+  onIconChange?: () => void;
 }
 
 /**
@@ -38,6 +39,7 @@ const RepoHero: React.FC<Props> = ({
   commitCount,
   dirtyCount,
   commitDates,
+  onIconChange,
 }) => {
   const c = useClaudeTokens();
   const histogram = React.useMemo(() => commitHistogram(commitDates), [commitDates]);
@@ -60,6 +62,8 @@ const RepoHero: React.FC<Props> = ({
         hasIcon={app.has_icon}
         downloadable
         downloadName={app.name}
+        croppable
+        onIconChange={onIconChange}
       />
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
