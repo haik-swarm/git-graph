@@ -303,16 +303,22 @@ def _credential_env(token: str) -> Tuple[List[str], Dict[str, str]]:
 def _skill_install_root() -> Path:
     """Where a newly installed skill should be cloned.
 
-    Prefers the newer ~/.openswarm/skills tree; falls back to ~/.claude/skills
-    only if that is the one that already exists. Creates the preferred tree
-    when neither is present so a fresh machine still installs somewhere sane.
+    Must be the tree the OpenSwarm runtime actually loads skills from, or the
+    clone succeeds while the skill never appears. The runtime's skill index
+    (`.skills_index.json`) marks that tree, so prefer whichever tree holds it.
+    Absent an index, fall back to ~/.claude/skills (the historical load path),
+    then ~/.openswarm/skills, creating the latter only if neither exists so a
+    fresh machine still installs somewhere sane.
     """
     openswarm = Path.home() / ".openswarm" / "skills"
     claude = Path.home() / ".claude" / "skills"
-    if openswarm.is_dir():
-        return openswarm
+    for _, root in skill_roots():
+        if (root / ".skills_index.json").is_file():
+            return root
     if claude.is_dir():
         return claude
+    if openswarm.is_dir():
+        return openswarm
     return openswarm
 
 
