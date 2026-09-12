@@ -24,6 +24,21 @@ from backend.apps.gitgraph.discovery import (
 API_ROOT = "https://api.github.com"
 _HTTP_TIMEOUT = 20
 
+# The repo description is the one durable signal that a repo is one of ours and,
+# now, WHICH kind it is. Apps and skills install to completely different places,
+# so the prefix has to distinguish them: a repo tagged "OpenSwarm skill:" lands
+# in the skills tree, everything else is an app. Both are recognised by
+# list_openswarm_repos; new repos are tagged by create_repo per `kind`.
+OPENSWARM_APP_PREFIX = "OpenSwarm app:"
+OPENSWARM_SKILL_PREFIX = "OpenSwarm skill:"
+
+
+@typechecked
+def description_for(kind: str, name: str) -> str:
+    """The GitHub description to stamp on a repo of the given kind."""
+    prefix = OPENSWARM_SKILL_PREFIX if kind == "skill" else OPENSWARM_APP_PREFIX
+    return f"{prefix} {name}"
+
 # A background sync touches every app at once, so one unreachable remote
 # must not hold the whole sweep open for the full network budget.
 _FETCH_TIMEOUT = 25
@@ -252,9 +267,16 @@ async def _repo_exists(client: httpx.AsyncClient, token: str, owner: str, name: 
 
 @typechecked
 async def create_repo(
-    path: Path, app_name: str, requested_name: Optional[str] = None
+    path: Path,
+    app_name: str,
+    requested_name: Optional[str] = None,
+    kind: str = "app",
 ) -> Tuple[bool, Any]:
-    """Create a private repo for this workspace and wire it up as origin."""
+    """Create a private repo for this workspace and wire it up as origin.
+
+    `kind` ("app" | "skill") decides the description prefix, which is how the
+    cloud picker later tells a skill repo apart from an app repo.
+    """
     token = read_token()
     if not token:
         return False, "Connect the GitHub integration in OpenSwarm settings first."
@@ -288,7 +310,7 @@ async def create_repo(
             json={
                 "name": name,
                 "private": True,
-                "description": f"OpenSwarm app: {app_name}",
+                "description": description_for(kind, app_name),
                 "auto_init": False,
             },
         )
@@ -317,12 +339,13 @@ async def create_repo(
 
 
 @typechecked
-async def update_description(path: Path, app_name: str) -> Tuple[bool, str]:
+async def update_description(path: Path, app_name: str, kind: str = "app") -> Tuple[bool, str]:
     """Repoint the repo's description at a new display name.
 
-    The description prefix ("OpenSwarm app: ...") is the only durable signal
-    that a repo is one of ours (see list_openswarm_repos), so a rename has to
-    keep it in step or the app drops out of Your cloud.
+    The description prefix ("OpenSwarm app: ..." / "OpenSwarm skill: ...") is
+    the only durable signal that a repo is one of ours and which kind it is
+    (see list_openswarm_repos), so a rename has to keep it in step or the
+    entity drops out of Your cloud.
     """
     token = read_token()
     if not token:
@@ -339,7 +362,7 @@ async def update_description(path: Path, app_name: str) -> Tuple[bool, str]:
         res = await client.patch(
             f"{API_ROOT}/repos/{owner}/{repo}",
             headers=_headers(token),
-            json={"description": f"OpenSwarm app: {app_name}"},
+            json={"description": description_for(kind, app_name)},
         )
     if res.status_code != 200:
         detail = ""

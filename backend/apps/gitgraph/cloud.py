@@ -15,6 +15,7 @@ click can't yank the ground out from under this backend process.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -28,12 +29,14 @@ from typeguard import typechecked
 
 from backend.apps.gitgraph.discovery import (
     _run_git_result,
+    encode_skill_id,
     is_flat_skill_id,
     is_skill_id,
     list_skills,
     openswarm_data_dir,
     resolve_entity,
     resolve_flat_skill_file,
+    skill_roots,
     workspace_path,
 )
 from backend.apps.gitgraph import github
@@ -49,7 +52,55 @@ from backend.apps.openswarm_host.openswarm_host import HOST, host_token
 _HTTP_TIMEOUT = 20
 _CLONE_TIMEOUT = 180
 
-_OPENSWARM_DESCRIPTION_PREFIX = "OpenSwarm app:"
+_OPENSWARM_DESCRIPTION_PREFIX = github.OPENSWARM_APP_PREFIX
+_OPENSWARM_SKILL_PREFIX = github.OPENSWARM_SKILL_PREFIX
+
+
+@typechecked
+def _classify(description: str) -> Optional[Tuple[str, str]]:
+    """(kind, display_name) for an OpenSwarm-tagged repo, or None if not ours.
+
+    The description prefix is the primary signal. Skills pushed before the
+    prefix existed still read "OpenSwarm app:"; those are caught by a cheap
+    SKILL.md probe back in list_openswarm_repos, not here.
+    """
+    if description.startswith(_OPENSWARM_SKILL_PREFIX):
+        return "skill", description[len(_OPENSWARM_SKILL_PREFIX):].strip()
+    if description.startswith(_OPENSWARM_DESCRIPTION_PREFIX):
+        return "app", description[len(_OPENSWARM_DESCRIPTION_PREFIX):].strip()
+    return None
+
+
+@typechecked
+async def _repo_is_legacy_skill(
+    client: "httpx.AsyncClient", token: str, owner: str, name: str, branch: Optional[str]
+) -> bool:
+    """Whether an app-tagged repo is really a skill pushed before the prefix.
+
+    A SKILL.md alone is NOT enough: every OpenSwarm app built from the template
+    ships a root SKILL.md right next to meta.json, so keying on SKILL.md flips
+    virtually every app into a skill. meta.json is the app identity file; a
+    genuine skill has SKILL.md and no meta.json. Require both conditions by
+    listing the repo root once and inspecting the top-level entries.
+    """
+    try:
+        params = {"ref": branch} if branch else None
+        res = await client.get(
+            f"{API_ROOT}/repos/{owner}/{name}/contents",
+            headers=_headers(token),
+            params=params,
+        )
+        if res.status_code != 200:
+            return False
+        entries = res.json()
+        if not isinstance(entries, list):
+            return False
+        names = {
+            e.get("name") for e in entries if isinstance(e, dict) and e.get("type") == "file"
+        }
+        return "SKILL.md" in names and "meta.json" not in names
+    except httpx.HTTPError:
+        return False
 
 
 @typechecked
@@ -137,6 +188,7 @@ async def list_openswarm_repos() -> Dict[str, Any]:
         return {"connected": False, "repos": [], "installed": {}}
 
     installed = _installed_remotes()
+    installed_skills = _installed_skill_remotes()
 
     repos: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
@@ -170,23 +222,27 @@ async def list_openswarm_repos() -> Dict[str, Any]:
                 if not isinstance(repo, dict):
                     continue
                 desc = repo.get("description") or ""
-                if not desc.startswith(_OPENSWARM_DESCRIPTION_PREFIX):
+                classified = _classify(desc)
+                if classified is None:
                     continue
+                kind, display = classified
                 slug = f"{(repo.get('owner') or {}).get('login', '').lower()}/{str(repo.get('name', '')).lower()}"
                 repos.append(
                     {
                         "owner": (repo.get("owner") or {}).get("login"),
                         "name": repo.get("name"),
                         "full_name": repo.get("full_name"),
-                        "description": desc[len(_OPENSWARM_DESCRIPTION_PREFIX):].strip() or None,
-                        "app_name": desc[len(_OPENSWARM_DESCRIPTION_PREFIX):].strip() or repo.get("name"),
+                        "kind": kind,
+                        "description": display or None,
+                        "app_name": display or repo.get("name"),
                         "html_url": repo.get("html_url"),
                         "clone_url": repo.get("clone_url"),
                         "private": bool(repo.get("private", False)),
                         "updated_at": repo.get("updated_at"),
                         "pushed_at": repo.get("pushed_at"),
                         "default_branch": repo.get("default_branch"),
-                        "installed_workspace_id": installed.get(slug),
+                        "_slug": slug,
+                        "installed_workspace_id": None,
                         "owner_avatar_url": (repo.get("owner") or {}).get("avatar_url"),
                         "shared_with_me": bool(
                             viewer and (repo.get("owner") or {}).get("login") != viewer
@@ -196,6 +252,37 @@ async def list_openswarm_repos() -> Dict[str, Any]:
             if len(batch) < 100:
                 break
             page += 1
+
+        # Legacy repos: a skill pushed before the "OpenSwarm skill:" prefix
+        # existed still reads "OpenSwarm app:". Probe only those app-tagged
+        # repos (concurrently, bounded by our own repo count) and reclassify
+        # the ones that are really skills, i.e. carry a root SKILL.md but no
+        # meta.json. meta.json is the app identity file every template app
+        # ships beside its own SKILL.md, so it's the signal that keeps a real
+        # app from masquerading as a skill.
+        app_repos = [r for r in repos if r["kind"] == "app"]
+        if app_repos:
+            probes = await asyncio.gather(
+                *(
+                    _repo_is_legacy_skill(
+                        client, token, r["owner"], r["name"], r["default_branch"]
+                    )
+                    for r in app_repos
+                )
+            )
+            for r, is_skill in zip(app_repos, probes):
+                if is_skill:
+                    r["kind"] = "skill"
+
+    # Resolve the "already installed" marker per row from the map that matches
+    # its FINAL kind, so a skill greys out against the skills tree and an app
+    # against the outputs registry. Done after reclassification so a legacy
+    # skill (pushed as an app) is checked against the right map.
+    for r in repos:
+        slug = r.pop("_slug", "")
+        r["installed_workspace_id"] = (
+            installed_skills.get(slug) if r["kind"] == "skill" else installed.get(slug)
+        )
 
     return {"connected": True, "repos": repos, "installed": installed, "viewer": viewer}
 
@@ -213,13 +300,53 @@ def _credential_env(token: str) -> Tuple[List[str], Dict[str, str]]:
 
 
 @typechecked
-async def install_repo(clone_url: str, app_name: str, description: str) -> Tuple[bool, Any]:
-    """Clone `clone_url` into a fresh workspace and register it as an app.
+def _skill_install_root() -> Path:
+    """Where a newly installed skill should be cloned.
 
-    The registry entry is deliberately minimal: it matches the shape
-    OpenSwarm's own dashboard writes for locally-built apps, minus the
-    fields we don't have (no session_id, no publish info). The runtime
-    picks it up on its next scan.
+    Prefers the newer ~/.openswarm/skills tree; falls back to ~/.claude/skills
+    only if that is the one that already exists. Creates the preferred tree
+    when neither is present so a fresh machine still installs somewhere sane.
+    """
+    openswarm = Path.home() / ".openswarm" / "skills"
+    claude = Path.home() / ".claude" / "skills"
+    if openswarm.is_dir():
+        return openswarm
+    if claude.is_dir():
+        return claude
+    return openswarm
+
+
+@typechecked
+def _installed_skill_remotes() -> Dict[str, str]:
+    """{owner/repo lowercased -> skill entity id} for every git-backed skill.
+
+    Lets the cloud picker grey out skills that are already installed, the
+    same way _installed_remotes does for apps.
+    """
+    installed: Dict[str, str] = {}
+    for tag, root in skill_roots():
+        for entry in root.iterdir():
+            if not entry.is_dir() or not (entry / ".git").is_dir():
+                continue
+            ok, out, _ = _run_git_result(["remote", "get-url", "origin"], entry)
+            if not ok:
+                continue
+            slug = _slug_from_url(out.strip())
+            if slug:
+                installed[slug] = encode_skill_id(tag, entry.name)
+    return installed
+
+
+@typechecked
+async def install_repo(
+    clone_url: str, app_name: str, description: str, kind: str = "app"
+) -> Tuple[bool, Any]:
+    """Clone `clone_url` and install it as an app or a skill.
+
+    For apps the clone lands in a fresh output workspace and gets a dashboard
+    registry entry. For skills it lands in the skills tree (~/.openswarm/skills)
+    as a plain folder with NO registry entry, so a skill stops masquerading as
+    a broken app card on the dashboard.
     """
     token = read_token()
     if not token:
@@ -228,6 +355,11 @@ async def install_repo(clone_url: str, app_name: str, description: str) -> Tuple
     slug = _slug_from_url(clone_url)
     if not slug:
         return False, "That doesn't look like a GitHub URL."
+
+    cred_args, cred_env = _credential_env(token)
+
+    if kind == "skill":
+        return _install_skill(clone_url, app_name, slug, cred_args, cred_env)
 
     if slug in _installed_remotes():
         return False, "That repo is already installed as an app."
@@ -244,7 +376,6 @@ async def install_repo(clone_url: str, app_name: str, description: str) -> Tuple
     workspace_id = uuid.uuid4().hex
     target = workspaces_root / workspace_id
 
-    cred_args, cred_env = _credential_env(token)
     ok, _, err = _run_git_result(
         [*cred_args, "clone", clone_url, str(target)],
         workspaces_root,
@@ -305,6 +436,57 @@ async def install_repo(clone_url: str, app_name: str, description: str) -> Tuple
         "name": app_name,
         "via_host": False,
         "host_error": host_err,
+    }
+
+
+@typechecked
+def _install_skill(
+    clone_url: str,
+    app_name: str,
+    slug: str,
+    cred_args: List[str],
+    cred_env: Dict[str, str],
+) -> Tuple[bool, Any]:
+    """Clone a skill repo into the skills tree as a plain folder.
+
+    Unlike an app, a skill gets NO dashboard registry entry: it lives as a
+    directory under ~/.openswarm/skills and is picked up by the normal skill
+    scan. The folder name is derived from the repo slug so it reads naturally
+    in the skills list.
+    """
+    if slug in _installed_skill_remotes():
+        return False, "That skill is already installed."
+
+    root = _skill_install_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, f"Couldn't prepare the skills folder: {exc}"
+
+    folder_name = slugify(app_name) or slug.split("/")[-1]
+    target = root / folder_name
+    if target.exists():
+        folder_name = f"{folder_name}-{uuid.uuid4().hex[:6]}"
+        target = root / folder_name
+
+    ok, _, err = _run_git_result(
+        [*cred_args, "clone", clone_url, str(target)],
+        root,
+        env=cred_env,
+    )
+    if not ok:
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        detail = err.strip().splitlines()[-1] if err.strip() else "git clone failed."
+        return False, detail
+
+    tag = next((t for t, r in skill_roots() if r == root), "openswarm")
+    return True, {
+        "id": encode_skill_id(tag, folder_name),
+        "name": app_name,
+        "kind": "skill",
+        "skill_dir": str(target),
+        "via_host": False,
     }
 
 

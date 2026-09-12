@@ -725,6 +725,7 @@ const Home: React.FC = () => {
         </Scroller>
         <CloudSheet
           open={cloudOpen}
+          source={source}
           onClose={() => setCloudOpen(false)}
           onInstalled={id => void handleInstalled(id)}
         />

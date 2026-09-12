@@ -80,6 +80,7 @@ class InstallRepoRequest(BaseModel):
     clone_url: str
     app_name: str
     description: Optional[str] = ""
+    kind: Optional[str] = None
 
 
 class InviteRequest(BaseModel):
@@ -772,7 +773,13 @@ async def cloud_repos() -> dict:
 async def cloud_install(body: InstallRepoRequest) -> dict:
     name = body.app_name.strip() or "Installed app"
     desc = (body.description or "").strip()
-    ok, result = await cloud.install_repo(body.clone_url, name, desc)
+    # Trust the client's classification when it sends one; otherwise fall back
+    # to the description prefix so a skill never silently installs as an app.
+    kind = body.kind
+    if kind not in ("app", "skill"):
+        classified = cloud._classify(desc)
+        kind = classified[0] if classified else "app"
+    ok, result = await cloud.install_repo(body.clone_url, name, desc, kind)
     debug(name, ok, result)
     if not ok:
         raise HTTPException(status_code=400, detail=result)

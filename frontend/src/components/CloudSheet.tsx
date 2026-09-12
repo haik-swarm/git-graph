@@ -30,6 +30,7 @@ interface CloudRepo {
   owner: string;
   name: string;
   full_name: string;
+  kind: 'app' | 'skill';
   description: string | null;
   app_name: string;
   html_url: string;
@@ -51,6 +52,7 @@ interface CloudState {
 
 interface Props {
   open: boolean;
+  source: 'apps' | 'skills';
   onClose: () => void;
   onInstalled: (workspaceId: string) => void;
 }
@@ -61,7 +63,7 @@ interface Props {
  * installed show a "Installed" badge instead of the Install button so a
  * double click can't spawn a duplicate.
  */
-const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
+const CloudSheet: React.FC<Props> = ({ open, source, onClose, onInstalled }) => {
   const c = useClaudeTokens();
   const [state, setState] = useState<CloudState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,25 +110,32 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
           clone_url: repo.clone_url,
           app_name: repo.app_name,
           description: repo.description ?? '',
+          kind: repo.kind,
         }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || `install ${res.status}`);
-      // Update the in-memory list so the button flips to "Installed" without
-      // another round trip.
+      // A skill install has no workspace_id (no dashboard registry entry); use
+      // its skill entity id as the "installed" marker so the button still
+      // flips to "Installed".
+      const marker = data?.workspace_id ?? data?.id ?? null;
       setState(prev =>
         prev
           ? {
               ...prev,
               repos: prev.repos.map(r =>
                 r.full_name === repo.full_name
-                  ? { ...r, installed_workspace_id: data.workspace_id }
+                  ? { ...r, installed_workspace_id: marker }
                   : r,
               ),
             }
           : prev,
       );
-      onInstalled(data.workspace_id);
+      // Only apps land on the dashboard, so only they need the parent to
+      // refresh and focus a new card.
+      if (repo.kind === 'app' && data?.workspace_id) {
+        onInstalled(data.workspace_id);
+      }
     } catch (err) {
       setInstallError(err instanceof Error ? err.message : 'Install failed.');
     } finally {
@@ -134,16 +143,32 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
     }
   };
 
+  const isSkills = source === 'skills';
+  const noun = isSkills ? 'skill' : 'app';
+
   const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
     if (!state) return [];
-    if (!q) return state.repos;
-    return state.repos.filter(r =>
+    // Only the current tab's kind: the Apps tab shows cloud apps, the
+    // Skills tab shows cloud skills. `source` is plural ('apps'/'skills'),
+    // repo `kind` is singular ('app'/'skill').
+    const wantKind = isSkills ? 'skill' : 'app';
+    const byKind = state.repos.filter(r => r.kind === wantKind);
+    const q = query.trim().toLowerCase();
+    if (!q) return byKind;
+    return byKind.filter(r =>
       [r.app_name, r.name, r.full_name, r.description ?? ''].some(f =>
         f.toLowerCase().includes(q),
       ),
     );
-  }, [state, query]);
+  }, [state, source, query]);
+
+  // How many cloud repos exist for this tab's kind, ignoring the search box,
+  // so the empty state can say "none yet" vs "none match your search".
+  const kindCount = useMemo(() => {
+    if (!state) return 0;
+    const wantKind = isSkills ? 'skill' : 'app';
+    return state.repos.filter(r => r.kind === wantKind).length;
+  }, [state, isSkills]);
 
   return (
     <Drawer
@@ -205,8 +230,8 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
           lineHeight: 1.5,
         }}
       >
-        Every OpenSwarm app you've pushed to GitHub. Install one to clone it
-        into a fresh workspace on this machine.
+        Every OpenSwarm {noun} you've pushed to GitHub. Install one to clone
+        it onto this machine.
       </Box>
 
       <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
@@ -267,11 +292,11 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
             title="Connect GitHub first"
             hint="Add the GitHub integration in OpenSwarm settings, then reopen this sheet."
           />
-        ) : state.repos.length === 0 ? (
+        ) : kindCount === 0 ? (
           <Placeholder
             icon={<SearchOffRoundedIcon />}
-            title="No OpenSwarm apps in the cloud yet"
-            hint="Push an app to GitHub from its repo view and it'll appear here."
+            title={`No OpenSwarm ${noun}s in the cloud yet`}
+            hint={`Push a ${noun} to GitHub from its repo view and it'll appear here.`}
           />
         ) : rows.length === 0 ? (
           <Placeholder
