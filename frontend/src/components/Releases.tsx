@@ -3,6 +3,8 @@ import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
+import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
+import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import CloudOffRoundedIcon from '@mui/icons-material/CloudOffRounded';
@@ -313,7 +315,18 @@ const Releases: React.FC<Props> = ({ onOpen }) => {
                       {app.owner}/{app.repo}
                     </Box>
                   </Box>
-                  <Box sx={{ ...statusChip(c, 'accent'), fontFamily: c.font.mono }}>
+                  <Box
+                    sx={statusChip(c, app.kind === 'skill' ? 'success' : 'accent')}
+                    title={app.kind === 'skill' ? 'Skill release' : 'App release'}
+                  >
+                    {app.kind === 'skill' ? (
+                      <ExtensionRoundedIcon />
+                    ) : (
+                      <WidgetsRoundedIcon />
+                    )}
+                    {app.kind === 'skill' ? 'Skill' : 'App'}
+                  </Box>
+                  <Box sx={{ ...statusChip(c, 'neutral'), fontFamily: c.font.mono }}>
                     {app.latest.tag ?? app.latest.name}
                   </Box>
                 </Box>
