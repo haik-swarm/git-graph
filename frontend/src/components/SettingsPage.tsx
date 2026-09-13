@@ -33,13 +33,11 @@ import {
  * configures Git Graph in one place instead of hunting through app popovers.
  */
 interface Props {
-  /** Scope for the shared .gitignore section: app repos or skill repos. */
-  source: 'apps' | 'skills';
   /** Editing the shared list can change what git sees as dirty upstream. */
   onIgnoreSaved?: () => void;
 }
 
-const SettingsPage: React.FC<Props> = ({ source, onIgnoreSaved }) => {
+const SettingsPage: React.FC<Props> = ({ onIgnoreSaved }) => {
   const c = useClaudeTokens();
   return (
     <>
@@ -65,7 +63,7 @@ const SettingsPage: React.FC<Props> = ({ source, onIgnoreSaved }) => {
         >
           <GitHubSection />
           <IconSection />
-          <IgnoreSection source={source} onSaved={onIgnoreSaved} />
+          <IgnoreSection onSaved={onIgnoreSaved} />
         </Box>
       </Scroller>
     </>
@@ -718,11 +716,12 @@ interface IgnoreState {
   apps: AppRow[];
 }
 
-const IgnoreSection: React.FC<{ source: 'apps' | 'skills'; onSaved?: () => void }> = ({
-  source,
-  onSaved,
-}) => {
+const IgnoreSection: React.FC<{ onSaved?: () => void }> = ({ onSaved }) => {
   const c = useClaudeTokens();
+  // Apps and skills keep separate shared lists, so this is a real scope switch
+  // (not a display filter): flipping it reloads the other list. Owned locally
+  // now that there is no global source.
+  const [source, setSource] = useState<'apps' | 'skills'>('apps');
   const noun = source === 'skills' ? 'skill' : 'app';
   const nounPlural = source === 'skills' ? 'skills' : 'apps';
   const [state, setState] = useState<IgnoreState | null>(null);
@@ -818,6 +817,47 @@ const IgnoreSection: React.FC<{ source: 'apps' | 'skills'; onSaved?: () => void 
       title="Global .gitignore"
       subtitle={`One list, mirrored into every tracked ${noun} as a managed block.`}
     >
+      <Box
+        role="tablist"
+        aria-label="Edit the apps or skills ignore list"
+        sx={{
+          display: 'inline-flex',
+          gap: '2px',
+          p: '2px',
+          mb: 1.5,
+          borderRadius: `${c.radius.sm}px`,
+          background: c.bg.secondary,
+          border: `1px solid ${c.border.subtle}`,
+        }}
+      >
+        {(['apps', 'skills'] as const).map(key => {
+          const active = source === key;
+          return (
+            <ButtonBase
+              key={key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSource(key)}
+              sx={{
+                px: '14px',
+                height: 24,
+                borderRadius: `${c.radius.xs}px`,
+                ...c.type.caption,
+                fontWeight: active ? 600 : 500,
+                textTransform: 'capitalize',
+                color: active ? c.text.primary : c.text.tertiary,
+                background: active ? c.bg.surface : 'transparent',
+                boxShadow: active ? c.shadow.sm : 'none',
+                transition: c.transition,
+                '&:hover': { color: c.text.primary },
+              }}
+            >
+              {key}
+            </ButtonBase>
+          );
+        })}
+      </Box>
+
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
           <CircularProgress size={18} sx={{ color: c.text.tertiary }} />

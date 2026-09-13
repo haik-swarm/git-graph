@@ -87,12 +87,12 @@ const Home: React.FC = () => {
   const c = useClaudeTokens();
   const { mode: themeMode, toggleMode } = useThemeMode();
 
-  // Which entity source the whole view is bound to. Apps read from the
-  // workspace registry; skills read from the on-disk skill trees. Both return
-  // the same AppEntry shape and both flow through the id-keyed git endpoints,
-  // so switching source only swaps the list + status URLs — the graph, commit,
-  // restore, and GitHub panels are already generic.
-  const [source, setSource] = useState<'apps' | 'skills'>('apps');
+  // Both entity sources are loaded at once and merged into one list, each entry
+  // tagged with its `kind`. Apps read from the workspace registry; skills read
+  // from the on-disk skill trees. Both return the same AppEntry shape and both
+  // flow through the id-keyed git endpoints, so the graph, commit, restore, and
+  // GitHub panels are already generic. There is no global source switch — the
+  // rail and each page own their own display filter.
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
   const [mode, setMode] = useState<'home' | 'app' | 'releases' | 'settings'>('home');
@@ -127,15 +127,43 @@ const Home: React.FC = () => {
   const [renameOpen, setRenameOpen] = useState(false);
   const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
+  // Fetch both sources in parallel and merge. Each list is tagged with its
+  // kind so downstream filters never have to parse the id prefix. If one fetch
+  // fails we keep the other's results rather than blanking the whole list.
   const refetchApps = useCallback(async (): Promise<AppEntry[]> => {
-    const url = source === 'skills' ? GITGRAPH_SKILLS_URL : GITGRAPH_APPS_URL;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${source} ${res.status}`);
-    const data = await res.json();
-    const list: AppEntry[] = data.apps ?? [];
-    setApps(list);
-    return list;
-  }, [source]);
+    const [appsRes, skillsRes] = await Promise.allSettled([
+      fetch(GITGRAPH_APPS_URL),
+      fetch(GITGRAPH_SKILLS_URL),
+    ]);
+    const read = async (
+      r: PromiseSettledResult<Response>,
+      kind: 'app' | 'skill',
+    ): Promise<AppEntry[]> => {
+      if (r.status !== 'fulfilled' || !r.value.ok) return [];
+      try {
+        const data = await r.value.json();
+        const list: AppEntry[] = data.apps ?? [];
+        return list.map(a => ({ ...a, kind }));
+      } catch {
+        return [];
+      }
+    };
+    const [appList, skillList] = await Promise.all([
+      read(appsRes, 'app'),
+      read(skillsRes, 'skill'),
+    ]);
+    // Both fetches failing is the only real error — surface it so the effect
+    // can show the backend-unreachable state instead of an empty list.
+    if (
+      appsRes.status === 'rejected' &&
+      skillsRes.status === 'rejected'
+    ) {
+      throw new Error('both list fetches failed');
+    }
+    const merged = [...appList, ...skillList];
+    setApps(merged);
+    return merged;
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -209,18 +237,30 @@ const Home: React.FC = () => {
   const refreshHomeMeta = useCallback(async () => {
     setMetaBusy(true);
     try {
-      const url = source === 'skills' ? GITGRAPH_SKILLS_STATUS_URL : GITGRAPH_STATUS_URL;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
-      const raw = (data?.status ?? {}) as Record<string, HomeMeta>;
-      setHomeMeta(raw);
+      const [appsRes, skillsRes] = await Promise.allSettled([
+        fetch(GITGRAPH_STATUS_URL),
+        fetch(GITGRAPH_SKILLS_STATUS_URL),
+      ]);
+      const read = async (
+        r: PromiseSettledResult<Response>,
+      ): Promise<Record<string, HomeMeta>> => {
+        if (r.status !== 'fulfilled' || !r.value.ok) return {};
+        try {
+          const data = await r.value.json();
+          return (data?.status ?? {}) as Record<string, HomeMeta>;
+        } catch {
+          return {};
+        }
+      };
+      const [appMeta, skillMeta] = await Promise.all([read(appsRes), read(skillsRes)]);
+      // Keyed by prefixed id, so a plain spread can't collide across sources.
+      setHomeMeta({ ...appMeta, ...skillMeta });
     } catch {
       /* Non-fatal: cards keep whatever they last saw. */
     } finally {
       setMetaBusy(false);
     }
-  }, [source]);
+  }, []);
 
   // Who each app is shared with. Merged rather than replaced so an app the
   // sweep couldn't read keeps whatever it last knew instead of dropping
@@ -267,15 +307,21 @@ const Home: React.FC = () => {
     }
   }, []);
 
+  // How many app-kind entries are loaded. The collab sweep is
+  // workspace-app-only, so skill entries never enter it; their rail rows stay a
+  // plain Tracked/Untracked list. Derived once here and reused as an effect dep.
+  const appKindCount = useMemo(
+    () => apps.filter(a => a.kind === 'app').length,
+    [apps],
+  );
+
   // The rail is on screen in every mode, not just Home, so its grouping is
-  // swept once the app list is known rather than on Home entry. Skipped for
-  // skills: the collab sweep is workspace-app-only, and skills have no
-  // sharing concept yet, so the rail shows them as a plain Tracked/Untracked
-  // list instead.
+  // swept once the app list is known rather than on Home entry. Runs whenever
+  // any app-kind entries exist; skills are excluded on the backend sweep.
   useEffect(() => {
-    if (source !== 'apps' || apps.length === 0) return;
+    if (appKindCount === 0) return;
     void refreshSharing();
-  }, [source, apps.length, refreshSharing]);
+  }, [appKindCount, refreshSharing]);
 
   // Re-scan on every view change so returning to Home (or to an app page,
   // or from another window entirely) doesn't leave stale numbers.
@@ -289,9 +335,9 @@ const Home: React.FC = () => {
     // Home-only: it's the expensive one, and Home is where its freshness
     // badge is actually rendered.
     const scan = refreshHomeMeta();
-    // The remote sync is workspace-app-only (it fetches app GitHub remotes),
-    // so it stays off for skills; their status is local-git only.
-    if (mode === 'home' && source === 'apps') void scan.then(() => syncRemotes());
+    // The remote sync is workspace-app-only (it fetches app GitHub remotes) and
+    // merges results by id, so skill entries are simply never touched by it.
+    if (mode === 'home') void scan.then(() => syncRemotes());
     const onFocus = () => {
       if (document.visibilityState === 'visible') void refreshHomeMeta();
     };
@@ -365,30 +411,6 @@ const Home: React.FC = () => {
     setMode('home');
     setSelectedSha(null);
   }, []);
-
-  // Flip the whole view between apps and skills. Everything downstream reads
-  // from `apps`/`homeMeta`, which the source-aware fetches refill, so this
-  // just clears the current selection, resets the per-source sweeps, and
-  // bounces to Home; the fetch effects (keyed on `source`) reload the lists.
-  const switchSource = useCallback(
-    (next: 'apps' | 'skills') => {
-      setSource(prev => {
-        if (prev === next) return prev;
-        setSelected(null);
-        setMode('home');
-        setSelectedSha(null);
-        setApps([]);
-        setHomeMeta({});
-        setSharing({});
-        // Skills have no sharing sweep, so their rail is a plain
-        // Tracked/Untracked list — 'unavailable' is the phase that renders
-        // that. Apps go back through 'loading' until the sweep resolves.
-        setSharingPhase(next === 'skills' ? 'unavailable' : 'loading');
-        return next;
-      });
-    },
-    [],
-  );
 
   const goReleases = useCallback(() => {
     setMode('releases');
@@ -466,8 +488,6 @@ const Home: React.FC = () => {
       sharing={sharing}
       sharingPhase={sharingPhase}
       repoState={repoState}
-      source={source}
-      onSwitchSource={switchSource}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);
@@ -564,7 +584,6 @@ const Home: React.FC = () => {
     return (
       <Shell rail={rail}>
         <Releases
-          source={source}
           onOpen={workspaceId => {
             const app = apps.find(a => a.workspace_id === workspaceId);
             if (app) openApp(app);
@@ -577,7 +596,7 @@ const Home: React.FC = () => {
   if (mode === 'settings') {
     return (
       <Shell rail={rail}>
-        <SettingsPage source={source} onIgnoreSaved={() => void refreshHomeMeta()} />
+        <SettingsPage onIgnoreSaved={() => void refreshHomeMeta()} />
       </Shell>
     );
   }
@@ -590,7 +609,7 @@ const Home: React.FC = () => {
             Home
           </Box>
           <Box sx={{ ...c.type.callout, color: c.text.tertiary }}>
-            {apps.length} {apps.length === 1 ? 'app' : 'apps'}
+            {apps.length} {apps.length === 1 ? 'item' : 'items'}
           </Box>
           <Box sx={{ flex: 1 }} />
           <Tooltip title="Your cloud — install any OpenSwarm app you've pushed to GitHub">
@@ -670,7 +689,6 @@ const Home: React.FC = () => {
               apps={apps}
               meta={homeMeta}
               metaBusy={metaBusy}
-              source={source}
               onOpen={openApp}
               onTrack={trackApp}
               trackingId={trackingId}
@@ -685,7 +703,6 @@ const Home: React.FC = () => {
         </Scroller>
         <CloudSheet
           open={cloudOpen}
-          source={source}
           onClose={() => setCloudOpen(false)}
           onInstalled={id => void handleInstalled(id)}
         />
@@ -693,7 +710,6 @@ const Home: React.FC = () => {
           open={iconSheetOpen}
           onClose={() => setIconSheetOpen(false)}
           apps={apps}
-          source={source}
           onDone={refreshHome}
         />
       </Shell>
@@ -945,7 +961,7 @@ const Home: React.FC = () => {
           hasRemote={hasRemote}
           remoteHtmlUrl={remoteHtmlUrl}
           orphanOutputId={selected.workspace_id ? null : selected.output_id ?? selected.id}
-          isSkill={source === 'skills'}
+          isSkill={selected.kind === 'skill'}
           onDeleted={handleDeleted}
         />
       )}

@@ -60,7 +60,6 @@ interface Props {
   open: boolean;
   onClose: () => void;
   apps: AppEntry[];
-  source: 'apps' | 'skills';
   /** Fired after a commit fan-out so avatars / has_icon refresh upstream. */
   onDone: () => void;
 }
@@ -76,14 +75,24 @@ const msg = (e: unknown, fallback: string) =>
  * commit, mirroring BulkActionBar's phase machinery, reusing IconPanel's
  * generate / poll / apply calls unchanged.
  */
-const BulkIconSheet: React.FC<Props> = ({ open, onClose, apps, source, onDone }) => {
+const BulkIconSheet: React.FC<Props> = ({ open, onClose, apps, onDone }) => {
   const c = useClaudeTokens();
 
-  // Only tracked entities have a repo to commit an icon.* into.
-  const tracked = useMemo(
-    () => apps.filter(a => a.has_git && a.workspace_exists && a.workspace_id),
-    [apps],
-  );
+  // Local target filter; the sheet no longer inherits a global source.
+  const [kind, setKind] = useState<'all' | 'apps' | 'skills'>('all');
+
+  // Only tracked entities have a repo to commit an icon.* into, and only those
+  // matching the selected kind.
+  const tracked = useMemo(() => {
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
+    return apps.filter(
+      a =>
+        a.has_git &&
+        a.workspace_exists &&
+        a.workspace_id &&
+        (kind === 'all' || a.kind === wantKind),
+    );
+  }, [apps, kind]);
 
   const [phase, setPhase] = useState<Phase>('select');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -314,7 +323,7 @@ const BulkIconSheet: React.FC<Props> = ({ open, onClose, apps, source, onDone })
   const busy = phase === 'generating' || phase === 'committing';
   const chosenCount = tracked.filter(a => chosen.has(a.workspace_id)).length;
   const missingCount = tracked.filter(a => !a.has_icon).length;
-  const noun = source === 'skills' ? 'skill' : 'app';
+  const noun = kind === 'skills' ? 'skill' : kind === 'apps' ? 'app' : 'item';
   const imageWithoutKey = engines.includes('image') && !openaiKeySet;
 
   const reviewIncluded = tracked.filter(
@@ -387,6 +396,50 @@ const BulkIconSheet: React.FC<Props> = ({ open, onClose, apps, source, onDone })
         (styles: {styles.join(', ') || '—'} · engines: {engines.join(', ') || '—'} ·{' '}
         {model}). Each {noun}'s prompt seeds from its own name and description.
       </Box>
+
+      {phase === 'select' && (
+        <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
+          <Box
+            role="tablist"
+            aria-label="Target apps, skills, or all"
+            sx={{
+              display: 'flex',
+              gap: '2px',
+              p: '2px',
+              borderRadius: `${c.radius.sm}px`,
+              background: c.bg.secondary,
+              border: `1px solid ${c.border.subtle}`,
+            }}
+          >
+            {(['all', 'apps', 'skills'] as const).map(key => {
+              const active = kind === key;
+              return (
+                <ButtonBase
+                  key={key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setKind(key)}
+                  sx={{
+                    flex: 1,
+                    height: 24,
+                    borderRadius: `${c.radius.xs}px`,
+                    ...c.type.caption,
+                    fontWeight: active ? 600 : 500,
+                    textTransform: 'capitalize',
+                    color: active ? c.text.primary : c.text.tertiary,
+                    background: active ? c.bg.surface : 'transparent',
+                    boxShadow: active ? c.shadow.sm : 'none',
+                    transition: c.transition,
+                    '&:hover': { color: c.text.primary },
+                  }}
+                >
+                  {key}
+                </ButtonBase>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
 
       {imageWithoutKey && (
         <Box

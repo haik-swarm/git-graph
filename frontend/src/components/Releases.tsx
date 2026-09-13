@@ -38,13 +38,13 @@ interface ReleasedApp {
   latest: ReleaseEntry;
   releases: ReleaseEntry[];
   count: number;
+  /** Which sweep this entry came from. Tagged when the merged map is built. */
+  kind: 'app' | 'skill';
 }
 
 interface Props {
   /** Jump to an app's git-graph view when its card is clicked. */
   onOpen: (workspaceId: string) => void;
-  /** Which entity tree to list releases for; skills use their own sweep. */
-  source?: 'apps' | 'skills';
 }
 
 /**
@@ -52,57 +52,88 @@ interface Props {
  * The reverse of the per-app Release panel: that panel publishes a release,
  * this tab is the shelf of everything already shipped, newest release first.
  */
-const Releases: React.FC<Props> = ({ onOpen, source = 'apps' }) => {
+const Releases: React.FC<Props> = ({ onOpen }) => {
   const c = useClaudeTokens();
   const [released, setReleased] = useState<Record<string, ReleasedApp> | null>(null);
   const [connected, setConnected] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // Releases owns its own kind filter now that there is no global source.
+  const [kind, setKind] = useState<'all' | 'apps' | 'skills'>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        source === 'skills'
-          ? GITGRAPH_SKILLS_RELEASES_SWEEP_URL
-          : GITGRAPH_RELEASES_SWEEP_URL,
-      );
-      if (!res.ok) throw new Error(`load ${res.status}`);
-      const data = await res.json();
-      setConnected(Boolean(data?.connected));
-      setReleased((data?.released ?? {}) as Record<string, ReleasedApp>);
+      const [appsRes, skillsRes] = await Promise.allSettled([
+        fetch(GITGRAPH_RELEASES_SWEEP_URL),
+        fetch(GITGRAPH_SKILLS_RELEASES_SWEEP_URL),
+      ]);
+      const read = async (
+        r: PromiseSettledResult<Response>,
+        entryKind: 'app' | 'skill',
+      ): Promise<{ connected: boolean; released: Record<string, ReleasedApp> }> => {
+        if (r.status !== 'fulfilled' || !r.value.ok) {
+          return { connected: false, released: {} };
+        }
+        const data = await r.value.json();
+        const raw = (data?.released ?? {}) as Record<string, ReleasedApp>;
+        const tagged: Record<string, ReleasedApp> = {};
+        for (const [id, app] of Object.entries(raw)) {
+          tagged[id] = { ...app, kind: entryKind };
+        }
+        return { connected: Boolean(data?.connected), released: tagged };
+      };
+      const [apps, skills] = await Promise.all([
+        read(appsRes, 'app'),
+        read(skillsRes, 'skill'),
+      ]);
+      // Both sweeps failing is the only real error; a single failure still
+      // shows the other's shelf. Keyed by prefixed id, so the spread is safe.
+      if (appsRes.status === 'rejected' && skillsRes.status === 'rejected') {
+        throw new Error('both release sweeps failed');
+      }
+      setConnected(apps.connected || skills.connected);
+      setReleased({ ...apps.released, ...skills.released });
     } catch (err) {
       setReleased({});
       setError(err instanceof Error ? err.message : "We couldn't load releases.");
     } finally {
       setLoading(false);
     }
-  }, [source]);
+  }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const shown = useMemo(() => {
+  // The kind-filtered set, before search. The count chip reflects this so it
+  // tracks the active local filter rather than the whole merged shelf.
+  const kindEntries = useMemo(() => {
     const entries = Object.entries(released ?? {});
+    if (kind === 'all') return entries;
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
+    return entries.filter(([, a]) => a.kind === wantKind);
+  }, [released, kind]);
+
+  const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
-      ? entries.filter(
+      ? kindEntries.filter(
           ([, a]) =>
             a.name.toLowerCase().includes(q) ||
             `${a.owner}/${a.repo}`.toLowerCase().includes(q),
         )
-      : entries;
+      : kindEntries;
     // Most recently released first, so the freshest ship sits at the top.
-    return filtered.sort(
+    return [...filtered].sort(
       ([, a], [, b]) =>
         (b.latest.created_at ?? '').localeCompare(a.latest.created_at ?? ''),
     );
-  }, [released, query]);
+  }, [kindEntries, query]);
 
-  const total = released ? Object.keys(released).length : 0;
+  const total = kindEntries.length;
 
   return (
     <>
@@ -111,6 +142,47 @@ const Releases: React.FC<Props> = ({ onOpen, source = 'apps' }) => {
           <LocalOfferRoundedIcon sx={{ fontSize: 16, color: c.text.tertiary }} />
           <Box sx={{ ...c.type.headline, color: c.text.primary }}>Releases</Box>
           {total > 0 && <Box sx={{ ...statusChip(c, 'neutral') }}>{total}</Box>}
+        </Box>
+
+        <Box
+          role="tablist"
+          aria-label="Show apps, skills, or all releases"
+          sx={{
+            display: 'flex',
+            gap: '2px',
+            p: '2px',
+            ml: 1,
+            borderRadius: `${c.radius.sm}px`,
+            background: c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
+          }}
+        >
+          {(['all', 'apps', 'skills'] as const).map(key => {
+            const active = kind === key;
+            return (
+              <ButtonBase
+                key={key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setKind(key)}
+                sx={{
+                  px: '10px',
+                  height: 24,
+                  borderRadius: `${c.radius.xs}px`,
+                  ...c.type.caption,
+                  fontWeight: active ? 600 : 500,
+                  textTransform: 'capitalize',
+                  color: active ? c.text.primary : c.text.tertiary,
+                  background: active ? c.bg.surface : 'transparent',
+                  boxShadow: active ? c.shadow.sm : 'none',
+                  transition: c.transition,
+                  '&:hover': { color: c.text.primary },
+                }}
+              >
+                {key}
+              </ButtonBase>
+            );
+          })}
         </Box>
 
         <Box sx={{ flex: 1 }} />

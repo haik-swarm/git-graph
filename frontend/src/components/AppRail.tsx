@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -46,6 +46,19 @@ export type SharingPhase =
   /** No GitHub, or the sweep failed. Sharing is unknowable, so don't guess. */
   | 'unavailable';
 
+/** The rail's display-only filter over the merged apps+skills list. */
+type RailKind = 'all' | 'apps' | 'skills';
+
+const RAIL_KIND_KEY = 'gitgraph.railKind';
+
+const RAIL_KINDS: RailKind[] = ['all', 'apps', 'skills'];
+
+const RAIL_KIND_LABEL: Record<RailKind, string> = {
+  all: 'All',
+  apps: 'Apps',
+  skills: 'Skills',
+};
+
 interface Props {
   apps: AppEntry[];
   selected: AppEntry | null;
@@ -61,8 +74,6 @@ interface Props {
   sharing?: Record<string, Sharing>;
   sharingPhase?: SharingPhase;
   repoState?: Record<string, RepoState>;
-  source?: 'apps' | 'skills';
-  onSwitchSource?: (next: 'apps' | 'skills') => void;
 }
 
 /**
@@ -101,19 +112,41 @@ const AppRail: React.FC<Props> = ({
   sharing,
   sharingPhase = 'ready',
   repoState,
-  source = 'apps',
-  onSwitchSource,
 }) => {
   const c = useClaudeTokens();
+  // Display-only filter. The rail no longer drives a global source — both apps
+  // and skills are always loaded, and this just narrows what the rail shows.
+  const [railKind, setRailKind] = useState<RailKind>(() => {
+    try {
+      const saved = localStorage.getItem(RAIL_KIND_KEY);
+      return saved === 'apps' || saved === 'skills' ? saved : 'all';
+    } catch {
+      return 'all';
+    }
+  });
   const [query, setQuery] = useState('');
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_KIND_KEY, railKind);
+    } catch {
+      /* private mode / storage disabled — the toggle still works in-session */
+    }
+  }, [railKind]);
+
   const { tracked, privateApps, sharedApps, untracked } = useMemo(() => {
+    // Narrow to the selected kind first; search and grouping run over the
+    // result. 'all' keeps the merged list untouched. The control is plural
+    // ('apps'/'skills') while an entry's kind is singular, so map across.
+    const wantKind = railKind === 'apps' ? 'app' : 'skill';
+    const kindFiltered =
+      railKind === 'all' ? apps : apps.filter(a => a.kind === wantKind);
     const q = query.trim().toLowerCase();
     const filtered = q
-      ? apps.filter(a => a.name.toLowerCase().includes(q))
-      : apps;
+      ? kindFiltered.filter(a => a.name.toLowerCase().includes(q))
+      : kindFiltered;
     const trackedApps = filtered.filter(a => a.has_git && a.workspace_exists);
 
     /**
@@ -143,7 +176,7 @@ const AppRail: React.FC<Props> = ({
       sharedApps: byUrgency(trackedApps.filter(a => sharing?.[a.workspace_id]?.shared)),
       untracked: filtered.filter(a => !a.has_git || !a.workspace_exists),
     };
-  }, [apps, query, sharing, repoState]);
+  }, [apps, query, sharing, repoState, railKind]);
 
   const track = async (app: AppEntry) => {
     setTrackingId(app.workspace_id);
@@ -203,49 +236,46 @@ const AppRail: React.FC<Props> = ({
         </Box>
       </ButtonBase>
 
-      {onSwitchSource && (
-        <Box sx={{ px: '10px', pt: '10px', flexShrink: 0 }}>
-          <Box
-            role="tablist"
-            aria-label="Show apps or skills"
-            sx={{
-              display: 'flex',
-              gap: '2px',
-              p: '2px',
-              borderRadius: `${c.radius.sm}px`,
-              background: c.bg.secondary,
-              border: `1px solid ${c.border.subtle}`,
-            }}
-          >
-            {(['apps', 'skills'] as const).map(key => {
-              const active = source === key;
-              return (
-                <ButtonBase
-                  key={key}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => onSwitchSource(key)}
-                  sx={{
-                    flex: 1,
-                    height: 24,
-                    borderRadius: `${c.radius.xs}px`,
-                    ...c.type.caption,
-                    fontWeight: active ? 600 : 500,
-                    textTransform: 'capitalize',
-                    color: active ? c.text.primary : c.text.tertiary,
-                    background: active ? c.bg.surface : 'transparent',
-                    boxShadow: active ? c.shadow.sm : 'none',
-                    transition: c.transition,
-                    '&:hover': { color: c.text.primary },
-                  }}
-                >
-                  {key}
-                </ButtonBase>
-              );
-            })}
-          </Box>
+      <Box sx={{ px: '10px', pt: '10px', flexShrink: 0 }}>
+        <Box
+          role="tablist"
+          aria-label="Show apps, skills, or all"
+          sx={{
+            display: 'flex',
+            gap: '2px',
+            p: '2px',
+            borderRadius: `${c.radius.sm}px`,
+            background: c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
+          }}
+        >
+          {RAIL_KINDS.map(key => {
+            const active = railKind === key;
+            return (
+              <ButtonBase
+                key={key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setRailKind(key)}
+                sx={{
+                  flex: 1,
+                  height: 24,
+                  borderRadius: `${c.radius.xs}px`,
+                  ...c.type.caption,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? c.text.primary : c.text.tertiary,
+                  background: active ? c.bg.surface : 'transparent',
+                  boxShadow: active ? c.shadow.sm : 'none',
+                  transition: c.transition,
+                  '&:hover': { color: c.text.primary },
+                }}
+              >
+                {RAIL_KIND_LABEL[key]}
+              </ButtonBase>
+            );
+          })}
         </Box>
-      )}
+      </Box>
 
       <Box sx={{ px: '10px', pt: '10px', pb: '6px', flexShrink: 0 }}>
         <Box
@@ -263,7 +293,13 @@ const AppRail: React.FC<Props> = ({
           <Box
             component="input"
             value={query}
-            placeholder={source === 'skills' ? 'Filter skills' : 'Filter apps'}
+            placeholder={
+              railKind === 'skills'
+                ? 'Filter skills'
+                : railKind === 'apps'
+                  ? 'Filter apps'
+                  : 'Filter'
+            }
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
             sx={{
               flex: 1,
@@ -474,7 +510,13 @@ const AppRail: React.FC<Props> = ({
               textAlign: 'center',
             }}
           >
-            {query ? 'No matches' : source === 'skills' ? 'No skills yet' : 'No apps yet'}
+            {query
+              ? 'No matches'
+              : railKind === 'skills'
+                ? 'No skills yet'
+                : railKind === 'apps'
+                  ? 'No apps yet'
+                  : 'Nothing here yet'}
           </Box>
         )}
       </Box>

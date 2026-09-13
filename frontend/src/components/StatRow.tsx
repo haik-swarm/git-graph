@@ -24,7 +24,8 @@ interface Meta {
 interface Props {
   apps: AppEntry[];
   meta: Record<string, Meta>;
-  source?: 'apps' | 'skills';
+  /** Singular noun for the headline labels ('app', 'skill', or 'item'). */
+  noun?: string;
   onFocusDirty: () => void;
   dirtyActive: boolean;
   onFocusUnpushed: () => void;
@@ -45,7 +46,7 @@ interface Props {
 const StatRow: React.FC<Props> = ({
   apps,
   meta,
-  source = 'apps',
+  noun = 'app',
   onFocusDirty,
   dirtyActive,
   onFocusUnpushed,
@@ -57,7 +58,6 @@ const StatRow: React.FC<Props> = ({
   onSyncRemotes,
 }) => {
   const c = useClaudeTokens();
-  const noun = source === 'skills' ? 'skill' : 'app';
   const nounFor = (n: number) => `${noun}${n === 1 ? '' : 's'}`;
 
   const stats = React.useMemo(() => {

@@ -52,7 +52,6 @@ interface CloudState {
 
 interface Props {
   open: boolean;
-  source: 'apps' | 'skills';
   onClose: () => void;
   onInstalled: (workspaceId: string) => void;
 }
@@ -63,8 +62,10 @@ interface Props {
  * installed show a "Installed" badge instead of the Install button so a
  * double click can't spawn a duplicate.
  */
-const CloudSheet: React.FC<Props> = ({ open, source, onClose, onInstalled }) => {
+const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
   const c = useClaudeTokens();
+  // Local install-target filter; the sheet no longer inherits a global source.
+  const [kind, setKind] = useState<'all' | 'apps' | 'skills'>('all');
   const [state, setState] = useState<CloudState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,16 +144,18 @@ const CloudSheet: React.FC<Props> = ({ open, source, onClose, onInstalled }) => 
     }
   };
 
-  const isSkills = source === 'skills';
-  const noun = isSkills ? 'skill' : 'app';
+  // Noun for the empty-state/header copy. 'all' has no single noun, so it
+  // falls back to the neutral "repo".
+  const noun = kind === 'skills' ? 'skill' : kind === 'apps' ? 'app' : 'repo';
 
   const rows = useMemo(() => {
     if (!state) return [];
-    // Only the current tab's kind: the Apps tab shows cloud apps, the
-    // Skills tab shows cloud skills. `source` is plural ('apps'/'skills'),
-    // repo `kind` is singular ('app'/'skill').
-    const wantKind = isSkills ? 'skill' : 'app';
-    const byKind = state.repos.filter(r => r.kind === wantKind);
+    // Narrow to the selected kind first. The selector is plural
+    // ('apps'/'skills'), repo `kind` is singular ('app'/'skill'); 'all' keeps
+    // both.
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
+    const byKind =
+      kind === 'all' ? state.repos : state.repos.filter(r => r.kind === wantKind);
     const q = query.trim().toLowerCase();
     if (!q) return byKind;
     return byKind.filter(r =>
@@ -160,15 +163,16 @@ const CloudSheet: React.FC<Props> = ({ open, source, onClose, onInstalled }) => 
         f.toLowerCase().includes(q),
       ),
     );
-  }, [state, source, query]);
+  }, [state, kind, query]);
 
-  // How many cloud repos exist for this tab's kind, ignoring the search box,
+  // How many cloud repos exist for the selected kind, ignoring the search box,
   // so the empty state can say "none yet" vs "none match your search".
   const kindCount = useMemo(() => {
     if (!state) return 0;
-    const wantKind = isSkills ? 'skill' : 'app';
+    if (kind === 'all') return state.repos.length;
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
     return state.repos.filter(r => r.kind === wantKind).length;
-  }, [state, isSkills]);
+  }, [state, kind]);
 
   return (
     <Drawer
@@ -232,6 +236,48 @@ const CloudSheet: React.FC<Props> = ({ open, source, onClose, onInstalled }) => 
       >
         Every OpenSwarm {noun} you've pushed to GitHub. Install one to clone
         it onto this machine.
+      </Box>
+
+      <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
+        <Box
+          role="tablist"
+          aria-label="Show apps, skills, or all cloud repos"
+          sx={{
+            display: 'flex',
+            gap: '2px',
+            p: '2px',
+            borderRadius: `${c.radius.sm}px`,
+            background: c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
+          }}
+        >
+          {(['all', 'apps', 'skills'] as const).map(key => {
+            const active = kind === key;
+            return (
+              <ButtonBase
+                key={key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setKind(key)}
+                sx={{
+                  flex: 1,
+                  height: 24,
+                  borderRadius: `${c.radius.xs}px`,
+                  ...c.type.caption,
+                  fontWeight: active ? 600 : 500,
+                  textTransform: 'capitalize',
+                  color: active ? c.text.primary : c.text.tertiary,
+                  background: active ? c.bg.surface : 'transparent',
+                  boxShadow: active ? c.shadow.sm : 'none',
+                  transition: c.transition,
+                  '&:hover': { color: c.text.primary },
+                }}
+              >
+                {key}
+              </ButtonBase>
+            );
+          })}
+        </Box>
       </Box>
 
       <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>

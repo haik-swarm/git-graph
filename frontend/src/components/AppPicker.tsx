@@ -12,6 +12,8 @@ import { gitgraphInitUrl } from '@/shared/state/API_ENDPOINTS';
 
 export interface AppEntry {
   id: string;
+  /** Which source list this entry came from. Set when the merged list is built. */
+  kind: 'app' | 'skill';
   name: string;
   description: string;
   /** Empty string when the record has no workspace behind it. */

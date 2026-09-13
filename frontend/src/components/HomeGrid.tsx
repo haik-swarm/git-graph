@@ -70,7 +70,6 @@ interface Props {
   apps: AppEntry[];
   meta: Record<string, Meta>;
   metaBusy: boolean;
-  source?: 'apps' | 'skills';
   onOpen: (app: AppEntry) => void;
   onTrack: (app: AppEntry) => Promise<void> | void;
   trackingId: string | null;
@@ -88,7 +87,6 @@ const HomeGrid: React.FC<Props> = ({
   apps,
   meta,
   metaBusy,
-  source = 'apps',
   onOpen,
   onTrack,
   trackingId,
@@ -102,6 +100,8 @@ const HomeGrid: React.FC<Props> = ({
   const [filter, setFilter] = React.useState<FilterKey>('all');
   const [sort, setSort] = React.useState<SortKey>('recent');
   const [view, setView] = React.useState<ViewKey>(loadView);
+  // Home decides its own kind now that the rail no longer dictates source.
+  const [kind, setKind] = React.useState<'all' | 'apps' | 'skills'>('all');
 
   React.useEffect(() => {
     try {
@@ -110,12 +110,25 @@ const HomeGrid: React.FC<Props> = ({
       /* private mode / storage disabled — the toggle still works in-session */
     }
   }, [view]);
-  const nounPlural = source === 'skills' ? 'skills' : 'apps';
-  const titleWord = source === 'skills' ? 'Your skills' : 'Your apps';
+  const nounPlural = kind === 'skills' ? 'skills' : kind === 'apps' ? 'apps' : 'items';
+  const nounSingular = kind === 'skills' ? 'skill' : kind === 'apps' ? 'app' : 'item';
+  const titleWord =
+    kind === 'skills' ? 'Your skills' : kind === 'apps' ? 'Your apps' : 'Your workspace';
+
+  // The headline stat cards read from whatever the kind toggle has selected,
+  // so switching Apps/Skills visibly moves the big numbers at the top of the
+  // page and not just the cards below the fold.
+  const kindApps = React.useMemo(() => {
+    if (kind === 'all') return apps;
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
+    return apps.filter(a => a.kind === wantKind);
+  }, [apps, kind]);
 
   const rows = React.useMemo(() => {
     const q = query.trim().toLowerCase();
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
     const base = apps.filter(a => {
+      if (kind !== 'all' && a.kind !== wantKind) return false;
       if (filter === 'tracked' && !(a.has_git && a.workspace_exists)) return false;
       if (filter === 'untracked' && a.has_git) return false;
       if (filter === 'dirty' && !(meta[a.workspace_id]?.dirty_count)) return false;
@@ -165,14 +178,30 @@ const HomeGrid: React.FC<Props> = ({
       return secondary(a, b);
     });
     return scored;
-  }, [apps, meta, filter, sort, query]);
+  }, [apps, meta, filter, sort, query, kind]);
 
   const counts = React.useMemo(() => {
+    const wantKind = kind === 'apps' ? 'app' : 'skill';
     let tracked = 0;
+    let total = 0;
     for (const a of apps) {
+      if (kind !== 'all' && a.kind !== wantKind) continue;
+      total += 1;
       if (a.has_git && a.workspace_exists) tracked += 1;
     }
-    return { tracked, total: apps.length };
+    return { tracked, total };
+  }, [apps, kind]);
+
+  // Per-kind totals for the kind toggle labels, so switching is visibly a
+  // filter and not cosmetic even when the changed cards sit below the fold.
+  const kindCounts = React.useMemo(() => {
+    let appCount = 0;
+    let skillCount = 0;
+    for (const a of apps) {
+      if (a.kind === 'skill') skillCount += 1;
+      else appCount += 1;
+    }
+    return { all: apps.length, apps: appCount, skills: skillCount };
   }, [apps]);
 
   const dirtyApps = React.useMemo(() => {
@@ -230,9 +259,9 @@ const HomeGrid: React.FC<Props> = ({
         </Box>
 
         <StatRow
-          apps={apps}
+          apps={kindApps}
           meta={meta}
-          source={source}
+          noun={nounSingular}
           dirtyActive={filter === 'dirty'}
           onFocusDirty={() => setFilter(f => (f === 'dirty' ? 'all' : 'dirty'))}
           unpushedActive={filter === 'unpushed'}
@@ -299,6 +328,16 @@ const HomeGrid: React.FC<Props> = ({
           </Box>
 
           <Segmented
+            value={kind}
+            onChange={setKind}
+            options={[
+              { id: 'all', label: `All · ${kindCounts.all}` },
+              { id: 'apps', label: `Apps · ${kindCounts.apps}` },
+              { id: 'skills', label: `Skills · ${kindCounts.skills}` },
+            ]}
+          />
+
+          <Segmented
             value={filter}
             onChange={setFilter}
             options={[
@@ -362,9 +401,9 @@ const HomeGrid: React.FC<Props> = ({
               : filter === 'dirty'
                 ? 'No workspace has uncommitted changes right now.'
                 : filter === 'unpushed'
-                  ? `Every tracked ${source === 'skills' ? 'skill' : 'app'} is up to date with its remote.`
+                  ? `Every tracked ${nounSingular} is up to date with its remote.`
                   : filter === 'unpublished'
-                    ? `Every tracked ${source === 'skills' ? 'skill' : 'app'} already has a GitHub remote.`
+                    ? `Every tracked ${nounSingular} already has a GitHub remote.`
                     : 'Switch filters to see the rest of your workspace.'
           }
         />
