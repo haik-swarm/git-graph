@@ -1,14 +1,18 @@
 """One-shot: stage everything dirty, ask the local LLM to write the
 message from the actual diff, commit, and push.
 
-The LLM is OpenSwarm's own bundled router (9Router at
-localhost:20128), so no external key is needed and no data leaves the
-machine other than what the user chose to push to GitHub anyway. If
-the router is asleep or the diff is empty, the caller sees a plain
-error string rather than a fabricated commit.
+The preferred LLM is OpenSwarm's own bundled router (9Router at
+localhost:20128), so when a Claude subscription is connected no external
+key is needed and no data leaves the machine other than what the user
+chose to push to GitHub anyway. When that router is unavailable (asleep,
+or no subscription connected) we fall back to the host's LLM endpoint,
+which uses whatever provider the user configured in OpenSwarm, including
+a Claude API key. If neither path works or the diff is empty, the caller
+sees a plain error string rather than a fabricated commit.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -76,11 +80,15 @@ def _collect_paths_and_diff(path: Path) -> Tuple[List[str], str, str]:
 
 
 async def _ask_llm(diff: str, file_list: List[str], app_name: str) -> str:
-    """Call the local router and return the message string.
+    """Draft the commit message, preferring the fast local router and
+    falling back to the host's configured provider.
 
-    Streaming is on (the endpoint's default) so we join deltas as they
-    arrive; a small server on the same box is fast, but reading the whole
-    body in one shot would still block on the final flush.
+    The primary path is OpenSwarm's bundled 9Router, which serves the
+    user's Claude subscription with streaming and no external key. When
+    that path is unavailable (router asleep, or no subscription connected)
+    we fall back to the host's /api/apps-sdk/llm endpoint, which routes
+    through whatever provider the user DID configure, including a Claude
+    API key saved in OpenSwarm's settings.
     """
     listing = "\n".join(f"  {p}" for p in file_list) or "  (none)"
     prompt = (
@@ -88,6 +96,27 @@ async def _ask_llm(diff: str, file_list: List[str], app_name: str) -> str:
         f"Changed files:\n{listing}\n\n"
         f"Diff:\n{diff or '(no textual diff, only file additions)'}"
     )
+    try:
+        return await _ask_router(prompt)
+    except Exception as router_exc:
+        try:
+            return await asyncio.to_thread(_ask_host, prompt)
+        except Exception as host_exc:
+            raise RuntimeError(
+                "Couldn't reach a model for the commit message. "
+                f"Subscription router: {router_exc}. "
+                f"API-key fallback: {host_exc}."
+            )
+
+
+async def _ask_router(prompt: str) -> str:
+    """Call the local 9Router (the user's Claude subscription) and return
+    the message string.
+
+    Streaming is on (the endpoint's default) so we join deltas as they
+    arrive. Raises on any non-200, transport error, or empty completion so
+    the caller can fall back to the host provider.
+    """
     body = {
         "model": _MODEL,
         "max_tokens": 400,
@@ -165,6 +194,23 @@ async def _ask_llm(diff: str, file_list: List[str], app_name: str) -> str:
     message = "".join(text_parts).strip()
     if message.startswith("```"):
         message = message.strip("`").split("\n", 1)[-1].rstrip("`").strip()
+    if not message:
+        raise RuntimeError("router returned an empty message")
+    return message
+
+
+def _ask_host(prompt: str) -> str:
+    """Fall back to the host LLM endpoint, which uses whatever provider the
+    user configured in OpenSwarm (e.g. a Claude API key) when no live
+    subscription is connected. Synchronous, so call it via a worker thread.
+    """
+    from backend.apps.openswarm_host.openswarm_host import llm
+
+    message = (llm(prompt, system=_SYSTEM, model="haiku", max_tokens=400) or "").strip()
+    if message.startswith("```"):
+        message = message.strip("`").split("\n", 1)[-1].rstrip("`").strip()
+    if not message:
+        raise RuntimeError("host provider returned an empty message")
     return message
 
 
