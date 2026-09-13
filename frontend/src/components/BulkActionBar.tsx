@@ -42,6 +42,8 @@ interface Props {
   dirtyApps: BulkEntry[];
   unpushedApps: BulkEntry[];
   unpublishedApps?: BulkEntry[];
+  /** Singular noun for the counted entities ('app', 'skill', or 'item'). */
+  noun?: string;
   onDone: (workspaceIds: string[]) => void;
 }
 
@@ -51,8 +53,10 @@ const BulkActionBar: React.FC<Props> = ({
   dirtyApps,
   unpushedApps,
   unpublishedApps = [],
+  noun = 'app',
   onDone,
 }) => {
+  const nounFor = (n: number) => `${noun}${n === 1 ? '' : 's'}`;
   const c = useClaudeTokens();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('magic');
@@ -98,13 +102,13 @@ const BulkActionBar: React.FC<Props> = ({
   }, [hasDirty, hasUnpushed, hasUnpublished, mode, defaultMode]);
 
   const headline = hasDirty
-    ? `${totalDirty} uncommitted file${totalDirty === 1 ? '' : 's'} across ${dirtyApps.length} app${dirtyApps.length === 1 ? '' : 's'}`
+    ? `${totalDirty} uncommitted file${totalDirty === 1 ? '' : 's'} across ${dirtyApps.length} ${nounFor(dirtyApps.length)}`
     : hasUnpushed
-      ? `${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} ready to push across ${unpushedApps.length} app${unpushedApps.length === 1 ? '' : 's'}`
-      : `${unpublishedApps.length} app${unpublishedApps.length === 1 ? '' : 's'} never published`;
+      ? `${totalUnpushed} commit${totalUnpushed === 1 ? '' : 's'} ready to push across ${unpushedApps.length} ${nounFor(unpushedApps.length)}`
+      : `${unpublishedApps.length} ${nounFor(unpublishedApps.length)} never published`;
 
   const publishAside = hasUnpublished
-    ? ` Plus ${unpublishedApps.length} app${unpublishedApps.length === 1 ? '' : 's'} never published.`
+    ? ` Plus ${unpublishedApps.length} ${nounFor(unpublishedApps.length)} never published.`
     : '';
   const subline = !hasDirty && !hasUnpushed
     ? 'Create a private GitHub repo for each and push, or pick which ones.'
@@ -249,6 +253,7 @@ const BulkActionBar: React.FC<Props> = ({
         <Box sx={{ borderTop: `1px solid ${c.border.subtle}`, pl: '3px' }}>
           <BulkPicker
             mode={mode}
+            noun={noun}
             entries={
               mode === 'publish'
                 ? unpublishedApps
@@ -268,6 +273,7 @@ const BulkActionBar: React.FC<Props> = ({
 
 interface PickerProps {
   mode: Mode;
+  noun?: string;
   entries: BulkEntry[];
   onBusyChange: (b: boolean) => void;
   onClose: () => void;
@@ -297,11 +303,13 @@ type Phase = 'select' | 'review' | 'done';
 
 const BulkPicker: React.FC<PickerProps> = ({
   mode,
+  noun = 'app',
   entries,
   onBusyChange,
   onClose,
   onDone,
 }) => {
+  const nounPlural = `${noun}s`;
   const c = useClaudeTokens();
   const [message, setMessage] = useState('');
   // Everything starts selected, which is what "all" in the buttons above
@@ -590,12 +598,12 @@ const BulkPicker: React.FC<PickerProps> = ({
     mode === 'magic'
       ? phase === 'review'
         ? 'Review each message'
-        : 'Magic update across apps'
+        : `Magic update across ${nounPlural}`
       : mode === 'commit'
-        ? 'Commit across apps'
+        ? `Commit across ${nounPlural}`
         : mode === 'publish'
-          ? 'Publish across apps'
-          : 'Push across apps';
+          ? `Publish across ${nounPlural}`
+          : `Push across ${nounPlural}`;
   const hint =
     mode === 'magic'
       ? phase === 'review'

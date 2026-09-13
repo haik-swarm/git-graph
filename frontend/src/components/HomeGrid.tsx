@@ -206,7 +206,7 @@ const HomeGrid: React.FC<Props> = ({
 
   const dirtyApps = React.useMemo(() => {
     const rows: BulkEntry[] = [];
-    for (const a of apps) {
+    for (const a of kindApps) {
       const m = meta[a.workspace_id];
       if (a.has_git && a.workspace_exists && m?.dirty_count) {
         rows.push({ app: a, count: m.dirty_count, hasRemote: Boolean(m.has_remote) });
@@ -215,11 +215,11 @@ const HomeGrid: React.FC<Props> = ({
     // Most changes first so the "who needs attention" order is obvious.
     rows.sort((a, b) => b.count - a.count);
     return rows;
-  }, [apps, meta]);
+  }, [kindApps, meta]);
 
   const unpushedApps = React.useMemo(() => {
     const rows: BulkEntry[] = [];
-    for (const a of apps) {
+    for (const a of kindApps) {
       const m = meta[a.workspace_id];
       if (a.has_git && a.workspace_exists && m?.has_remote && m?.unpushed) {
         rows.push({ app: a, count: m.unpushed, hasRemote: true });
@@ -227,14 +227,14 @@ const HomeGrid: React.FC<Props> = ({
     }
     rows.sort((a, b) => b.count - a.count);
     return rows;
-  }, [apps, meta]);
+  }, [kindApps, meta]);
 
   // Tracked apps that have never been published — no remote at all. Publishing
   // one creates its private repo and pushes every commit, so the count is the
   // whole log rather than an unpushed delta.
   const unpublishedApps = React.useMemo(() => {
     const rows: BulkEntry[] = [];
-    for (const a of apps) {
+    for (const a of kindApps) {
       const m = meta[a.workspace_id];
       if (isUnpublished(a, m)) {
         rows.push({ app: a, count: m?.commit_count ?? 0, hasRemote: false });
@@ -242,7 +242,7 @@ const HomeGrid: React.FC<Props> = ({
     }
     rows.sort((a, b) => b.count - a.count);
     return rows;
-  }, [apps, meta]);
+  }, [kindApps, meta]);
 
   return (
     <Box sx={{ px: 3, pb: 4 }}>
@@ -376,6 +376,7 @@ const HomeGrid: React.FC<Props> = ({
             dirtyApps={dirtyApps}
             unpushedApps={unpushedApps}
             unpublishedApps={unpublishedApps}
+            noun={nounSingular}
             onDone={onBulkDone}
           />
         </Box>
