@@ -972,16 +972,77 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   const c = useClaudeTokens();
+  const trackRef = React.useRef<HTMLDivElement | null>(null);
+  const btnRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const [pill, setPill] = React.useState<{ left: number; width: number } | null>(null);
+
+  // Measure the active item so a single pill can slide to it. Runs after
+  // layout (fonts, reflow) and on every value/option change.
+  React.useLayoutEffect(() => {
+    const track = trackRef.current;
+    const el = btnRefs.current[value];
+    if (!track || !el) return;
+    const measure = () => {
+      const t = track.getBoundingClientRect();
+      const e = el.getBoundingClientRect();
+      setPill({ left: e.left - t.left, width: e.width });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [value, options]);
+
   return (
-    <Box sx={{ display: 'flex', gap: '2px', p: '3px', ...sunkenField(c), flexShrink: 0, minHeight: 38 }}>
+    <Box
+      ref={trackRef}
+      sx={{
+        position: 'relative',
+        display: 'flex',
+        gap: '2px',
+        p: '3px',
+        ...sunkenField(c),
+        // sunkenField is for text inputs: it flips the track to the surface
+        // colour on focus-within, which here collides with the active pill's
+        // surface colour and hides the selection. Keep the track static so
+        // only the pill moves.
+        '&:focus-within': { background: c.bg.secondary, borderColor: c.border.subtle },
+        flexShrink: 0,
+        minHeight: 38,
+      }}
+    >
+      {pill && (
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            top: '3px',
+            bottom: '3px',
+            left: 0,
+            width: pill.width,
+            transform: `translateX(${pill.left}px)`,
+            background: c.bg.surface,
+            borderRadius: `${c.radius.xs}px`,
+            boxShadow: c.shadow.sm,
+            transition: `transform 260ms ${c.ease}, width 260ms ${c.ease}`,
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        />
+      )}
       {options.map(o => {
         const on = o.id === value;
         return (
           <Box
             component="button"
             key={o.id}
+            ref={(el: HTMLButtonElement | null) => {
+              btnRefs.current[o.id] = el;
+            }}
             onClick={() => onChange(o.id)}
             sx={{
+              position: 'relative',
+              zIndex: 1,
               px: 1.75,
               border: 'none',
               cursor: 'pointer',
@@ -989,9 +1050,8 @@ function Segmented<T extends string>({
               fontFamily: c.font.sans,
               ...c.type.body,
               color: on ? c.text.primary : c.text.muted,
-              background: on ? c.bg.surface : 'transparent',
-              boxShadow: on ? c.shadow.sm : 'none',
-              transition: c.transition,
+              background: 'transparent',
+              transition: `color 200ms ${c.ease}`,
               whiteSpace: 'nowrap',
               display: 'inline-grid',
               alignItems: 'center',
