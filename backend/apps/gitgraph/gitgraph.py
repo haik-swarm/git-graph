@@ -10,14 +10,12 @@ from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.gitgraph import (
-    audit,
     cloud,
     collab,
     github,
     global_ignore,
     icons,
     magic,
-    marketplace,
     release,
     restart_app,
     restart_notice,
@@ -86,20 +84,6 @@ class InstallRepoRequest(BaseModel):
 class InviteRequest(BaseModel):
     username: str
     permission: str = "push"
-
-
-class SubmitRequest(BaseModel):
-    app_name: str
-    pitch: str = ""
-
-
-class TakedownRequest(BaseModel):
-    app_name: str
-    reason: str = ""
-
-
-class AutofixRequest(BaseModel):
-    max_rounds: int = 3
 
 
 class ReleaseRequest(BaseModel):
@@ -665,7 +649,7 @@ async def skills_releases_sweep() -> dict:
     Iterates the on-disk skill trees instead of the app registry and resolves
     each through `resolve_entity` (skills carry a `skill:<tag>:<name>` id, not
     a bare workspace path). Otherwise identical: skills with no remote or no
-    published release are dropped rather than listed empty.
+    GitHub release are dropped rather than listed empty.
     """
     token = github.read_token()
     entries = list_skills()
@@ -784,99 +768,6 @@ async def cloud_install(body: InstallRepoRequest) -> dict:
     if not ok:
         raise HTTPException(status_code=400, detail=result)
     restart_notice.mark_pending("installed", name)
-    return result
-
-
-@gitgraph.router.get("/marketplace/listings")
-@typechecked
-async def marketplace_listings() -> dict:
-    """Every public app in the marketplace org."""
-    data = await marketplace.list_listings()
-    debug(len(data.get("listings", [])), data.get("ok"))
-    return data
-
-
-@gitgraph.router.get("/marketplace/published")
-@typechecked
-async def marketplace_published() -> dict:
-    """Which local apps are live in the marketplace, keyed by workspace."""
-    data = await marketplace.published_sweep()
-    debug(len(data.get("published", {})))
-    return data
-
-
-@gitgraph.router.post("/marketplace/audit/{workspace_id}")
-@typechecked
-async def marketplace_audit(workspace_id: str) -> dict:
-    """Scan what publishing would expose, before it's exposed."""
-    path = _resolve(workspace_id)
-    try:
-        result = await audit.scan(path)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    debug(workspace_id, result["counts"])
-    return result
-
-
-@gitgraph.router.post("/marketplace/audit/{workspace_id}/fix")
-@typechecked
-async def marketplace_audit_fix(workspace_id: str, body: AutofixRequest) -> dict:
-    """Let the model resolve the findings, rescanning after each round.
-
-    Edits land in the working tree uncommitted, so the diff shows up in
-    the graph the user already has open.
-    """
-    path = _resolve(workspace_id)
-    rounds = max(1, min(5, body.max_rounds))
-    try:
-        result = await audit.autofix(path, rounds)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    debug(workspace_id, len(result["rounds"]), result["scan"]["counts"])
-    return result
-
-
-@gitgraph.router.get("/marketplace/publish/{workspace_id}")
-@typechecked
-async def marketplace_publish_status(workspace_id: str) -> dict:
-    """Whether this app can be submitted, and whether it already was."""
-    path = _resolve(workspace_id)
-    result = await marketplace.publish_status(path)
-    debug(workspace_id, result.get("eligible"), result.get("reason"))
-    return result
-
-
-@gitgraph.router.post("/marketplace/publish/{workspace_id}")
-@typechecked
-async def marketplace_publish(workspace_id: str, body: SubmitRequest) -> dict:
-    """Make the app's repo public and file a submission for review.
-
-    This can only ask. Approving lives in the management app, behind a
-    credential this one doesn't have.
-    """
-    path = _resolve(workspace_id)
-    name = body.app_name.strip() or _app_name(workspace_id)
-    ok, result = await marketplace.submit(path, name, body.pitch.strip())
-    debug(workspace_id, ok, result)
-    if not ok:
-        raise HTTPException(status_code=400, detail=result)
-    return result
-
-
-@gitgraph.router.post("/marketplace/takedown/{workspace_id}")
-@typechecked
-async def marketplace_takedown(workspace_id: str, body: TakedownRequest) -> dict:
-    """Ask for this app to be pulled from the marketplace.
-
-    Also only asks. The listing is a fork the org owns, so the author's
-    token can read it and nothing else; archiving it is the other app's job.
-    """
-    path = _resolve(workspace_id)
-    name = body.app_name.strip() or _app_name(workspace_id)
-    ok, result = await marketplace.request_takedown(path, name, body.reason.strip())
-    debug(workspace_id, ok, result)
-    if not ok:
-        raise HTTPException(status_code=400, detail=result)
     return result
 
 

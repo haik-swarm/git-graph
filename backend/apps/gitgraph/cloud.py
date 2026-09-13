@@ -1212,8 +1212,8 @@ async def rename_app(
             slug_changed = not slug_result.get("unchanged", False)
             new_html_url = slug_result.get("html_url")
             # Refresh the cached slug on any husk/installed_from record so the
-            # marketplace "is mine published" match stays keyed on the live
-            # remote rather than a stale slug.
+            # Cloud install dedup stays keyed on the live remote rather than a
+            # stale slug.
             if slug_changed:
                 _refresh_installed_from_slug(workspace_id, slug_result)
             record(
@@ -1243,10 +1243,10 @@ async def rename_app(
 def _refresh_installed_from_slug(workspace_id: str, slug_result: Dict[str, Any]) -> None:
     """Point any installed_from.slug at the app's new owner/repo after a re-slug.
 
-    installed_from records the origin an app was cloned from; the marketplace
-    husk-match reads it. Left stale, a renamed app could stop being recognised
-    as the user's own published copy. Best-effort: a miss here only affects
-    that one cosmetic match.
+    installed_from records the origin an app was cloned from; the Cloud
+    install dedup reads it. Left stale, a renamed app could stop being
+    recognised as an existing clone of the same repo. Best-effort: a miss
+    here only affects that one cosmetic match.
     """
     owner = slug_result.get("owner")
     repo = slug_result.get("repo")

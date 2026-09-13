@@ -10,7 +10,6 @@ import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonChecke
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
-import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -38,14 +37,6 @@ export interface RepoState {
   needsPublish?: boolean;
 }
 
-/** An app of the user's that's live in the marketplace org. */
-export interface Published {
-  name: string;
-  full_name: string;
-  html_url: string;
-  stars: number;
-}
-
 /** How much the rail is allowed to claim about who can see each app. */
 export type SharingPhase =
   /** Sweep still in flight: grouping is unknown, so it isn't drawn yet. */
@@ -59,10 +50,8 @@ interface Props {
   apps: AppEntry[];
   selected: AppEntry | null;
   homeActive: boolean;
-  marketplaceActive: boolean;
   releasesActive: boolean;
   settingsActive: boolean;
-  onMarketplace: () => void;
   onReleases: () => void;
   onSettings: () => void;
   onHome: () => void;
@@ -71,7 +60,6 @@ interface Props {
   runningIds?: Set<string>;
   sharing?: Record<string, Sharing>;
   sharingPhase?: SharingPhase;
-  published?: Record<string, Published>;
   repoState?: Record<string, RepoState>;
   source?: 'apps' | 'skills';
   onSwitchSource?: (next: 'apps' | 'skills') => void;
@@ -102,10 +90,8 @@ const AppRail: React.FC<Props> = ({
   apps,
   selected,
   homeActive,
-  marketplaceActive,
   releasesActive,
   settingsActive,
-  onMarketplace,
   onReleases,
   onSettings,
   onHome,
@@ -114,7 +100,6 @@ const AppRail: React.FC<Props> = ({
   runningIds,
   sharing,
   sharingPhase = 'ready',
-  published,
   repoState,
   source = 'apps',
   onSwitchSource,
@@ -124,7 +109,7 @@ const AppRail: React.FC<Props> = ({
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
 
-  const { tracked, publishedApps, privateApps, sharedApps, untracked } = useMemo(() => {
+  const { tracked, privateApps, sharedApps, untracked } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? apps.filter(a => a.name.toLowerCase().includes(q))
@@ -152,19 +137,13 @@ const AppRail: React.FC<Props> = ({
         );
       });
 
-    // Published wins over the sharing split: an app in the marketplace is
-    // readable by everyone, so filing it under Private or Shared would be
-    // the misleading half of the truth.
-    const live = trackedApps.filter(a => published?.[a.workspace_id]);
-    const rest = trackedApps.filter(a => !published?.[a.workspace_id]);
     return {
       tracked: byUrgency(trackedApps),
-      publishedApps: byUrgency(live),
-      privateApps: byUrgency(rest.filter(a => !sharing?.[a.workspace_id]?.shared)),
-      sharedApps: byUrgency(rest.filter(a => sharing?.[a.workspace_id]?.shared)),
+      privateApps: byUrgency(trackedApps.filter(a => !sharing?.[a.workspace_id]?.shared)),
+      sharedApps: byUrgency(trackedApps.filter(a => sharing?.[a.workspace_id]?.shared)),
       untracked: filtered.filter(a => !a.has_git || !a.workspace_exists),
     };
-  }, [apps, query, sharing, published, repoState]);
+  }, [apps, query, sharing, repoState]);
 
   const track = async (app: AppEntry) => {
     setTrackingId(app.workspace_id);
@@ -369,17 +348,6 @@ const AppRail: React.FC<Props> = ({
           </Box>
         </Box>
 
-        {source === 'apps' && (
-          <Box sx={{ px: '2px', mb: '4px' }}>
-            <NavRow
-              icon={<StorefrontRoundedIcon sx={{ fontSize: 15 }} />}
-              label="Marketplace"
-              active={marketplaceActive}
-              onClick={onMarketplace}
-            />
-          </Box>
-        )}
-
         <Box sx={{ px: '2px', mb: '4px' }}>
           <NavRow
             icon={<LocalOfferRoundedIcon sx={{ fontSize: 15 }} />}
@@ -426,24 +394,6 @@ const AppRail: React.FC<Props> = ({
                 selected={selected?.workspace_id === app.workspace_id}
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
-                state={repoState?.[app.workspace_id]}
-              />
-            ))}
-          </>
-        )}
-
-        {sharingPhase === 'ready' && publishedApps.length > 0 && (
-          <>
-            <RailLabel>Published · {publishedApps.length}</RailLabel>
-            {publishedApps.map(app => (
-              <RailAppRow
-                key={app.workspace_id}
-                app={app}
-                selected={selected?.workspace_id === app.workspace_id}
-                onSelect={onSelect}
-                running={runningIds?.has(app.workspace_id) ?? false}
-                sharing={sharing?.[app.workspace_id]}
-                published={published?.[app.workspace_id]}
                 state={repoState?.[app.workspace_id]}
               />
             ))}
@@ -598,7 +548,6 @@ const RailAppRow: React.FC<{
   sharing?: Sharing;
   /** Sweep still running: hold a placeholder where the count will go. */
   sharingPending?: boolean;
-  published?: Published;
   state?: RepoState;
 }> = ({
   app,
@@ -609,7 +558,6 @@ const RailAppRow: React.FC<{
   running,
   sharing,
   sharingPending,
-  published,
   state,
 }) => {
   const c = useClaudeTokens();
@@ -765,24 +713,7 @@ const RailAppRow: React.FC<{
         <Box sx={{ ...skeleton(c), width: 22, height: 8, flexShrink: 0 }} />
       )}
 
-      {published && !missing && (
-        <Box
-          title={`Live in the marketplace as ${published.full_name}`}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '3px',
-            flexShrink: 0,
-            ...c.type.caption,
-            color: c.text.tertiary,
-          }}
-        >
-          <StorefrontRoundedIcon sx={{ fontSize: 12 }} />
-          {published.stars > 0 ? published.stars : ''}
-        </Box>
-      )}
-
-      {sharing?.shared && !missing && !published && (
+      {sharing?.shared && !missing && (
         <Box
           title={shareTitle}
           sx={{

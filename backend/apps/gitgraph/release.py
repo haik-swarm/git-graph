@@ -1,10 +1,8 @@
 """Cutting an official release of an app: a versioned GitHub Release whose
 asset is the app's `.swarm` bundle.
 
-This sits a step past `marketplace.py`. Publishing asks the marketplace org to
-list a repo; a release is the author stamping a point in their OWN repo's
-history with an installable artifact. The two are independent — an app can be
-released without ever being submitted to the marketplace.
+A release is the author stamping a point in their OWN repo's history with an
+installable artifact.
 
 The `.swarm` is built by the same host endpoint the export skill uses
 (`/api/swarm/export`), reached through the app-runtime host token. That endpoint

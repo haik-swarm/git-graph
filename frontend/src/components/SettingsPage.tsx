@@ -25,7 +25,7 @@ import {
 } from '@/shared/state/API_ENDPOINTS';
 
 /**
- * The dashboard's Settings tab, parallel to Home and Marketplace. Consolidates
+ * The dashboard's Settings tab, parallel to Home and Releases. Consolidates
  * three things that were previously reachable only from per-app popovers or the
  * Home toolbar: a warning when the GitHub integration isn't connected, the global
  * icon-generation defaults (styles, engines, model, OpenAI key, prompt templates,
