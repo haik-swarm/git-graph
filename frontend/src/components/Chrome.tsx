@@ -123,8 +123,8 @@ export const RailLabel: React.FC<{ children: React.ReactNode }> = ({ children })
         ...c.type.caption,
         fontWeight: 500,
         color: c.text.muted,
-        px: 2,
-        pt: 2.5,
+        px: '8px',
+        pt: 1.25,
         pb: 1,
         userSelect: 'none',
       }}

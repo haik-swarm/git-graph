@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
-import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
@@ -125,6 +128,7 @@ const AppRail: React.FC<Props> = ({
     }
   });
   const [query, setQuery] = useState('');
+  const [kindAnchor, setKindAnchor] = useState<HTMLElement | null>(null);
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
 
@@ -197,145 +201,7 @@ const AppRail: React.FC<Props> = ({
 
   return (
     <>
-      <ButtonBase
-        onClick={onHome}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: 1,
-          height: 48,
-          flexShrink: 0,
-          px: '14px',
-          borderBottom: `1px solid ${c.border.subtle}`,
-          cursor: 'pointer',
-          '&:hover .brand-title': { color: c.text.primary },
-        }}
-        aria-label="Home"
-      >
-        <Box
-          sx={{
-            width: 22,
-            height: 22,
-            borderRadius: `${c.radius.sm}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: `linear-gradient(135deg, ${c.accent.primary}, ${c.accent.hover})`,
-            color: "#FFFFFF",
-            boxShadow: c.shadow.sm,
-          }}
-        >
-          <CallSplitRoundedIcon sx={{ fontSize: 14 }} />
-        </Box>
-        <Box
-          className="brand-title"
-          sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}
-        >
-          Git Graph
-        </Box>
-      </ButtonBase>
-
-      <Box sx={{ px: '10px', pt: '10px', flexShrink: 0 }}>
-        <Box
-          role="tablist"
-          aria-label="Show apps, skills, or all"
-          sx={{
-            display: 'flex',
-            gap: '2px',
-            p: '2px',
-            borderRadius: `${c.radius.sm}px`,
-            background: c.bg.secondary,
-            border: `1px solid ${c.border.subtle}`,
-          }}
-        >
-          {RAIL_KINDS.map(key => {
-            const active = railKind === key;
-            return (
-              <ButtonBase
-                key={key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setRailKind(key)}
-                sx={{
-                  flex: 1,
-                  height: 24,
-                  borderRadius: `${c.radius.xs}px`,
-                  ...c.type.caption,
-                  fontWeight: active ? 600 : 500,
-                  color: active ? c.text.primary : c.text.tertiary,
-                  background: active ? c.bg.surface : 'transparent',
-                  boxShadow: active ? c.shadow.sm : 'none',
-                  transition: c.transition,
-                  '&:hover': { color: c.text.primary },
-                }}
-              >
-                {RAIL_KIND_LABEL[key]}
-              </ButtonBase>
-            );
-          })}
-        </Box>
-      </Box>
-
-      <Box sx={{ px: '10px', pt: '10px', pb: '6px', flexShrink: 0 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            height: 26,
-            px: '8px',
-            ...sunkenField(c),
-            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
-          }}
-        >
-          <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
-          <Box
-            component="input"
-            value={query}
-            placeholder={
-              railKind === 'skills'
-                ? 'Filter skills'
-                : railKind === 'apps'
-                  ? 'Filter apps'
-                  : 'Filter'
-            }
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              fontFamily: c.font.sans,
-              ...c.type.callout,
-              color: c.text.primary,
-              '&::placeholder': { color: c.text.tertiary },
-            }}
-          />
-          {query && (
-            <Box
-              component="button"
-              onClick={() => setQuery('')}
-              aria-label="Clear filter"
-              sx={{
-                display: 'flex',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                p: 0,
-                color: c.text.tertiary,
-                '&:hover': { color: c.text.primary },
-                '& svg': { fontSize: 14 },
-              }}
-            >
-              <CloseRoundedIcon />
-            </Box>
-          )}
-        </Box>
-      </Box>
-
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: '6px', pb: '10px', ...slimScroll(c) }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: '6px', pt: '10px', pb: '10px', ...slimScroll(c) }}>
         <Box
           component="button"
           onClick={onHome}
@@ -401,6 +267,170 @@ const AppRail: React.FC<Props> = ({
             onClick={onSettings}
           />
         </Box>
+
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          px: '6px',
+          pt: '40px',
+          pb: '0px',
+          flexShrink: 0,
+        }}
+      >
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            height: 26,
+            px: '8px',
+            ...sunkenField(c),
+            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
+          }}
+        >
+          <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
+          <Box
+            component="input"
+            value={query}
+            placeholder={
+              railKind === 'skills'
+                ? 'Filter skills'
+                : railKind === 'apps'
+                  ? 'Filter apps'
+                  : 'Filter'
+            }
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontFamily: c.font.sans,
+              ...c.type.callout,
+              color: c.text.primary,
+              '&::placeholder': { color: c.text.tertiary },
+            }}
+          />
+          {query && (
+            <Box
+              component="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear filter"
+              sx={{
+                display: 'flex',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                p: 0,
+                color: c.text.tertiary,
+                '&:hover': { color: c.text.primary },
+                '& svg': { fontSize: 14 },
+              }}
+            >
+              <CloseRoundedIcon />
+            </Box>
+          )}
+        </Box>
+
+        <ButtonBase
+          aria-haspopup="listbox"
+          aria-expanded={Boolean(kindAnchor)}
+          aria-label={`Filter by kind: ${RAIL_KIND_LABEL[railKind]}`}
+          onClick={(e: React.MouseEvent<HTMLElement>) => setKindAnchor(e.currentTarget)}
+          sx={{
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
+            height: 26,
+            pl: '10px',
+            pr: '6px',
+            borderRadius: `${c.radius.sm}px`,
+            background: c.bg.surface,
+            border: `1px solid ${c.border.subtle}`,
+            ...c.type.caption,
+            fontWeight: 600,
+            color: c.text.primary,
+            boxShadow: c.shadow.sm,
+            transition: c.transition,
+            '&:hover': { background: c.bg.secondary },
+          }}
+        >
+          {RAIL_KIND_LABEL[railKind]}
+          <KeyboardArrowDownRoundedIcon
+            sx={{
+              fontSize: 16,
+              color: c.text.tertiary,
+              transition: c.transition,
+              transform: kindAnchor ? 'rotate(180deg)' : 'none',
+            }}
+          />
+        </ButtonBase>
+
+        <Menu
+          anchorEl={kindAnchor}
+          open={Boolean(kindAnchor)}
+          onClose={() => setKindAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: '4px',
+                minWidth: 140,
+                borderRadius: `${c.radius.sm}px`,
+                background: c.bg.surface,
+                border: `1px solid ${c.border.subtle}`,
+                boxShadow: c.shadow.md,
+              },
+            },
+          }}
+          MenuListProps={{ sx: { py: '4px' }, role: 'listbox' }}
+        >
+          {RAIL_KINDS.map(key => {
+            const active = railKind === key;
+            return (
+              <MenuItem
+                key={key}
+                role="option"
+                aria-selected={active}
+                selected={active}
+                onClick={() => {
+                  setRailKind(key);
+                  setKindAnchor(null);
+                }}
+                sx={{
+                  mx: '4px',
+                  px: '8px',
+                  minHeight: 30,
+                  borderRadius: `${c.radius.xs}px`,
+                  gap: '8px',
+                  ...c.type.callout,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? c.text.primary : c.text.secondary,
+                  '&.Mui-selected': { background: `rgba(${c.accentRgb},0.10)` },
+                  '&.Mui-selected:hover': { background: `rgba(${c.accentRgb},0.16)` },
+                  '&:hover': { background: c.bg.secondary },
+                }}
+              >
+                <Box sx={{ flex: 1 }}>{RAIL_KIND_LABEL[key]}</Box>
+                <CheckRoundedIcon
+                  sx={{
+                    fontSize: 15,
+                    color: c.accent.primary,
+                    visibility: active ? 'visible' : 'hidden',
+                  }}
+                />
+              </MenuItem>
+            );
+          })}
+        </Menu>
+      </Box>
 
         {/* Sharing unknown: show the apps, withhold the split. */}
         {sharingPhase === 'loading' && tracked.length > 0 && (
