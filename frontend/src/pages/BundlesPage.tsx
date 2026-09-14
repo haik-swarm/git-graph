@@ -4,7 +4,9 @@ import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
 import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded';
@@ -15,10 +17,12 @@ import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   card,
   iconButton,
+  popover,
   primaryButton,
   pushButton,
   statusChip,
@@ -34,6 +38,7 @@ import {
   GITGRAPH_BUNDLE_MEMBER_URL,
   GITGRAPH_BUNDLE_SUGGEST_URL,
   GITGRAPH_BUNDLES_SYNC_URL,
+  gitgraphIconRawUrl,
 } from '@/shared/state/API_ENDPOINTS';
 
 type MemberKind = 'app' | 'skill' | 'bundle';
@@ -85,6 +90,111 @@ const KindGlyph: React.FC<{ kind: MemberKind; size?: number }> = ({ kind, size =
   if (kind === 'app') return <WidgetsRoundedIcon sx={{ fontSize: size }} />;
   if (kind === 'skill') return <ExtensionRoundedIcon sx={{ fontSize: size }} />;
   return <Inventory2RoundedIcon sx={{ fontSize: size }} />;
+};
+
+const KIND_LABEL: Record<MemberKind, string> = { app: 'App', skill: 'Skill', bundle: 'Bundle' };
+
+/** One tile in the members grid: icon, name, description, kind badge, and a
+    remove control that fades in on hover. */
+const MemberCard: React.FC<{
+  member: Member;
+  info: { name: string; description: string; icon?: string } | null;
+  onRemove: () => void;
+}> = ({ member, info, onRemove }) => {
+  const c = useClaudeTokens();
+  const missing = !info;
+  return (
+    <Box
+      sx={{
+        ...card(c),
+        position: 'relative',
+        p: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        opacity: missing ? 0.55 : 1,
+        '&:hover .member-remove': { opacity: 1 },
+        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md },
+      }}
+    >
+      <Tooltip title="Remove">
+        <ButtonBase
+          className="member-remove"
+          onClick={onRemove}
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            opacity: 0,
+            transition: c.transition,
+            color: c.text.ghost,
+            background: c.bg.surface,
+            border: `1px solid ${c.border.subtle}`,
+            '&:hover': { color: c.status.error, background: c.status.errorBg, borderColor: c.status.error },
+          }}
+        >
+          <CloseRoundedIcon sx={{ fontSize: 14 }} />
+        </ButtonBase>
+      </Tooltip>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box
+          sx={{
+            width: 36,
+            height: 36,
+            flexShrink: 0,
+            borderRadius: `${c.radius.md}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            background: info?.icon ? 'transparent' : c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
+            color: c.text.tertiary,
+          }}
+        >
+          {info?.icon ? (
+            <Box component="img" src={info.icon} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <KindGlyph kind={member.kind} size={18} />
+          )}
+        </Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box
+            sx={{
+              ...c.type.body,
+              fontWeight: 590,
+              color: missing ? c.text.muted : c.text.primary,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {info ? info.name : 'Missing member'}
+          </Box>
+          <Box sx={{ ...statusChip(c, 'neutral'), mt: 0.5 }}>
+            <KindGlyph kind={member.kind} size={11} />
+            {KIND_LABEL[member.kind]}
+          </Box>
+        </Box>
+      </Box>
+      <Box
+        sx={{
+          ...c.type.caption,
+          color: c.text.muted,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          minHeight: '2.2em',
+        }}
+      >
+        {info?.description || (missing ? 'This item no longer exists.' : 'No description.')}
+      </Box>
+    </Box>
+  );
 };
 
 /** The square that shows a bundle's inline icon, or a fallback glyph. */
@@ -331,17 +441,31 @@ const BundleDetail: React.FC<{
   const [detailError, setDetailError] = useState<string | null>(null);
   const [genTitle, setGenTitle] = useState(false);
   const [genDesc, setGenDesc] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [iconAnchor, setIconAnchor] = useState<HTMLElement | null>(null);
+  const [titleGenAnchor, setTitleGenAnchor] = useState<HTMLElement | null>(null);
+  const [descGenAnchor, setDescGenAnchor] = useState<HTMLElement | null>(null);
+  const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState<MemberKind | 'all'>('all');
 
   // Resolve a member reference into something displayable, or null when the
-  // referenced entity no longer exists (rendered as a "missing" chip).
+  // referenced entity no longer exists (rendered as a "missing" card).
+  // `icon` is a ready-to-use <img src>: a data URI for bundles, the raw-icon
+  // endpoint for apps/skills that carry one.
   const resolve = useCallback(
-    (m: Member): { name: string; icon?: string } | null => {
+    (m: Member): { name: string; description: string; icon?: string } | null => {
       if (m.kind === 'bundle') {
         const b = allBundles.find(x => x.id === m.id);
-        return b ? { name: b.title, icon: b.icon } : null;
+        return b ? { name: b.title, description: b.description, icon: b.icon || undefined } : null;
       }
       const e = entities.find(x => x.kind === m.kind && x.id === m.id);
-      return e ? { name: e.name } : null;
+      if (!e) return null;
+      const icon =
+        e.has_icon && e.workspace_exists && e.workspace_id
+          ? gitgraphIconRawUrl(e.workspace_id)
+          : undefined;
+      return { name: e.name, description: e.description, icon };
     },
     [allBundles, entities],
   );
@@ -489,6 +613,28 @@ const BundleDetail: React.FC<{
     return [...fromEntities, ...fromBundles];
   }, [bundle.members, bundle.id, entities, allBundles]);
 
+  // Members after the search box and kind chip. Each carries its resolved
+  // display info so the grid can render without resolving twice.
+  const visibleMembers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return bundle.members
+      .map(m => ({ member: m, info: resolve(m) }))
+      .filter(({ member }) => kindFilter === 'all' || member.kind === kindFilter)
+      .filter(({ member, info }) => {
+        if (!q) return true;
+        const name = (info?.name ?? member.id).toLowerCase();
+        const desc = (info?.description ?? '').toLowerCase();
+        return name.includes(q) || desc.includes(q);
+      });
+  }, [bundle.members, search, kindFilter, resolve]);
+
+  // Which kind chips to offer: only kinds actually present, plus "All".
+  const kindsPresent = useMemo(() => {
+    const set = new Set<MemberKind>();
+    bundle.members.forEach(m => set.add(m.kind));
+    return (['app', 'skill', 'bundle'] as MemberKind[]).filter(k => set.has(k));
+  }, [bundle.members]);
+
   return (
     <>
       <Toolbar>
@@ -529,138 +675,409 @@ const BundleDetail: React.FC<{
             <Box sx={{ ...c.type.caption, color: c.status.error }}>{detailError}</Box>
           )}
 
-          {/* Title + description */}
-          <Box sx={{ ...card(c), p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
-                <Box sx={{ ...c.type.caption, color: c.text.muted }}>Title</Box>
-                <Box
-                  component="button"
-                  onClick={() => void suggest('title')}
-                  disabled={genTitle || bundle.members.length === 0}
-                  title={bundle.members.length === 0 ? 'Add members first' : 'Generate title from members'}
-                  sx={{ ...pushButton(c), minHeight: 26, px: '8px', gap: 0.5, ...c.type.caption }}
+          {/* Header: icon, inline-editable title + full-width description.
+              Each field reveals its own control only while that field is
+              hovered; title/description switch to fields when clicked. */}
+          <Box className="bundle-header">
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+              {/* Icon with a subtle edit pencil overlaid top-right on hover.
+                  Clicking it opens a popover of sub-options (generate / remove). */}
+              <Box sx={{ flexShrink: 0, position: 'relative', '&:hover .icon-pencil': { opacity: 1 } }}>
+                <BundleIcon icon={bundle.icon} size={56} />
+                <ButtonBase
+                  className="icon-pencil"
+                  onClick={(e: React.MouseEvent<HTMLElement>) => setIconAnchor(e.currentTarget)}
+                  title="Edit icon"
+                  sx={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -6,
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: c.bg.elevated,
+                    border: `1px solid ${c.border.medium}`,
+                    boxShadow: c.shadow.sm,
+                    color: c.text.secondary,
+                    opacity: iconAnchor ? 1 : 0,
+                    transition: c.transition,
+                    '&:hover': { color: c.text.primary, background: c.bg.secondary },
+                  }}
                 >
-                  {genTitle ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
-                  Generate
-                </Box>
-              </Box>
-              <Box
-                component="input"
-                value={title}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-                onBlur={saveTitle}
-                sx={{ ...sunkenField(c), width: '100%', px: 1.5, py: 1, ...c.type.body, color: c.text.primary, outline: 'none' }}
-              />
-            </Box>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
-                <Box sx={{ ...c.type.caption, color: c.text.muted }}>Description</Box>
-                <Box
-                  component="button"
-                  onClick={() => void suggest('description')}
-                  disabled={genDesc || bundle.members.length === 0}
-                  title={bundle.members.length === 0 ? 'Add members first' : 'Generate description from members'}
-                  sx={{ ...pushButton(c), minHeight: 26, px: '8px', gap: 0.5, ...c.type.caption }}
+                  <EditRoundedIcon sx={{ fontSize: 13 }} />
+                </ButtonBase>
+                <Popover
+                  open={Boolean(iconAnchor)}
+                  anchorEl={iconAnchor}
+                  onClose={() => setIconAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                  slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, p: 1.5 } } }}
                 >
-                  {genDesc ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
-                  Generate
-                </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <IconPanel
+                      workspaceId={bundle.id}
+                      appName={title || bundle.title}
+                      appDescription={iconContext}
+                      heading="Bundle icon"
+                      pickHint="Pick one to set it as the bundle icon"
+                      onApply={dataUri => patch({ icon: dataUri })}
+                    />
+                    {bundle.icon && (
+                      <Box
+                        component="button"
+                        onClick={() => {
+                          void patch({ icon: '' });
+                          setIconAnchor(null);
+                        }}
+                        sx={pushButton(c)}
+                      >
+                        Remove icon
+                      </Box>
+                    )}
+                  </Box>
+                </Popover>
               </Box>
-              <Box
-                component="textarea"
-                value={description}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-                onBlur={saveDescription}
-                rows={3}
-                sx={{ ...sunkenField(c), width: '100%', px: 1.5, py: 1, ...c.type.body, color: c.text.primary, outline: 'none', resize: 'vertical', fontFamily: c.font.sans }}
-              />
-            </Box>
-          </Box>
 
-          {/* Icon — same generator, settings, and flow as apps/skills, but fed
-              the bundle's own title/description plus its members' metadata, and
-              persisted via PATCH instead of a repo commit. */}
-          <Box sx={{ ...card(c), p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <BundleIcon icon={bundle.icon} size={48} />
-            <Box sx={{ flex: 1 }}>
-              <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary }}>Icon</Box>
-              <Box sx={{ ...c.type.caption, color: c.text.muted, mt: 0.25 }}>
-                Generate one from the bundle and its contents.
-              </Box>
-            </Box>
-            {bundle.icon && (
-              <Box
-                component="button"
-                onClick={() => void patch({ icon: '' })}
-                sx={pushButton(c)}
-              >
-                Remove
-              </Box>
-            )}
-            <IconPanel
-              workspaceId={bundle.id}
-              appName={title || bundle.title}
-              appDescription={iconContext}
-              heading="Bundle icon"
-              pickHint="Pick one to set it as the bundle icon"
-              onApply={dataUri => patch({ icon: dataUri })}
-            />
-          </Box>
-
-          {/* Members */}
-          <Box sx={{ ...card(c), p: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-              <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary }}>Members</Box>
-              <Box sx={{ flex: 1 }} />
-              <Box
-                component="button"
-                onClick={(e: React.MouseEvent<HTMLElement>) => setAddAnchor(e.currentTarget)}
-                disabled={candidates.length === 0}
-                sx={pushButton(c)}
-              >
-                <AddRoundedIcon sx={{ fontSize: 15 }} />
-                Add member
-              </Box>
-            </Box>
-            {bundle.members.length === 0 ? (
-              <Box sx={{ ...c.type.caption, color: c.text.muted }}>No members yet. Add apps, skills, or other bundles.</Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {bundle.members.map(m => {
-                  const info = resolve(m);
-                  return (
+              {/* Title, reveals a pinned sparkle overlay on hover; clicking it
+                  opens a quick confirmation to generate from members. */}
+              <Box className="title-group" sx={{ position: 'relative', flex: 1, minWidth: 0, pt: 0.25, '&:hover .title-hover': { opacity: 1 } }}>
+                {editingTitle ? (
+                  <Box
+                    component="input"
+                    autoFocus
+                    value={title}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
+                    onBlur={() => {
+                      saveTitle();
+                      setEditingTitle(false);
+                    }}
+                    onKeyDown={(e: React.KeyboardEvent) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    }}
+                    sx={{ ...sunkenField(c), width: '100%', px: 1, py: 0.5, ...c.type.title, color: c.text.primary, outline: 'none' }}
+                  />
+                ) : (
+                  <>
                     <Box
-                      key={`${m.kind}:${m.id}`}
+                      onClick={() => setEditingTitle(true)}
+                      title="Click to edit"
                       sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        height: 30,
-                        pl: 1,
-                        pr: 0.5,
-                        borderRadius: `${c.radius.full}px`,
-                        border: `1px solid ${c.border.subtle}`,
-                        background: info ? c.bg.surface : c.bg.secondary,
-                        opacity: info ? 1 : 0.55,
-                        color: c.text.secondary,
+                        ...c.type.title,
+                        color: c.text.primary,
+                        cursor: 'text',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100%',
+                        borderRadius: `${c.radius.sm}px`,
+                        '&:hover': { background: c.bg.secondary },
                       }}
                     >
-                      <KindGlyph kind={m.kind} />
-                      <Box sx={{ ...c.type.caption, color: info ? c.text.primary : c.text.muted, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {info ? info.name : 'missing'}
-                      </Box>
-                      <Tooltip title="Remove">
-                        <ButtonBase onClick={() => removeMember(m)} sx={{ width: 20, height: 20, borderRadius: '50%', color: c.text.ghost, '&:hover': { color: c.status.error, background: c.status.errorBg } }}>
-                          <CloseRoundedIcon sx={{ fontSize: 13 }} />
-                        </ButtonBase>
-                      </Tooltip>
+                      {title || 'Untitled bundle'}
+                    </Box>
+                    <ButtonBase
+                      className="title-hover"
+                      onClick={(e: React.MouseEvent<HTMLElement>) => setTitleGenAnchor(e.currentTarget)}
+                      disabled={genTitle || bundle.members.length === 0}
+                      title={bundle.members.length === 0 ? 'Add members first' : 'Generate title from members'}
+                      sx={{
+                        position: 'absolute',
+                        top: 2,
+                        right: 0,
+                        zIndex: 2,
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        background: c.bg.elevated,
+                        border: `1px solid ${c.border.medium}`,
+                        boxShadow: c.shadow.sm,
+                        color: c.text.secondary,
+                        opacity: titleGenAnchor ? 1 : 0,
+                        transition: c.transition,
+                        '&:hover': { color: c.accent.primary, background: c.bg.secondary },
+                        '&.Mui-disabled': { opacity: 0 },
+                      }}
+                    >
+                      {genTitle ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
+                    </ButtonBase>
+                  </>
+                )}
+              </Box>
+            </Box>
+
+            {/* Description — full width, reveals a pinned sparkle overlay on hover */}
+            <Box className="desc-group" sx={{ position: 'relative', mt: 1.5, '&:hover .desc-hover': { opacity: 1 } }}>
+              {editingDesc ? (
+                <Box
+                  component="textarea"
+                  autoFocus
+                  value={description}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+                  onBlur={() => {
+                    saveDescription();
+                    setEditingDesc(false);
+                  }}
+                  rows={3}
+                  sx={{ ...sunkenField(c), width: '100%', px: 1.5, py: 1, ...c.type.body, color: c.text.primary, outline: 'none', resize: 'vertical', fontFamily: c.font.sans }}
+                />
+              ) : (
+                <>
+                  <Box
+                    onClick={() => setEditingDesc(true)}
+                    title="Click to edit"
+                    sx={{
+                      ...c.type.body,
+                      color: description ? c.text.secondary : c.text.muted,
+                      cursor: 'text',
+                      whiteSpace: 'pre-wrap',
+                      borderRadius: `${c.radius.sm}px`,
+                      px: 0.5,
+                      mx: -0.5,
+                      '&:hover': { background: c.bg.secondary },
+                    }}
+                  >
+                    {description || 'No description yet. Click to add one.'}
+                  </Box>
+                  <ButtonBase
+                    className="desc-hover"
+                    onClick={(e: React.MouseEvent<HTMLElement>) => setDescGenAnchor(e.currentTarget)}
+                    disabled={genDesc || bundle.members.length === 0}
+                    title={bundle.members.length === 0 ? 'Add members first' : 'Generate description from members'}
+                    sx={{
+                      position: 'absolute',
+                      top: 2,
+                      right: 0,
+                      zIndex: 2,
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      background: c.bg.elevated,
+                      border: `1px solid ${c.border.medium}`,
+                      boxShadow: c.shadow.sm,
+                      color: c.text.secondary,
+                      opacity: descGenAnchor ? 1 : 0,
+                      transition: c.transition,
+                      '&:hover': { color: c.accent.primary, background: c.bg.secondary },
+                      '&.Mui-disabled': { opacity: 0 },
+                    }}
+                  >
+                    {genDesc ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
+                  </ButtonBase>
+                </>
+              )}
+            </Box>
+          </Box>
+
+          {/* Quick confirmation popovers for the title / description generators */}
+          <Popover
+            open={Boolean(titleGenAnchor)}
+            anchorEl={titleGenAnchor}
+            onClose={() => setTitleGenAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, p: 1.5, maxWidth: 240 } } }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Box sx={{ ...c.type.caption, color: c.text.secondary }}>
+                Generate a new title from this bundle's members?
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                <Box component="button" onClick={() => setTitleGenAnchor(null)} sx={pushButton(c)}>
+                  Cancel
+                </Box>
+                <Box
+                  component="button"
+                  onClick={() => {
+                    setTitleGenAnchor(null);
+                    void suggest('title');
+                  }}
+                  sx={{ ...primaryButton(c), gap: 0.5 }}
+                >
+                  <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />
+                  Generate
+                </Box>
+              </Box>
+            </Box>
+          </Popover>
+          <Popover
+            open={Boolean(descGenAnchor)}
+            anchorEl={descGenAnchor}
+            onClose={() => setDescGenAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, p: 1.5, maxWidth: 240 } } }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Box sx={{ ...c.type.caption, color: c.text.secondary }}>
+                Generate a new description from this bundle's members?
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                <Box component="button" onClick={() => setDescGenAnchor(null)} sx={pushButton(c)}>
+                  Cancel
+                </Box>
+                <Box
+                  component="button"
+                  onClick={() => {
+                    setDescGenAnchor(null);
+                    void suggest('description');
+                  }}
+                  sx={{ ...primaryButton(c), gap: 0.5 }}
+                >
+                  <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />
+                  Generate
+                </Box>
+              </Box>
+            </Box>
+          </Popover>
+
+          {/* Search + kind filter */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ ...sunkenField(c), flex: 1, display: 'flex', alignItems: 'center', gap: 1, px: 1.5, height: 40 }}>
+              <SearchRoundedIcon sx={{ fontSize: 18, color: c.text.muted }} />
+              <Box
+                component="input"
+                value={search}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+                placeholder="Search members"
+                sx={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', ...c.type.body, color: c.text.primary, '&::placeholder': { color: c.text.muted } }}
+              />
+            </Box>
+            {kindsPresent.length > 1 && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {(['all', ...kindsPresent] as const).map(k => {
+                  const active = kindFilter === k;
+                  const label = k === 'all' ? 'All' : k === 'app' ? 'Apps' : k === 'skill' ? 'Skills' : 'Bundles';
+                  return (
+                    <Box
+                      key={k}
+                      component="button"
+                      onClick={() => setKindFilter(k as MemberKind | 'all')}
+                      sx={{
+                        ...pushButton(c),
+                        height: 40,
+                        px: '12px',
+                        ...(active && { background: `rgba(${c.accentRgb},0.10)`, borderColor: c.accent.primary, color: c.accent.primary }),
+                      }}
+                    >
+                      {label}
                     </Box>
                   );
                 })}
               </Box>
             )}
           </Box>
+
+          {/* Member grid */}
+          {bundle.members.length === 0 ? (
+            <Box sx={{ ...c.type.body, color: c.text.muted, textAlign: 'center', py: 6 }}>
+              No members yet. Add apps, skills, or other bundles below.
+            </Box>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1.5 }}>
+              {visibleMembers.map(({ member: m, info }) => (
+                <Box
+                  key={`${m.kind}:${m.id}`}
+                  className="member-card"
+                  sx={{
+                    ...card(c),
+                    position: 'relative',
+                    p: 2,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                    minHeight: 132,
+                    opacity: info ? 1 : 0.55,
+                    '&:hover .member-remove': { opacity: 1 },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    {info?.icon ? (
+                      <Box
+                        component="img"
+                        src={info.icon}
+                        alt=""
+                        sx={{ width: 36, height: 36, borderRadius: `${c.radius.md}px`, objectFit: 'cover', border: `1px solid ${c.border.subtle}`, flexShrink: 0 }}
+                      />
+                    ) : (
+                      <Box sx={{ width: 36, height: 36, borderRadius: `${c.radius.md}px`, background: c.bg.secondary, border: `1px solid ${c.border.subtle}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.text.tertiary, flexShrink: 0 }}>
+                        <KindGlyph kind={m.kind} size={18} />
+                      </Box>
+                    )}
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Box sx={{ ...c.type.headline, color: info ? c.text.primary : c.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {info ? info.name : 'Missing member'}
+                      </Box>
+                      <Box sx={{ ...statusChip(c, m.kind === 'bundle' ? 'accent' : 'neutral'), mt: 0.5, height: 18, px: '7px' }}>
+                        <KindGlyph kind={m.kind} size={11} />
+                        {m.kind}
+                      </Box>
+                    </Box>
+                  </Box>
+                  <Box
+                    sx={{
+                      ...c.type.caption,
+                      color: c.text.muted,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {info?.description || (info ? 'No description.' : 'This member no longer exists.')}
+                  </Box>
+                  <Tooltip title="Remove">
+                    <ButtonBase
+                      className="member-remove"
+                      onClick={() => removeMember(m)}
+                      sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        opacity: 0,
+                        transition: c.transition,
+                        color: c.text.ghost,
+                        background: c.bg.surface,
+                        '&:hover': { color: c.status.error, background: c.status.errorBg },
+                      }}
+                    >
+                      <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                    </ButtonBase>
+                  </Tooltip>
+                </Box>
+              ))}
+
+              {/* Add-member card */}
+              {candidates.length > 0 && (
+                <ButtonBase
+                  onClick={(e: React.MouseEvent<HTMLElement>) => setAddAnchor(e.currentTarget)}
+                  sx={{
+                    minHeight: 132,
+                    borderRadius: `${c.radius.lg}px`,
+                    border: `1px dashed ${c.border.medium}`,
+                    color: c.text.muted,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.75,
+                    transition: c.transition,
+                    '&:hover': { borderColor: c.accent.primary, color: c.accent.primary, background: `rgba(${c.accentRgb},0.04)` },
+                  }}
+                >
+                  <AddRoundedIcon sx={{ fontSize: 22 }} />
+                  <Box sx={{ ...c.type.caption }}>Add member</Box>
+                </ButtonBase>
+              )}
+            </Box>
+          )}
+
+          {bundle.members.length > 0 && visibleMembers.length === 0 && (
+            <Box sx={{ ...c.type.caption, color: c.text.muted, textAlign: 'center', py: 4 }}>
+              No members match your search.
+            </Box>
+          )}
         </Box>
       </Scroller>
 
