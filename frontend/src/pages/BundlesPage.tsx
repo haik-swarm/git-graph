@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
 import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
@@ -9,7 +10,6 @@ import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
 import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
@@ -437,23 +437,6 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
 
   const open = useMemo(() => bundles.find(b => b.id === openId) ?? null, [bundles, openId]);
 
-  if (open) {
-    return (
-      <BundleDetail
-        bundle={open}
-        allBundles={bundles}
-        entities={entities}
-        onBack={() => setOpenId(null)}
-        onChange={upsert}
-        onDeleted={id => {
-          setBundles(prev => prev.filter(b => b.id !== id));
-          setSync(prev => (prev.dirty ? prev : { ...prev, dirty: true }));
-          setOpenId(null);
-        }}
-      />
-    );
-  }
-
   return (
     <>
       <Toolbar>
@@ -586,6 +569,40 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
           </Box>
         )}
       </Scroller>
+
+      <Dialog
+        open={!!open}
+        onClose={() => setOpenId(null)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            ...popover(c),
+            m: 2,
+            height: 'min(88vh, 900px)',
+            maxHeight: 'calc(100% - 32px)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          },
+        }}
+        slotProps={{ backdrop: { sx: { backgroundColor: 'rgba(0,0,0,0.5)' } } }}
+      >
+        {open && (
+          <BundleDetail
+            bundle={open}
+            allBundles={bundles}
+            entities={entities}
+            onBack={() => setOpenId(null)}
+            onChange={upsert}
+            onDeleted={id => {
+              setBundles(prev => prev.filter(b => b.id !== id));
+              setSync(prev => (prev.dirty ? prev : { ...prev, dirty: true }));
+              setOpenId(null);
+            }}
+          />
+        )}
+      </Dialog>
     </>
   );
 };
@@ -834,9 +851,9 @@ const BundleDetail: React.FC<{
   return (
     <>
       <Toolbar>
-        <Tooltip title="Back to bundles">
+        <Tooltip title="Close">
           <ButtonBase onClick={onBack} sx={{ ...pushButton(c), minHeight: 32, px: '10px' }}>
-            <ArrowBackRoundedIcon sx={{ fontSize: 16 }} />
+            <CloseRoundedIcon sx={{ fontSize: 16 }} />
           </ButtonBase>
         </Tooltip>
         <BundleIcon icon={bundle.icon} size={28} />
