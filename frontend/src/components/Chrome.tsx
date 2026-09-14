@@ -68,7 +68,7 @@ export const Shell: React.FC<{
     >
       <Box
         sx={{
-          width: 260,
+          width: 284,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',

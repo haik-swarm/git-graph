@@ -20,6 +20,8 @@ import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
   GITGRAPH_COLLAB_SWEEP_URL,
+  GITGRAPH_RELEASES_SWEEP_URL,
+  GITGRAPH_SKILLS_RELEASES_SWEEP_URL,
   GITGRAPH_SKILLS_URL,
   GITGRAPH_SKILLS_STATUS_URL,
   GITGRAPH_STATUS_URL,
@@ -29,6 +31,7 @@ import {
   gitgraphInitUrl,
 } from '@/shared/state/API_ENDPOINTS';
 import AppRail, {
+  type Release,
   type RepoState,
   type Sharing,
   type SharingPhase,
@@ -115,6 +118,7 @@ const Home: React.FC = () => {
   // Private/Shared split until this lands rather than guessing.
   const [sharing, setSharing] = useState<Record<string, Sharing>>({});
   const [sharingPhase, setSharingPhase] = useState<SharingPhase>('loading');
+  const [releases, setReleases] = useState<Record<string, Release>>({});
   // Remote-tracking refs only move when something fetches, so until the
   // background sync lands, every unpushed count is a local-only guess.
   const [syncing, setSyncing] = useState(false);
@@ -287,6 +291,40 @@ const Home: React.FC = () => {
     }
   }, []);
 
+  // Latest shipped GitHub Release per app/skill, for the rail's version tag.
+  // Reuses the same two sweeps the Releases tab reads. Merged rather than
+  // replaced so a sweep that failed for one entry leaves its known tag intact.
+  const refreshReleases = useCallback(async () => {
+    const read = async (
+      r: PromiseSettledResult<Response>,
+    ): Promise<Record<string, Release>> => {
+      if (r.status !== 'fulfilled' || !r.value.ok) return {};
+      try {
+        const data = await r.value.json();
+        const released = (data?.released ?? {}) as Record<string, any>;
+        const out: Record<string, Release> = {};
+        for (const [id, entry] of Object.entries(released)) {
+          const latest = entry?.latest;
+          const tag = latest?.tag ?? latest?.name;
+          if (tag) out[id] = { version: String(tag), url: latest?.html_url ?? entry?.html_url ?? null };
+        }
+        return out;
+      } catch {
+        return {};
+      }
+    };
+    try {
+      const [appsRes, skillsRes] = await Promise.allSettled([
+        fetch(GITGRAPH_RELEASES_SWEEP_URL),
+        fetch(GITGRAPH_SKILLS_RELEASES_SWEEP_URL),
+      ]);
+      const [appRel, skillRel] = await Promise.all([read(appsRes), read(skillsRes)]);
+      setReleases(prev => ({ ...prev, ...appRel, ...skillRel }));
+    } catch {
+      /* Non-fatal: the rail keeps whatever tags it last knew. */
+    }
+  }, []);
+
   // The network half. Fires after the local read has already painted, so a
   // slow remote costs freshness rather than time-to-first-render. Merged
   // per app instead of replacing wholesale: a fetch that failed for one app
@@ -321,7 +359,8 @@ const Home: React.FC = () => {
   useEffect(() => {
     if (appKindCount === 0) return;
     void refreshSharing();
-  }, [appKindCount, refreshSharing]);
+    void refreshReleases();
+  }, [appKindCount, refreshSharing, refreshReleases]);
 
   // Re-scan on every view change so returning to Home (or to an app page,
   // or from another window entirely) doesn't leave stale numbers.
@@ -488,6 +527,7 @@ const Home: React.FC = () => {
       sharing={sharing}
       sharingPhase={sharingPhase}
       repoState={repoState}
+      releases={releases}
       onTracked={app => {
         void (async () => {
           const list = await refetchApps().catch(() => null);

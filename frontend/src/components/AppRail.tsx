@@ -40,6 +40,12 @@ export interface RepoState {
   needsPublish?: boolean;
 }
 
+/** The latest shipped GitHub Release for an app, shown as a rail version tag. */
+export interface Release {
+  version: string;
+  url: string | null;
+}
+
 /** How much the rail is allowed to claim about who can see each app. */
 export type SharingPhase =
   /** Sweep still in flight: grouping is unknown, so it isn't drawn yet. */
@@ -77,6 +83,7 @@ interface Props {
   sharing?: Record<string, Sharing>;
   sharingPhase?: SharingPhase;
   repoState?: Record<string, RepoState>;
+  releases?: Record<string, Release>;
 }
 
 /**
@@ -115,6 +122,7 @@ const AppRail: React.FC<Props> = ({
   sharing,
   sharingPhase = 'ready',
   repoState,
+  releases,
 }) => {
   const c = useClaudeTokens();
   // Display-only filter. The rail no longer drives a global source — both apps
@@ -444,6 +452,7 @@ const AppRail: React.FC<Props> = ({
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
                 state={repoState?.[app.workspace_id]}
+                release={releases?.[app.workspace_id]}
                 sharingPending
               />
             ))}
@@ -461,6 +470,7 @@ const AppRail: React.FC<Props> = ({
                 onSelect={onSelect}
                 running={runningIds?.has(app.workspace_id) ?? false}
                 state={repoState?.[app.workspace_id]}
+                release={releases?.[app.workspace_id]}
               />
             ))}
           </>
@@ -478,6 +488,7 @@ const AppRail: React.FC<Props> = ({
                 running={runningIds?.has(app.workspace_id) ?? false}
                 sharing={sharing?.[app.workspace_id]}
                 state={repoState?.[app.workspace_id]}
+                release={releases?.[app.workspace_id]}
               />
             ))}
           </>
@@ -495,6 +506,7 @@ const AppRail: React.FC<Props> = ({
                 running={runningIds?.has(app.workspace_id) ?? false}
                 sharing={sharing?.[app.workspace_id]}
                 state={repoState?.[app.workspace_id]}
+                release={releases?.[app.workspace_id]}
               />
             ))}
           </>
@@ -621,6 +633,7 @@ const RailAppRow: React.FC<{
   /** Sweep still running: hold a placeholder where the count will go. */
   sharingPending?: boolean;
   state?: RepoState;
+  release?: Release;
 }> = ({
   app,
   selected,
@@ -631,6 +644,7 @@ const RailAppRow: React.FC<{
   sharing,
   sharingPending,
   state,
+  release,
 }) => {
   const c = useClaudeTokens();
   const missing = !app.workspace_exists;
@@ -742,6 +756,18 @@ const RailAppRow: React.FC<{
         {app.name}
       </Box>
 
+      {/* All trailing indicators live in one shrink-proof cluster so several
+          badges (dirty, unpushed, shared, release) keep even spacing and the
+          label yields (ellipsizes) before any of them get clipped. */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          flexShrink: 0,
+          minWidth: 0,
+        }}
+      >
       {/* Uncommitted and unpushed are separate badges rather than one total:
           they take different actions to clear, and collapsing them would
           hide which one this app is actually waiting on. */}
@@ -802,6 +828,38 @@ const RailAppRow: React.FC<{
         </Box>
       )}
 
+      {/* Latest shipped release, as a version tag. A distinct pill (not a bare
+          count) so it reads as a label rather than another status number. */}
+      {release?.version && !missing && (
+        <Box
+          title={`Latest release ${release.version}`}
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '2px',
+            flexShrink: 0,
+            maxWidth: 72,
+            height: 15,
+            pl: '3px',
+            pr: '5px',
+            ...c.type.caption,
+            fontWeight: 600,
+            color: c.status.success,
+            background: `rgba(${c.accentRgb},0.10)`,
+            border: `1px solid ${c.border.subtle}`,
+            borderRadius: `${c.radius.xs}px`,
+          }}
+        >
+          <LocalOfferRoundedIcon sx={{ fontSize: 10, flexShrink: 0 }} />
+          <Box
+            component="span"
+            sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {release.version}
+          </Box>
+        </Box>
+      )}
+
       {missing ? (
         <Box sx={{ ...c.type.caption, color: c.status.error, opacity: 0.85 }}>gone</Box>
       ) : onTrack ? (
@@ -829,6 +887,7 @@ const RailAppRow: React.FC<{
           {tracking ? <CircularProgress size={9} sx={{ color: c.accent.primary }} /> : 'Track'}
         </Box>
       ) : null}
+      </Box>
     </Box>
   );
 };
