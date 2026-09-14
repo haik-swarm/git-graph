@@ -11,6 +11,7 @@ from typeguard import typechecked
 
 from backend.apps.gitgraph import (
     bundles as bundles_store,
+    bundle_ai,
     bundles_sync,
     cloud,
     collab,
@@ -144,6 +145,20 @@ class BundleUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     icon: Optional[str] = None
+
+
+class SuggestMember(BaseModel):
+    kind: str
+    name: str
+    description: str = ""
+
+
+class BundleSuggestRequest(BaseModel):
+    # field is "title" | "description".
+    field: str
+    members: List[SuggestMember] = []
+    title: str = ""
+    description: str = ""
 
 
 class MemberIn(BaseModel):
@@ -1097,6 +1112,24 @@ async def bundles_remove_member(bundle_id: str, kind: str, member_id: str) -> di
     if bundle is None:
         raise HTTPException(status_code=404, detail="Bundle not found")
     return {"bundle": bundle}
+
+
+@gitgraph.router.post("/bundles/{bundle_id}/suggest")
+@typechecked
+async def bundles_suggest(bundle_id: str, body: BundleSuggestRequest) -> dict:
+    if body.field not in ("title", "description"):
+        raise HTTPException(status_code=400, detail="field must be title or description")
+    try:
+        text = await asyncio.to_thread(
+            bundle_ai.suggest_field,
+            body.field,
+            [m.model_dump() for m in body.members],
+            body.title,
+            body.description,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "text": text}
 
 
 @gitgraph.router.post("/bundles/sync")

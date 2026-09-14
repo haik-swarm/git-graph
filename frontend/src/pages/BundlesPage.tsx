@@ -29,6 +29,7 @@ import {
   GITGRAPH_BUNDLE_URL,
   GITGRAPH_BUNDLE_MEMBERS_URL,
   GITGRAPH_BUNDLE_MEMBER_URL,
+  GITGRAPH_BUNDLE_SUGGEST_URL,
   GITGRAPH_BUNDLES_SYNC_URL,
   GITGRAPH_ICON_URL,
   gitgraphIconJobUrl,
@@ -286,6 +287,8 @@ const BundleDetail: React.FC<{
   const [busy, setBusy] = useState(false);
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [genTitle, setGenTitle] = useState(false);
+  const [genDesc, setGenDesc] = useState(false);
 
   // Resolve a member reference into something displayable, or null when the
   // referenced entity no longer exists (rendered as a "missing" chip).
@@ -322,6 +325,49 @@ const BundleDetail: React.FC<{
   const saveDescription = useCallback(() => {
     if (description !== bundle.description) void patch({ description });
   }, [description, bundle.description, patch]);
+
+  // Member summaries (kind + name + description) sent to the LLM as context.
+  const memberContext = useCallback(
+    () =>
+      bundle.members
+        .map(m => {
+          if (m.kind === 'bundle') {
+            const b = allBundles.find(x => x.id === m.id);
+            return b
+              ? { kind: 'bundle', name: b.title, description: b.description }
+              : null;
+          }
+          const e = entities.find(x => x.kind === m.kind && x.id === m.id);
+          return e ? { kind: e.kind, name: e.name, description: e.description } : null;
+        })
+        .filter((m): m is { kind: string; name: string; description: string } => m !== null),
+    [bundle.members, allBundles, entities],
+  );
+
+  const suggest = useCallback(
+    async (field: 'title' | 'description') => {
+      const setBusy = field === 'title' ? setGenTitle : setGenDesc;
+      setBusy(true);
+      setDetailError(null);
+      try {
+        const data = await readJson(
+          await fetch(GITGRAPH_BUNDLE_SUGGEST_URL(bundle.id), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field, members: memberContext(), title, description }),
+          }),
+        );
+        if (!data.ok) throw new Error(data.error || 'Generation failed.');
+        if (field === 'title') setTitle(data.text);
+        else setDescription(data.text);
+      } catch (err) {
+        setDetailError(err instanceof Error ? err.message : 'Generation failed.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [bundle.id, title, description, memberContext],
+  );
 
   const addMember = useCallback(
     async (m: Member) => {
@@ -424,7 +470,19 @@ const BundleDetail: React.FC<{
           {/* Title + description */}
           <Box sx={{ ...card(c), p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Box>
-              <Box sx={{ ...c.type.caption, color: c.text.muted, mb: 0.75 }}>Title</Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                <Box sx={{ ...c.type.caption, color: c.text.muted }}>Title</Box>
+                <Box
+                  component="button"
+                  onClick={() => void suggest('title')}
+                  disabled={genTitle || bundle.members.length === 0}
+                  title={bundle.members.length === 0 ? 'Add members first' : 'Generate title from members'}
+                  sx={{ ...pushButton(c), minHeight: 26, px: '8px', gap: 0.5, ...c.type.caption }}
+                >
+                  {genTitle ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
+                  Generate
+                </Box>
+              </Box>
               <Box
                 component="input"
                 value={title}
@@ -434,7 +492,19 @@ const BundleDetail: React.FC<{
               />
             </Box>
             <Box>
-              <Box sx={{ ...c.type.caption, color: c.text.muted, mb: 0.75 }}>Description</Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                <Box sx={{ ...c.type.caption, color: c.text.muted }}>Description</Box>
+                <Box
+                  component="button"
+                  onClick={() => void suggest('description')}
+                  disabled={genDesc || bundle.members.length === 0}
+                  title={bundle.members.length === 0 ? 'Add members first' : 'Generate description from members'}
+                  sx={{ ...pushButton(c), minHeight: 26, px: '8px', gap: 0.5, ...c.type.caption }}
+                >
+                  {genDesc ? <CircularProgress size={12} sx={{ color: c.text.secondary }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />}
+                  Generate
+                </Box>
+              </Box>
               <Box
                 component="textarea"
                 value={description}

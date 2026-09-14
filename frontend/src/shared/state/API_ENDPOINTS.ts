@@ -179,4 +179,6 @@ export const GITGRAPH_BUNDLE_MEMBER_URL = (
 ) =>
   `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}/members/` +
   `${encodeURIComponent(kind)}/${encodeURIComponent(memberId)}`;
+export const GITGRAPH_BUNDLE_SUGGEST_URL = (bundleId: string) =>
+  `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}/suggest`;
 export const GITGRAPH_BUNDLES_SYNC_URL = API_URL + '/gitgraph/bundles/sync';
