@@ -23,6 +23,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, RailLabel } from '@/components/Chrome';
+import { AppDockScroll, useAppDockItem } from '@/components/AppDock';
 import { gitgraphInitUrl } from '@/shared/state/API_ENDPOINTS';
 import type { AppEntry } from '@/components/AppPicker';
 
@@ -247,7 +248,7 @@ const AppRail: React.FC<Props> = ({
 
   return (
     <>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: '6px', pt: '10px', pb: '10px', ...slimScroll(c) }}>
+      <AppDockScroll sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pl: '6px', pr: '14px', pt: '10px', pb: '10px', ...slimScroll(c) }}>
         <Box
           component="button"
           onClick={onHome}
@@ -680,7 +681,7 @@ const AppRail: React.FC<Props> = ({
                   : 'Nothing here yet'}
           </Box>
         )}
-      </Box>
+      </AppDockScroll>
     </>
   );
 };
@@ -766,6 +767,9 @@ const RailAppRow: React.FC<{
   release,
 }) => {
   const c = useClaudeTokens();
+  // Every app row rides the dock magnification. Nav rows and the home button
+  // are separate components that never call this hook, so they stay fixed.
+  const { rowRef: dockRef, iconRef, trailRef } = useAppDockItem(true);
   const missing = !app.workspace_exists;
   const dirty = state?.dirty ?? 0;
   const unpushed = state?.unpushed ?? 0;
@@ -778,6 +782,7 @@ const RailAppRow: React.FC<{
     : undefined;
   return (
     <Box
+      ref={dockRef}
       component="button"
       onClick={() => onSelect(app)}
       sx={{
@@ -793,7 +798,13 @@ const RailAppRow: React.FC<{
         borderRadius: `${c.radius.sm}px`,
         background: selected ? `rgba(${c.accentRgb},0.10)` : 'transparent',
         color: selected ? c.text.primary : c.text.primary,
-        transition: 'background 100ms linear',
+        // The transform is driven imperatively per frame by the dock; anchoring
+        // to the left keeps the label pinned as the row swells, and the eased
+        // transition makes a fast sweep read as one fluid wave.
+        transformOrigin: 'left center',
+        willChange: 'transform',
+        transition:
+          'background 100ms linear, transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
         '& .track-slot': { opacity: 0, transition: 'opacity 120ms linear' },
         '&:hover': {
           background: selected ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary,
@@ -802,7 +813,16 @@ const RailAppRow: React.FC<{
       }}
     >
       {app.has_git ? (
-        <Box sx={{ position: 'relative', flexShrink: 0 }}>
+        <Box
+          ref={iconRef}
+          sx={{
+            position: 'relative',
+            flexShrink: 0,
+            transformOrigin: 'center',
+            willChange: 'transform',
+            transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        >
           <BrandGlyph
             seed={app.workspace_id}
             letter={app.name[0] || '?'}
@@ -844,6 +864,7 @@ const RailAppRow: React.FC<{
         </Box>
       ) : (
         <Box
+          ref={iconRef}
           sx={{
             width: 20,
             height: 20,
@@ -853,6 +874,9 @@ const RailAppRow: React.FC<{
             alignItems: 'center',
             justifyContent: 'center',
             color: c.text.muted,
+            transformOrigin: 'center',
+            willChange: 'transform',
+            transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 14 }} />
@@ -893,12 +917,16 @@ const RailAppRow: React.FC<{
           badges (dirty, unpushed, shared, release) keep even spacing and the
           label yields (ellipsizes) before any of them get clipped. */}
       <Box
+        ref={trailRef}
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
           flexShrink: 0,
           minWidth: 0,
+          willChange: 'transform',
+          transformOrigin: 'left center',
+          transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
       {/* Uncommitted and unpushed are separate badges rather than one total:
