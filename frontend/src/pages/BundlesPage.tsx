@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -23,6 +23,7 @@ import {
   sunkenField,
 } from '@/shared/styles/ui';
 import { Placeholder, Scroller, Toolbar } from '@/components/Chrome';
+import IconPanel from '@/components/IconPanel';
 import type { AppEntry } from '@/components/AppPicker';
 import {
   GITGRAPH_BUNDLES_URL,
@@ -31,8 +32,6 @@ import {
   GITGRAPH_BUNDLE_MEMBER_URL,
   GITGRAPH_BUNDLE_SUGGEST_URL,
   GITGRAPH_BUNDLES_SYNC_URL,
-  GITGRAPH_ICON_URL,
-  gitgraphIconJobUrl,
 } from '@/shared/state/API_ENDPOINTS';
 
 type MemberKind = 'app' | 'skill' | 'bundle';
@@ -50,20 +49,6 @@ interface Bundle {
   members: Member[];
   created_at: string;
   updated_at: string;
-}
-
-interface IconResult {
-  ok: boolean;
-  data_uri: string;
-  engine: string;
-  style: string;
-}
-
-interface IconJob {
-  id: string;
-  status: 'queued' | 'running' | 'done' | 'failed';
-  results: IconResult[];
-  error: string;
 }
 
 async function readJson(res: Response): Promise<any> {
@@ -344,6 +329,25 @@ const BundleDetail: React.FC<{
     [bundle.members, allBundles, entities],
   );
 
+  // The prompt seed IconPanel starts from: the bundle's own title/description
+  // plus a plain-language list of what it contains, so a generated mark reflects
+  // the whole bundle rather than a single item.
+  const iconContext = useMemo(() => {
+    const members = memberContext();
+    const lines = members.map(m =>
+      m.description
+        ? `- ${m.kind} "${m.name}": ${m.description}`
+        : `- ${m.kind} "${m.name}"`,
+    );
+    return [
+      `A bundle named "${(title || bundle.title).trim()}".`,
+      (description || bundle.description).trim(),
+      members.length ? `It contains:\n${lines.join('\n')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }, [title, bundle.title, description, bundle.description, memberContext]);
+
   const suggest = useCallback(
     async (field: 'title' | 'description') => {
       const setBusy = field === 'title' ? setGenTitle : setGenDesc;
@@ -360,13 +364,14 @@ const BundleDetail: React.FC<{
         if (!data.ok) throw new Error(data.error || 'Generation failed.');
         if (field === 'title') setTitle(data.text);
         else setDescription(data.text);
+        await patch({ [field]: data.text });
       } catch (err) {
         setDetailError(err instanceof Error ? err.message : 'Generation failed.');
       } finally {
         setBusy(false);
       }
     },
-    [bundle.id, title, description, memberContext],
+    [bundle.id, title, description, memberContext, patch],
   );
 
   const addMember = useCallback(
@@ -516,8 +521,35 @@ const BundleDetail: React.FC<{
             </Box>
           </Box>
 
-          {/* Icon */}
-          <IconEditor bundle={bundle} onPick={dataUri => void patch({ icon: dataUri })} />
+          {/* Icon — same generator, settings, and flow as apps/skills, but fed
+              the bundle's own title/description plus its members' metadata, and
+              persisted via PATCH instead of a repo commit. */}
+          <Box sx={{ ...card(c), p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <BundleIcon icon={bundle.icon} size={48} />
+            <Box sx={{ flex: 1 }}>
+              <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary }}>Icon</Box>
+              <Box sx={{ ...c.type.caption, color: c.text.muted, mt: 0.25 }}>
+                Generate one from the bundle and its contents.
+              </Box>
+            </Box>
+            {bundle.icon && (
+              <Box
+                component="button"
+                onClick={() => void patch({ icon: '' })}
+                sx={pushButton(c)}
+              >
+                Remove
+              </Box>
+            )}
+            <IconPanel
+              workspaceId={bundle.id}
+              appName={title || bundle.title}
+              appDescription={iconContext}
+              heading="Bundle icon"
+              pickHint="Pick one to set it as the bundle icon"
+              onApply={dataUri => patch({ icon: dataUri })}
+            />
+          </Box>
 
           {/* Members */}
           <Box sx={{ ...card(c), p: 2.5 }}>
@@ -592,118 +624,6 @@ const BundleDetail: React.FC<{
         })}
       </Menu>
     </>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Icon editor: reuses the shared icon-generation job endpoints, then stores the
-// chosen candidate inline on the bundle rather than committing it to a repo.
-// ---------------------------------------------------------------------------
-
-const IconEditor: React.FC<{ bundle: Bundle; onPick: (dataUri: string) => void }> = ({ bundle, onPick }) => {
-  const c = useClaudeTokens();
-  const [prompt, setPrompt] = useState('');
-  const [job, setJob] = useState<IconJob | null>(null);
-  const [genError, setGenError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
-    },
-    [],
-  );
-
-  const poll = useCallback((jobId: string) => {
-    const tick = async () => {
-      try {
-        const data = await readJson(await fetch(gitgraphIconJobUrl(jobId)));
-        const j: IconJob = data.job;
-        setJob(j);
-        if (j && (j.status === 'done' || j.status === 'failed')) {
-          if (j.status === 'failed') setGenError(j.error || 'Generation failed.');
-          return;
-        }
-      } catch {
-        setGenError("Lost the icon job.");
-        return;
-      }
-      pollRef.current = setTimeout(tick, 1300);
-    };
-    void tick();
-  }, []);
-
-  const generate = useCallback(async () => {
-    setGenError(null);
-    setJob({ id: '', status: 'queued', results: [], error: '' });
-    try {
-      const data = await readJson(
-        await fetch(GITGRAPH_ICON_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt,
-            title: bundle.title,
-            styles: ['flat'],
-            entity_id: `bundle:${bundle.id}`,
-          }),
-        }),
-      );
-      if (!data.ok) throw new Error(data.error || 'Generation failed.');
-      setJob(data.job);
-      poll(data.job.id);
-    } catch (err) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed.');
-      setJob(null);
-    }
-  }, [prompt, bundle.title, bundle.id, poll]);
-
-  const candidates = (job?.results ?? []).filter(r => r.ok && r.data_uri);
-  const working = job !== null && (job.status === 'queued' || job.status === 'running');
-
-  return (
-    <Box sx={{ ...card(c), p: 2.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <BundleIcon icon={bundle.icon} size={48} />
-        <Box sx={{ flex: 1 }}>
-          <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary }}>Icon</Box>
-          <Box sx={{ ...c.type.caption, color: c.text.muted, mt: 0.25 }}>
-            Describe a mark, generate a few, then pick one.
-          </Box>
-        </Box>
-        {bundle.icon && (
-          <Box component="button" onClick={() => onPick('')} sx={pushButton(c)}>Remove</Box>
-        )}
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1 }}>
-        <Box
-          component="input"
-          value={prompt}
-          placeholder="e.g. a stack of interlocking blocks"
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrompt(e.target.value)}
-          sx={{ ...sunkenField(c), flex: 1, px: 1.5, py: 1, ...c.type.body, color: c.text.primary, outline: 'none' }}
-        />
-        <Box component="button" onClick={generate} disabled={working} sx={primaryButton(c)}>
-          {working ? <CircularProgress size={13} sx={{ color: '#fff' }} /> : <AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} />}
-          Generate
-        </Box>
-      </Box>
-      {genError && <Box sx={{ ...c.type.caption, color: c.status.error }}>{genError}</Box>}
-      {candidates.length > 0 && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {candidates.map((r, i) => (
-            <Tooltip key={i} title={`${r.engine} · ${r.style || 'default'}`}>
-              <ButtonBase
-                onClick={() => onPick(r.data_uri)}
-                sx={{ width: 56, height: 56, borderRadius: `${c.radius.md}px`, overflow: 'hidden', border: `1px solid ${c.border.subtle}`, '&:hover': { borderColor: c.accent.primary } }}
-              >
-                <Box component="img" src={r.data_uri} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </ButtonBase>
-            </Tooltip>
-          ))}
-        </Box>
-      )}
-    </Box>
   );
 };
 

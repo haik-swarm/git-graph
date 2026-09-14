@@ -30,6 +30,22 @@ interface Props {
    * now owns the icon config. Without it, they fall back to the inline sheet.
    */
   onOpenSettings?: () => void;
+  /**
+   * Optional custom apply. Apps commit the chosen icon into their git repo (the
+   * default); a bundle has no repo, so it passes this to persist the data URI
+   * its own way (a PATCH). When set, the repo-commit path is skipped entirely.
+   */
+  onApply?: (dataUri: string) => Promise<void> | void;
+  /**
+   * The heading shown in the popover ("App icon" by default). Bundles say
+   * "Bundle icon" so the surface reads correctly.
+   */
+  heading?: string;
+  /**
+   * Copy under the candidate grid. Apps say "commit it into the repo"; a bundle
+   * has no repo so it overrides this.
+   */
+  pickHint?: string;
 }
 
 interface IconResult {
@@ -56,6 +72,9 @@ const IconPanel: React.FC<Props> = ({
   appDescription,
   onApplied,
   onOpenSettings,
+  onApply,
+  heading = 'App icon',
+  pickHint,
 }) => {
   const c = useClaudeTokens();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -182,6 +201,14 @@ const IconPanel: React.FC<Props> = ({
     setError(null);
     setDone(null);
     try {
+      // A caller that owns persistence (e.g. a bundle, which has no repo) takes
+      // the data URI and stores it itself; the repo-commit path is skipped.
+      if (onApply) {
+        await onApply(r.data_uri);
+        setDone('Icon set.');
+        onApplied?.();
+        return;
+      }
       const res = await fetch(gitgraphIconApplyUrl(workspaceId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -286,7 +313,7 @@ const IconPanel: React.FC<Props> = ({
           }}
         >
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
-            App icon
+            {heading}
           </Typography>
           <ButtonBase
             onClick={() => {
@@ -372,7 +399,7 @@ const IconPanel: React.FC<Props> = ({
           {results.length > 0 && (
             <>
               <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
-                Pick one to commit it into the repo
+                {pickHint ?? 'Pick one to commit it into the repo'}
               </Typography>
               <Box
                 sx={{

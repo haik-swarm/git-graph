@@ -57,12 +57,34 @@ def _git_env(token: str) -> Dict[str, str]:
 
 
 @typechecked
-async def _current_login(client: httpx.AsyncClient, token: str) -> Optional[str]:
+async def _current_login(client: httpx.AsyncClient, token: str) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve the connected account's login. Returns (login, error): on success
+    (login, None); on failure (None, human-readable reason) so callers can tell a
+    rate-limit or auth failure apart from a genuinely empty account."""
     resp = await client.get(f"{API_ROOT}/user", headers=_headers(token))
-    if resp.status_code != 200:
-        return None
-    login = resp.json().get("login")
-    return login if isinstance(login, str) and login else None
+    if resp.status_code == 200:
+        login = resp.json().get("login")
+        if isinstance(login, str) and login:
+            return login, None
+        return None, "GitHub didn't return an account login."
+
+    message = ""
+    try:
+        message = resp.json().get("message", "") or ""
+    except Exception:
+        pass
+    remaining = resp.headers.get("x-ratelimit-remaining")
+    if resp.status_code == 403 and (remaining == "0" or "rate limit" in message.lower()):
+        reset = resp.headers.get("x-ratelimit-reset")
+        when = ""
+        if reset and reset.isdigit():
+            import datetime as _dt
+            mins = max(0, round((int(reset) - _dt.datetime.now(_dt.timezone.utc).timestamp()) / 60))
+            when = f" Try again in about {mins} min." if mins else " Try again shortly."
+        return None, f"GitHub API rate limit reached.{when}"
+    if resp.status_code in (401, 403):
+        return None, "GitHub rejected the token. Reconnect the GitHub integration in OpenSwarm settings."
+    return None, f"GitHub returned {resp.status_code} reading the connected account."
 
 
 @typechecked
@@ -74,9 +96,9 @@ async def ensure_repo() -> Tuple[bool, Any]:
         return False, "Connect the GitHub integration in OpenSwarm settings first."
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        owner = await _current_login(client, token)
+        owner, login_err = await _current_login(client, token)
         if not owner:
-            return False, "Couldn't read the connected GitHub account."
+            return False, login_err or "Couldn't read the connected GitHub account."
 
         existing = await client.get(
             f"{API_ROOT}/repos/{owner}/{REPO_NAME}", headers=_headers(token)
