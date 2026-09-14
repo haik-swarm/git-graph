@@ -188,20 +188,27 @@ const AppRail: React.FC<Props> = ({
     const trackedApps = filtered.filter(a => a.has_git && a.workspace_exists);
 
     /**
-     * Float the apps with outstanding work to the top of whichever group
-     * they're already in. Sorting inside each group rather than pulling
-     * them into one keeps an app where the user expects to find it: which
-     * group an app lives in is a stable fact they navigate by, while having
-     * work pending is a temporary state that shouldn't relocate it.
-     *
-     * Uncommitted outranks unpushed because committing is what makes work
-     * recoverable; pushing only moves work that is already safe.
+     * Float the apps with outstanding work to the top. Urgency is the primary
+     * key: uncommitted outranks unpushed (committing is what makes work
+     * recoverable; pushing only moves work that is already safe), which
+     * outranks clean. Within a single urgency tier we group by kind so apps
+     * and skills stay together even under the 'all' filter, and within a kind
+     * the larger pile of pending work sorts first.
      */
+    const urgencyRank = (id: string) => {
+      const s = repoState?.[id];
+      if ((s?.dirty ?? 0) > 0) return 0;
+      if ((s?.unpushed ?? 0) > 0) return 1;
+      return 2;
+    };
+    const kindRank = (k: AppEntry['kind']) => (k === 'skill' ? 1 : 0);
     const byUrgency = (list: AppEntry[]) =>
       list.slice().sort((a, b) => {
         const sa = repoState?.[a.workspace_id];
         const sb = repoState?.[b.workspace_id];
         return (
+          urgencyRank(a.workspace_id) - urgencyRank(b.workspace_id) ||
+          kindRank(a.kind) - kindRank(b.kind) ||
           (sb?.dirty ?? 0) - (sa?.dirty ?? 0) ||
           (sb?.unpushed ?? 0) - (sa?.unpushed ?? 0) ||
           0
