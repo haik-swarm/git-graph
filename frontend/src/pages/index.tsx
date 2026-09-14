@@ -49,6 +49,7 @@ import ReleasePanel from '@/components/ReleasePanel';
 import IconPanel from '@/components/IconPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import SettingsPage from '@/components/SettingsPage';
+import BundlesPage from '@/pages/BundlesPage';
 import HomeGrid from '@/components/HomeGrid';
 import RepoHero from '@/components/RepoHero';
 import { RestartNotice } from '@/components/RestartNotice';
@@ -98,7 +99,7 @@ const Home: React.FC = () => {
   // rail and each page own their own display filter.
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [selected, setSelected] = useState<AppEntry | null>(null);
-  const [mode, setMode] = useState<'home' | 'app' | 'releases' | 'settings'>('home');
+  const [mode, setMode] = useState<'home' | 'app' | 'releases' | 'settings' | 'bundles'>('home');
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -461,6 +462,11 @@ const Home: React.FC = () => {
     setSelectedSha(null);
   }, []);
 
+  const goBundles = useCallback(() => {
+    setMode('bundles');
+    setSelectedSha(null);
+  }, []);
+
   const layout = useMemo(
     () => layoutCommits(graph?.commits ?? []),
     [graph],
@@ -519,9 +525,11 @@ const Home: React.FC = () => {
       homeActive={mode === 'home'}
       releasesActive={mode === 'releases'}
       settingsActive={mode === 'settings'}
+      bundlesActive={mode === 'bundles'}
       onReleases={goReleases}
       onSettings={goSettings}
       onHome={goHome}
+      onBundles={goBundles}
       onSelect={openApp}
       runningIds={runningIds}
       sharing={sharing}
@@ -637,6 +645,14 @@ const Home: React.FC = () => {
     return (
       <Shell rail={rail}>
         <SettingsPage onIgnoreSaved={() => void refreshHomeMeta()} />
+      </Shell>
+    );
+  }
+
+  if (mode === 'bundles') {
+    return (
+      <Shell rail={rail}>
+        <BundlesPage entities={apps} />
       </Shell>
     );
   }

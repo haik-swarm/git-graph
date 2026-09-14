@@ -10,6 +10,8 @@ from swarm_debug import debug
 from typeguard import typechecked
 
 from backend.apps.gitgraph import (
+    bundles as bundles_store,
+    bundles_sync,
     cloud,
     collab,
     github,
@@ -128,6 +130,31 @@ class IconConfigRequest(BaseModel):
     template_svg_user: Optional[str] = None
     template_image_prompt: Optional[str] = None
     template_style_line: Optional[str] = None
+
+
+class BundleIn(BaseModel):
+    title: str
+    description: str = ""
+    # A supported icon data URI, or "" for none.
+    icon: str = ""
+
+
+class BundleUpdate(BaseModel):
+    # None leaves the stored field unchanged.
+    title: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+
+
+class MemberIn(BaseModel):
+    # kind is one of "app" | "skill" | "bundle"; id references that entity.
+    kind: str
+    id: str
+
+
+class MembersIn(BaseModel):
+    # Add one or many in a single request; the UI batches a multi-select.
+    members: List[MemberIn]
 
 
 @typechecked
@@ -990,3 +1017,92 @@ async def reload_app_now() -> dict:
         raise HTTPException(status_code=400, detail=result.get("detail", "Reload failed."))
     await asyncio.to_thread(restart_notice.dismiss)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Bundles: user-defined groupings of apps, skills, and other bundles.
+# ---------------------------------------------------------------------------
+
+
+@gitgraph.router.get("/bundles")
+@typechecked
+async def bundles_list() -> dict:
+    return {"bundles": await asyncio.to_thread(bundles_store.list_bundles)}
+
+
+@gitgraph.router.post("/bundles")
+@typechecked
+async def bundles_create(body: BundleIn) -> dict:
+    bundle = await asyncio.to_thread(
+        bundles_store.create_bundle, body.title, body.description, body.icon
+    )
+    return {"bundle": bundle}
+
+
+@gitgraph.router.patch("/bundles/{bundle_id}")
+@typechecked
+async def bundles_update(bundle_id: str, body: BundleUpdate) -> dict:
+    bundle = await asyncio.to_thread(
+        bundles_store.update_bundle,
+        bundle_id,
+        body.title,
+        body.description,
+        body.icon,
+    )
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="Bundle not found")
+    return {"bundle": bundle}
+
+
+@gitgraph.router.delete("/bundles/{bundle_id}")
+@typechecked
+async def bundles_delete(bundle_id: str) -> dict:
+    ok = await asyncio.to_thread(bundles_store.delete_bundle, bundle_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Bundle not found")
+    return {"ok": True}
+
+
+_MEMBER_ERRORS = {
+    "not_found": (404, "Bundle not found"),
+    "bad_kind": (400, "Member kind must be one of app, skill, bundle"),
+    "cycle": (400, "That would make the bundle contain itself"),
+}
+
+
+@gitgraph.router.post("/bundles/{bundle_id}/members")
+@typechecked
+async def bundles_add_members(bundle_id: str, body: MembersIn) -> dict:
+    bundle = None
+    for member in body.members:
+        ok, error, bundle = await asyncio.to_thread(
+            bundles_store.add_member, bundle_id, member.kind, member.id
+        )
+        if not ok:
+            status, detail = _MEMBER_ERRORS.get(error, (400, "Add member failed"))
+            raise HTTPException(status_code=status, detail=detail)
+    if bundle is None:
+        bundle = await asyncio.to_thread(bundles_store.get_bundle, bundle_id)
+        if bundle is None:
+            raise HTTPException(status_code=404, detail="Bundle not found")
+    return {"bundle": bundle}
+
+
+@gitgraph.router.delete("/bundles/{bundle_id}/members/{kind}/{member_id}")
+@typechecked
+async def bundles_remove_member(bundle_id: str, kind: str, member_id: str) -> dict:
+    bundle = await asyncio.to_thread(
+        bundles_store.remove_member, bundle_id, kind, member_id
+    )
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="Bundle not found")
+    return {"bundle": bundle}
+
+
+@gitgraph.router.post("/bundles/sync")
+@typechecked
+async def bundles_sync_now() -> dict:
+    ok, data = await bundles_sync.sync()
+    if not ok:
+        raise HTTPException(status_code=400, detail=str(data))
+    return data

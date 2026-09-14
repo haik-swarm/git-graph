@@ -165,3 +165,18 @@ export const GITGRAPH_RESTART_NOTICE_DISMISS_URL =
 // Quits and relaunches OpenSwarm. The backend goes down with it, so this
 // request is expected to fail in transit on success.
 export const GITGRAPH_RESTART_APP_URL = API_URL + '/gitgraph/restart-app';
+
+// Bundles: user-defined groupings of apps, skills, and other bundles.
+export const GITGRAPH_BUNDLES_URL = API_URL + '/gitgraph/bundles';
+export const GITGRAPH_BUNDLE_URL = (bundleId: string) =>
+  `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}`;
+export const GITGRAPH_BUNDLE_MEMBERS_URL = (bundleId: string) =>
+  `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}/members`;
+export const GITGRAPH_BUNDLE_MEMBER_URL = (
+  bundleId: string,
+  kind: string,
+  memberId: string,
+) =>
+  `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}/members/` +
+  `${encodeURIComponent(kind)}/${encodeURIComponent(memberId)}`;
+export const GITGRAPH_BUNDLES_SYNC_URL = API_URL + '/gitgraph/bundles/sync';

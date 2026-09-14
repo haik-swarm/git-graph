@@ -15,6 +15,7 @@ import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
+import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WebAssetRoundedIcon from '@mui/icons-material/WebAssetRounded';
@@ -100,9 +101,11 @@ interface Props {
   homeActive: boolean;
   releasesActive: boolean;
   settingsActive: boolean;
+  bundlesActive: boolean;
   onReleases: () => void;
   onSettings: () => void;
   onHome: () => void;
+  onBundles: () => void;
   onSelect: (app: AppEntry) => void;
   onTracked: (app: AppEntry) => void;
   runningIds?: Set<string>;
@@ -139,9 +142,11 @@ const AppRail: React.FC<Props> = ({
   homeActive,
   releasesActive,
   settingsActive,
+  bundlesActive,
   onReleases,
   onSettings,
   onHome,
+  onBundles,
   onSelect,
   onTracked,
   runningIds,
@@ -297,6 +302,15 @@ const AppRail: React.FC<Props> = ({
             label="Releases"
             active={releasesActive}
             onClick={onReleases}
+          />
+        </Box>
+
+        <Box sx={{ px: '2px', mb: '4px' }}>
+          <NavRow
+            icon={<Inventory2RoundedIcon sx={{ fontSize: 15 }} />}
+            label="Bundles"
+            active={bundlesActive}
+            onClick={onBundles}
           />
         </Box>
 
