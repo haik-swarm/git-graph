@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import Popover from '@mui/material/Popover';
 import Tooltip from '@mui/material/Tooltip';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
@@ -18,6 +16,7 @@ import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   card,
@@ -25,6 +24,7 @@ import {
   popover,
   primaryButton,
   pushButton,
+  slimScroll,
   statusChip,
   sunkenField,
 } from '@/shared/styles/ui';
@@ -448,6 +448,8 @@ const BundleDetail: React.FC<{
   const [descGenAnchor, setDescGenAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<MemberKind | 'all'>('all');
+  const [addSearch, setAddSearch] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<MemberKind>>(new Set());
 
   // Resolve a member reference into something displayable, or null when the
   // referenced entity no longer exists (rendered as a "missing" card).
@@ -613,6 +615,30 @@ const BundleDetail: React.FC<{
     return [...fromEntities, ...fromBundles];
   }, [bundle.members, bundle.id, entities, allBundles]);
 
+  // Candidates resolved + filtered by the dropdown's own search/kind controls,
+  // then bucketed by kind so the menu can render collapsible groups.
+  const candidateGroups = useMemo(() => {
+    const q = addSearch.trim().toLowerCase();
+    const order: MemberKind[] = ['app', 'skill', 'bundle'];
+    const buckets = new Map<MemberKind, { member: Member; info: { name: string; description: string; icon?: string } | null }[]>();
+    for (const m of candidates) {
+      const info = resolve(m);
+      if (q) {
+        const name = (info?.name ?? m.id).toLowerCase();
+        const desc = (info?.description ?? '').toLowerCase();
+        if (!name.includes(q) && !desc.includes(q)) continue;
+      }
+      if (!buckets.has(m.kind)) buckets.set(m.kind, []);
+      buckets.get(m.kind)!.push({ member: m, info });
+    }
+    return order
+      .filter(k => buckets.has(k))
+      .map(k => ({
+        kind: k,
+        items: buckets.get(k)!.sort((a, b) => (a.info?.name ?? a.member.id).localeCompare(b.info?.name ?? b.member.id)),
+      }));
+  }, [candidates, addSearch, resolve]);
+
   // Members after the search box and kind chip. Each carries its resolved
   // display info so the grid can render without resolving twice.
   const visibleMembers = useMemo(() => {
@@ -755,7 +781,7 @@ const BundleDetail: React.FC<{
                     onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     }}
-                    sx={{ ...sunkenField(c), width: '100%', px: 1, py: 0.5, ...c.type.title, color: c.text.primary, outline: 'none' }}
+                    sx={{ width: '100%', p: 0, ...c.type.title, lineHeight: 1.3, color: c.text.primary, background: 'transparent', border: 'none', outline: 'none', fontFamily: c.font.sans, boxShadow: `inset 0 -1.5px 0 ${c.accent.primary}` }}
                   />
                 ) : (
                   <>
@@ -764,14 +790,14 @@ const BundleDetail: React.FC<{
                       title="Click to edit"
                       sx={{
                         ...c.type.title,
+                        lineHeight: 1.3,
                         color: c.text.primary,
                         cursor: 'text',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         maxWidth: '100%',
-                        borderRadius: `${c.radius.sm}px`,
-                        '&:hover': { background: c.bg.secondary },
+                        '&:hover': { boxShadow: `inset 0 -1.5px 0 ${c.border.medium}` },
                       }}
                     >
                       {title || 'Untitled bundle'}
@@ -812,14 +838,24 @@ const BundleDetail: React.FC<{
                 <Box
                   component="textarea"
                   autoFocus
+                  ref={(el: HTMLTextAreaElement | null) => {
+                    if (el) {
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                    }
+                  }}
                   value={description}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                    setDescription(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                  }}
                   onBlur={() => {
                     saveDescription();
                     setEditingDesc(false);
                   }}
-                  rows={3}
-                  sx={{ ...sunkenField(c), width: '100%', px: 1.5, py: 1, ...c.type.body, color: c.text.primary, outline: 'none', resize: 'vertical', fontFamily: c.font.sans }}
+                  rows={1}
+                  sx={{ width: '100%', display: 'block', px: 0, py: 0, ...c.type.body, lineHeight: 1.6, color: c.text.primary, background: 'transparent', border: 'none', outline: 'none', resize: 'none', overflow: 'hidden', fontFamily: c.font.sans, boxShadow: `inset 0 -1.5px 0 ${c.accent.primary}` }}
                 />
               ) : (
                 <>
@@ -828,13 +864,11 @@ const BundleDetail: React.FC<{
                     title="Click to edit"
                     sx={{
                       ...c.type.body,
+                      lineHeight: 1.6,
                       color: description ? c.text.secondary : c.text.muted,
                       cursor: 'text',
                       whiteSpace: 'pre-wrap',
-                      borderRadius: `${c.radius.sm}px`,
-                      px: 0.5,
-                      mx: -0.5,
-                      '&:hover': { background: c.bg.secondary },
+                      '&:hover': { boxShadow: `inset 0 -1.5px 0 ${c.border.medium}` },
                     }}
                   >
                     {description || 'No description yet. Click to add one.'}
@@ -1081,22 +1115,116 @@ const BundleDetail: React.FC<{
         </Box>
       </Scroller>
 
-      <Menu
+      <Popover
         anchorEl={addAnchor}
         open={Boolean(addAnchor)}
         onClose={() => setAddAnchor(null)}
-        slotProps={{ paper: { sx: { maxHeight: 360, minWidth: 240 } } }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { ...popover(c), width: 320, mt: 0.5, overflow: 'hidden' } } }}
       >
-        {candidates.map(m => {
-          const info = resolve(m);
-          return (
-            <MenuItem key={`${m.kind}:${m.id}`} onClick={() => addMember(m)} sx={{ gap: 1, ...c.type.body }}>
-              <KindGlyph kind={m.kind} />
-              <Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info?.name ?? m.id}</Box>
-            </MenuItem>
-          );
-        })}
-      </Menu>
+        {/* Search (sticky header) */}
+        <Box sx={{ p: 1, borderBottom: `1px solid ${c.border.subtle}` }}>
+          <Box sx={{ ...sunkenField(c), display: 'flex', alignItems: 'center', gap: 1, px: 1.25, height: 34 }}>
+            <SearchRoundedIcon sx={{ fontSize: 16, color: c.text.muted }} />
+            <Box
+              component="input"
+              autoFocus
+              value={addSearch}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAddSearch(e.target.value)}
+              placeholder="Search to add…"
+              sx={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', ...c.type.body, color: c.text.primary, fontFamily: c.font.sans, '&::placeholder': { color: c.text.muted } }}
+            />
+          </Box>
+        </Box>
+
+        {/* Grouped, collapsible candidate list */}
+        <Box sx={{ maxHeight: 320, overflowY: 'auto', py: 0.5, ...slimScroll(c) }}>
+          {candidateGroups.length === 0 ? (
+            <Box sx={{ ...c.type.caption, color: c.text.muted, textAlign: 'center', py: 3 }}>
+              Nothing to add.
+            </Box>
+          ) : (
+            candidateGroups.map(group => {
+              const collapsed = collapsedGroups.has(group.kind);
+              return (
+                <Box key={group.kind}>
+                  <ButtonBase
+                    onClick={() =>
+                      setCollapsedGroups(prev => {
+                        const next = new Set(prev);
+                        if (next.has(group.kind)) next.delete(group.kind);
+                        else next.add(group.kind);
+                        return next;
+                      })
+                    }
+                    sx={{
+                      width: '100%',
+                      justifyContent: 'flex-start',
+                      gap: 0.75,
+                      px: 1.25,
+                      py: 0.75,
+                      color: c.text.muted,
+                      '&:hover': { color: c.text.secondary },
+                    }}
+                  >
+                    <KeyboardArrowDownRoundedIcon
+                      sx={{ fontSize: 16, transition: c.transition, transform: collapsed ? 'rotate(-90deg)' : 'none' }}
+                    />
+                    <Box sx={{ ...c.type.caption, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      {KIND_LABEL[group.kind]}s
+                    </Box>
+                    <Box sx={{ ...c.type.caption, color: c.text.ghost }}>{group.items.length}</Box>
+                  </ButtonBase>
+                  {!collapsed &&
+                    group.items.map(({ member: m, info }) => (
+                      <ButtonBase
+                        key={`${m.kind}:${m.id}`}
+                        onClick={() => addMember(m)}
+                        sx={{
+                          width: '100%',
+                          justifyContent: 'flex-start',
+                          gap: 1.25,
+                          px: 1.25,
+                          py: 0.75,
+                          pl: 2.5,
+                          ...c.type.body,
+                          color: c.text.primary,
+                          '&:hover': { background: c.bg.secondary },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            flexShrink: 0,
+                            borderRadius: `${c.radius.sm}px`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            background: info?.icon ? 'transparent' : c.bg.secondary,
+                            border: `1px solid ${c.border.subtle}`,
+                            color: c.text.tertiary,
+                          }}
+                        >
+                          {info?.icon ? (
+                            <Box component="img" src={info.icon} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <KindGlyph kind={m.kind} size={14} />
+                          )}
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
+                          {info?.name ?? m.id}
+                        </Box>
+                      </ButtonBase>
+                    ))}
+                </Box>
+              );
+            })
+          )}
+        </Box>
+      </Popover>
     </>
   );
 };
