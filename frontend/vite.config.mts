@@ -55,6 +55,14 @@ export default defineConfig(({ mode }) => {
     // Relative asset URLs: the built bundle is served under /api/outputs/workspace/<id>/serve/frontend/dist/, where absolute /assets/ paths would 404 (ENG-209 serve-mode).
     base: './',
     cacheDir: sharedViteCacheDir(),
+    // Routes are code-split (one lazy chunk per page via vite-plugin-pages), so
+    // Vite's dep scanner only sees deps reachable from the current page at boot.
+    // The first visit to another page pulls in deps Vite hasn't pre-bundled yet,
+    // triggering a re-optimize and a FULL PAGE RELOAD. Crawling every source file
+    // up front finds them all before you navigate, so the reload disappears.
+    optimizeDeps: {
+      entries: ['index.html', 'src/**/*.{ts,tsx}'],
+    },
     plugins: [
       react(),
       // Tailwind only styles the vendored tool-ui components (scoped, no preflight); MUI and app styles are untouched.
