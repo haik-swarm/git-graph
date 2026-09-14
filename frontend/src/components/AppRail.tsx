@@ -4,6 +4,7 @@ import ButtonBase from '@mui/material/ButtonBase';
 import CircularProgress from '@mui/material/CircularProgress';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import Tooltip from '@mui/material/Tooltip';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
@@ -15,6 +16,9 @@ import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import WebAssetRoundedIcon from '@mui/icons-material/WebAssetRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, RailLabel } from '@/components/Chrome';
@@ -66,6 +70,28 @@ const RAIL_KIND_LABEL: Record<RailKind, string> = {
   all: 'All',
   apps: 'Apps',
   skills: 'Skills',
+};
+
+/** One line of the rail's indicator legend: the exact glyph, then its meaning. */
+const LegendItem: React.FC<{ glyph: React.ReactNode; label: string }> = ({ glyph, label }) => {
+  const c = useClaudeTokens();
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <Box
+        sx={{
+          width: 18,
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: c.text.secondary,
+        }}
+      >
+        {glyph}
+      </Box>
+      <Box sx={{ ...c.type.caption, color: c.text.secondary }}>{label}</Box>
+    </Box>
+  );
 };
 
 interface Props {
@@ -438,6 +464,78 @@ const AppRail: React.FC<Props> = ({
             );
           })}
         </Menu>
+
+        {/* Legend: one place that names every glyph the rail can draw, so the
+            indicators stay self-explanatory as more of them accumulate. */}
+        <Tooltip
+          arrow
+          placement="bottom-end"
+          title={
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '7px', py: '2px' }}>
+              <LegendItem glyph={<WebAssetRoundedIcon sx={{ fontSize: 14 }} />} label="App" />
+              <LegendItem glyph={<AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />} label="Skill" />
+              <LegendItem
+                glyph={<RadioButtonCheckedRoundedIcon sx={{ fontSize: 11, color: c.status.warning }} />}
+                label="Uncommitted changes"
+              />
+              <LegendItem
+                glyph={<CloudUploadRoundedIcon sx={{ fontSize: 12, color: c.accent.primary }} />}
+                label="Commits to push"
+              />
+              <LegendItem
+                glyph={<GroupRoundedIcon sx={{ fontSize: 12 }} />}
+                label="Shared collaborators"
+              />
+              <LegendItem
+                glyph={<LocalOfferRoundedIcon sx={{ fontSize: 11, color: c.status.success }} />}
+                label="Latest release"
+              />
+              <LegendItem
+                glyph={
+                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', background: c.status.success }} />
+                }
+                label="Running now"
+              />
+              <LegendItem
+                glyph={
+                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', background: c.accent.primary }} />
+                }
+                label="Never published"
+              />
+            </Box>
+          }
+          slotProps={{
+            tooltip: {
+              sx: {
+                background: c.bg.surface,
+                border: `1px solid ${c.border.subtle}`,
+                boxShadow: c.shadow.md,
+                borderRadius: `${c.radius.sm}px`,
+                p: '10px 12px',
+                maxWidth: 'none',
+              },
+            },
+            arrow: { sx: { color: c.bg.surface } },
+          }}
+        >
+          <Box
+            component="span"
+            aria-label="Indicator legend"
+            sx={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 26,
+              height: 26,
+              color: c.text.tertiary,
+              cursor: 'help',
+              '&:hover': { color: c.text.primary },
+            }}
+          >
+            <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+          </Box>
+        </Tooltip>
       </Box>
 
         {/* Sharing unknown: show the apps, withhold the split. */}
@@ -739,6 +837,20 @@ const RailAppRow: React.FC<{
           <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 14 }} />
         </Box>
       )}
+
+      {/* Kind marker: which of the two things this row is, at a glance.
+          Muted so it reads as a type hint, not another status badge. */}
+      <Box
+        component="span"
+        title={app.kind === 'skill' ? 'Skill' : 'App'}
+        sx={{ display: 'inline-flex', flexShrink: 0, color: c.text.tertiary }}
+      >
+        {app.kind === 'skill' ? (
+          <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />
+        ) : (
+          <WebAssetRoundedIcon sx={{ fontSize: 14 }} />
+        )}
+      </Box>
 
       <Box
         title={app.name}
