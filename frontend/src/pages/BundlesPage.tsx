@@ -1191,8 +1191,32 @@ const BundleDetail: React.FC<{
 
           {/* Member grid */}
           {bundle.members.length === 0 ? (
-            <Box sx={{ ...c.type.body, color: c.text.muted, textAlign: 'center', py: 6 }}>
-              No members yet. Add apps, skills, or other bundles below.
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 6 }}>
+              <Box sx={{ ...c.type.body, color: c.text.muted, textAlign: 'center' }}>
+                {candidates.length > 0
+                  ? 'No members yet. Add apps, skills, or other bundles to get started.'
+                  : 'No members yet, and nothing available to add.'}
+              </Box>
+              {candidates.length > 0 && (
+                <ButtonBase
+                  onClick={(e: React.MouseEvent<HTMLElement>) => setAddAnchor(e.currentTarget)}
+                  sx={{
+                    minHeight: 132,
+                    width: 220,
+                    borderRadius: `${c.radius.lg}px`,
+                    border: `1px dashed ${c.border.medium}`,
+                    color: c.text.muted,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.75,
+                    transition: c.transition,
+                    '&:hover': { borderColor: c.accent.primary, color: c.accent.primary, background: `rgba(${c.accentRgb},0.04)` },
+                  }}
+                >
+                  <AddRoundedIcon sx={{ fontSize: 22 }} />
+                  <Box sx={{ ...c.type.caption }}>Add member</Box>
+                </ButtonBase>
+              )}
             </Box>
           ) : (
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1.5 }}>
