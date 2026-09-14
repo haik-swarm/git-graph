@@ -10,6 +10,7 @@ import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
 import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
@@ -225,6 +226,141 @@ const BundleIcon: React.FC<{ icon: string; size: number }> = ({ icon, size }) =>
   );
 };
 
+/** Resolve a member to just what a preview needs: a kind, a name, and a
+    ready-to-use icon URL when one exists. Mirrors BundleDetail.resolve but is
+    module-level so the outer list can reuse it. */
+function memberPreview(
+  m: Member,
+  bundles: Bundle[],
+  entities: AppEntry[],
+): { kind: MemberKind; name: string; icon?: string } | null {
+  if (m.kind === 'bundle') {
+    const b = bundles.find(x => x.id === m.id);
+    return b ? { kind: 'bundle', name: b.title, icon: b.icon || undefined } : null;
+  }
+  const e = entities.find(x => x.kind === m.kind && x.id === m.id);
+  if (!e) return null;
+  const icon =
+    e.has_icon && e.workspace_exists && e.workspace_id
+      ? gitgraphIconRawUrl(e.workspace_id)
+      : undefined;
+  return { kind: m.kind, name: e.name, icon };
+}
+
+/** A small round avatar for one member, shown in the list-card preview strip.
+    Uses the member's real icon, or its kind glyph as a fallback. */
+const MemberAvatar: React.FC<{
+  preview: { kind: MemberKind; name: string; icon?: string } | null;
+  size?: number;
+}> = ({ preview, size = 26 }) => {
+  const c = useClaudeTokens();
+  return (
+    <Tooltip title={preview?.name || 'Missing member'}>
+      <Box
+        sx={{
+          width: size,
+          height: size,
+          flexShrink: 0,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          background: preview?.icon ? c.bg.surface : c.bg.secondary,
+          border: `1.5px solid ${c.bg.surface}`,
+          boxShadow: c.shadow.sm,
+          color: c.text.tertiary,
+          opacity: preview ? 1 : 0.5,
+        }}
+      >
+        {preview?.icon ? (
+          <Box component="img" src={preview.icon} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <KindGlyph kind={preview?.kind ?? 'app'} size={Math.round(size * 0.5)} />
+        )}
+      </Box>
+    </Tooltip>
+  );
+};
+
+/** The visual "what's inside" strip for a bundle card: a row of overlapping
+    member avatars with a "+N" overflow bubble, plus a per-kind breakdown. */
+const BundlePreview: React.FC<{ bundle: Bundle; bundles: Bundle[]; entities: AppEntry[] }> = ({
+  bundle,
+  bundles,
+  entities,
+}) => {
+  const c = useClaudeTokens();
+  const previews = bundle.members.map(m => memberPreview(m, bundles, entities));
+  const counts = bundle.members.reduce(
+    (acc, m) => {
+      acc[m.kind] = (acc[m.kind] || 0) + 1;
+      return acc;
+    },
+    {} as Record<MemberKind, number>,
+  );
+  const order: MemberKind[] = ['app', 'skill', 'bundle'];
+  const breakdown = order
+    .filter(k => counts[k])
+    .map(k => `${counts[k]} ${counts[k] === 1 ? KIND_LABEL[k].toLowerCase() : KIND_LABEL[k].toLowerCase() + 's'}`);
+
+  if (bundle.members.length === 0) {
+    return (
+      <Box sx={{ ...c.type.caption, color: c.text.ghost, mt: 1.25, fontStyle: 'italic' }}>
+        No members yet
+      </Box>
+    );
+  }
+
+  const MAX = 6;
+  const shown = previews.slice(0, MAX);
+  const overflow = previews.length - shown.length;
+
+  return (
+    <Box sx={{ mt: 1.25, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {shown.map((p, i) => (
+          <Box key={i} sx={{ ml: i === 0 ? 0 : '-8px', zIndex: shown.length - i }}>
+            <MemberAvatar preview={p} />
+          </Box>
+        ))}
+        {overflow > 0 && (
+          <Box
+            sx={{
+              ml: '-8px',
+              width: 26,
+              height: 26,
+              borderRadius: '50%',
+              border: `1.5px solid ${c.bg.surface}`,
+              background: c.bg.secondary,
+              color: c.text.secondary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...c.type.caption,
+              fontWeight: 600,
+              boxShadow: c.shadow.sm,
+            }}
+          >
+            +{overflow}
+          </Box>
+        )}
+      </Box>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        {breakdown.map((label, i) => {
+          const kind = order.filter(k => counts[k])[i];
+          return (
+            <Box key={label} component="span" sx={{ ...statusChip(c, 'neutral') }}>
+              <KindGlyph kind={kind} size={11} />
+              {label}
+            </Box>
+          );
+        })}
+      </Box>
+    </Box>
+  );
+};
+
 const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
   const c = useClaudeTokens();
   const [bundles, setBundles] = useState<Bundle[]>([]);
@@ -393,23 +529,57 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
               <ButtonBase
                 key={b.id}
                 onClick={() => setOpenId(b.id)}
-                sx={{ ...card(c, true), p: 2, display: 'flex', gap: 1.5, alignItems: 'flex-start', textAlign: 'left' }}
+                sx={{
+                  ...card(c, true),
+                  position: 'relative',
+                  p: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.25,
+                  alignItems: 'stretch',
+                  textAlign: 'left',
+                  transition: c.transition,
+                  '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md, transform: 'translateY(-2px)' },
+                  '&:hover .bundle-open-arrow': {
+                    opacity: 1,
+                    color: c.text.secondary,
+                    background: c.bg.secondary,
+                    borderColor: c.border.subtle,
+                  },
+                }}
               >
-                <BundleIcon icon={b.icon} size={44} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {b.title}
-                  </Box>
-                  {b.description && (
-                    <Box sx={{ ...c.type.caption, color: c.text.muted, mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {b.description}
+                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                  <BundleIcon icon={b.icon} size={44} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ ...c.type.body, fontWeight: 590, color: c.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {b.title}
                     </Box>
-                  )}
-                  <Box sx={{ mt: 1 }}>
-                    <Box component="span" sx={statusChip(c, 'neutral')}>
-                      {b.members.length} {b.members.length === 1 ? 'member' : 'members'}
+                    <Box sx={{ ...c.type.caption, color: c.text.muted, mt: 0.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.2em' }}>
+                      {b.description || 'No description yet.'}
                     </Box>
                   </Box>
+                </Box>
+                <BundlePreview bundle={b} bundles={bundles} entities={entities} />
+                <Box
+                  className="bundle-open-arrow"
+                  sx={{
+                    position: 'absolute',
+                    bottom: 12,
+                    right: 12,
+                    width: 26,
+                    height: 26,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'transparent',
+                    border: '1px solid transparent',
+                    color: c.text.ghost,
+                    opacity: 0.4,
+                    transition: c.transition,
+                  }}
+                >
+                  <ArrowForwardRoundedIcon sx={{ fontSize: 15 }} />
                 </Box>
               </ButtonBase>
             ))}
