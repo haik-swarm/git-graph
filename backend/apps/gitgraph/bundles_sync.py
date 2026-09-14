@@ -309,4 +309,8 @@ async def sync() -> Tuple[bool, Any]:
     if not ok:
         return False, err
 
-    return True, {"bundles": bundles_store.list_bundles()}
+    await asyncio.to_thread(bundles_store.mark_synced)
+    return True, {
+        "bundles": bundles_store.list_bundles(),
+        "sync": bundles_store.sync_state(),
+    }

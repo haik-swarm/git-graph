@@ -12,11 +12,13 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import {
   card,
+  iconButton,
   primaryButton,
   pushButton,
   statusChip,
@@ -49,6 +51,27 @@ interface Bundle {
   members: Member[];
   created_at: string;
   updated_at: string;
+}
+
+interface SyncState {
+  last_synced_at: string | null;
+  dirty: boolean;
+}
+
+/** Renders the last-synced timestamp as a short relative phrase. */
+function formatSyncedAt(iso: string | null): string {
+  if (!iso) return 'Never synced';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'Never synced';
+  const diff = Date.now() - then;
+  if (diff < 45_000) return 'Synced just now';
+  const mins = Math.round(diff / 60_000);
+  if (mins < 60) return `Synced ${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `Synced ${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `Synced ${days}d ago`;
+  return `Synced ${new Date(then).toLocaleDateString()}`;
 }
 
 async function readJson(res: Response): Promise<any> {
@@ -101,11 +124,13 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [sync, setSync] = useState<SyncState>({ last_synced_at: null, dirty: false });
 
   const load = useCallback(async () => {
     try {
       const data = await readJson(await fetch(GITGRAPH_BUNDLES_URL));
       setBundles(Array.isArray(data.bundles) ? data.bundles : []);
+      if (data.sync) setSync(data.sync);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't load bundles.");
@@ -124,6 +149,8 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
       next.unshift(b);
       return next;
     });
+    // Local edit: remote is now behind until the next sync.
+    setSync(prev => (prev.dirty ? prev : { ...prev, dirty: true }));
   }, []);
 
   const createBundle = useCallback(async () => {
@@ -151,7 +178,10 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
     try {
       const data = await readJson(await fetch(GITGRAPH_BUNDLES_SYNC_URL, { method: 'POST' }));
       if (Array.isArray(data.bundles)) setBundles(data.bundles);
-      setSyncNote('Synced to GitHub.');
+      if (data.sync) setSync(data.sync);
+      setSyncNote('Saved to GitHub.');
+      // Let the confirmation linger, then fall back to the "Last saved" label.
+      window.setTimeout(() => setSyncNote(null), 2500);
     } catch (err) {
       setSyncNote(err instanceof Error ? err.message : 'Sync failed.');
     } finally {
@@ -171,6 +201,7 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
         onChange={upsert}
         onDeleted={id => {
           setBundles(prev => prev.filter(b => b.id !== id));
+          setSync(prev => (prev.dirty ? prev : { ...prev, dirty: true }));
           setOpenId(null);
         }}
       />
@@ -182,13 +213,39 @@ const BundlesPage: React.FC<{ entities: AppEntry[] }> = ({ entities }) => {
       <Toolbar>
         <Box sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}>Bundles</Box>
         <Box sx={{ flex: 1 }} />
-        {syncNote && (
-          <Box sx={{ ...c.type.caption, color: c.text.muted }}>{syncNote}</Box>
-        )}
-        <Box component="button" onClick={syncNow} disabled={syncing} sx={pushButton(c)}>
-          {syncing ? <CircularProgress size={13} sx={{ color: c.text.secondary }} /> : <CloudUploadRoundedIcon sx={{ fontSize: 15 }} />}
-          Sync to GitHub
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mr: 0.5 }}>
+          <Box sx={{ ...c.type.caption, color: c.text.muted }}>
+            {syncNote ?? formatSyncedAt(sync.last_synced_at)}
+          </Box>
+          <Tooltip title="Resync now (pull remote changes too)">
+            <ButtonBase
+              onClick={syncNow}
+              disabled={syncing}
+              sx={{ ...iconButton(c, 28), '&.Mui-disabled': { color: c.text.ghost } }}
+            >
+              <SyncRoundedIcon
+                sx={{
+                  fontSize: 16,
+                  animation: syncing ? 'bundleSyncSpin 0.8s linear infinite' : 'none',
+                  '@keyframes bundleSyncSpin': { to: { transform: 'rotate(360deg)' } },
+                }}
+              />
+            </ButtonBase>
+          </Tooltip>
         </Box>
+        <Tooltip title={sync.dirty ? '' : 'Everything is already saved to GitHub'} disableHoverListener={sync.dirty}>
+          <Box component="span">
+            <Box
+              component="button"
+              onClick={syncNow}
+              disabled={syncing || !sync.dirty}
+              sx={pushButton(c)}
+            >
+              {syncing ? <CircularProgress size={13} sx={{ color: c.text.secondary }} /> : <CloudUploadRoundedIcon sx={{ fontSize: 15 }} />}
+              Save to GitHub
+            </Box>
+          </Box>
+        </Tooltip>
         <Box component="button" onClick={createBundle} disabled={creating} sx={primaryButton(c)}>
           <AddRoundedIcon sx={{ fontSize: 16 }} />
           New bundle

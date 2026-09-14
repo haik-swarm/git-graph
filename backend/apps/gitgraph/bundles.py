@@ -19,6 +19,7 @@ from typeguard import typechecked
 from backend.apps.store.store import load_store, save_store
 
 _STORE_KEY = "bundles"
+_META_KEY = "bundles_meta"
 
 # A bundle-in-bundle graph can't nest arbitrarily deep in practice, so the
 # cycle walk caps out defensively rather than trusting the data to terminate.
@@ -39,8 +40,46 @@ def _all() -> Dict[str, Any]:
 
 
 @typechecked
-def _write(bundles: Dict[str, Any]) -> None:
-    save_store({**load_store(), _STORE_KEY: bundles})
+def _write(bundles: Dict[str, Any], *, mark_dirty: bool = True) -> None:
+    store = load_store()
+    patch: Dict[str, Any] = {_STORE_KEY: bundles}
+    # Any local mutation leaves the remote out of date until the next sync.
+    if mark_dirty:
+        meta = store.get(_META_KEY)
+        meta = dict(meta) if isinstance(meta, dict) else {}
+        meta["dirty"] = True
+        patch[_META_KEY] = meta
+    save_store({**store, **patch})
+
+
+@typechecked
+def _meta() -> Dict[str, Any]:
+    raw = load_store().get(_META_KEY)
+    return raw if isinstance(raw, dict) else {}
+
+
+@typechecked
+def sync_state() -> Dict[str, Any]:
+    """What the UI needs to render the sync control: when we last synced and
+    whether local bundles have changed since (so the button can disable when
+    there's nothing to push)."""
+    meta = _meta()
+    last = meta.get("last_synced_at")
+    return {
+        "last_synced_at": last if isinstance(last, str) else None,
+        "dirty": bool(meta.get("dirty", True)),
+    }
+
+
+@typechecked
+def mark_synced() -> None:
+    """Record a clean sync: stamp the time and clear the dirty flag."""
+    store = load_store()
+    meta = store.get(_META_KEY)
+    meta = dict(meta) if isinstance(meta, dict) else {}
+    meta["last_synced_at"] = _now()
+    meta["dirty"] = False
+    save_store({**store, _META_KEY: meta})
 
 
 @typechecked
@@ -190,5 +229,7 @@ def remove_member(
 
 @typechecked
 def replace_all(bundles: Dict[str, Any]) -> None:
-    """Overwrite the whole bundle map. Used by sync after a merge."""
-    _write(bundles)
+    """Overwrite the whole bundle map. Used by sync after a merge, so it leaves
+    the dirty flag alone — sync clears it explicitly via mark_synced once the
+    push lands."""
+    _write(bundles, mark_dirty=False)

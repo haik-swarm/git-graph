@@ -1042,7 +1042,10 @@ async def reload_app_now() -> dict:
 @gitgraph.router.get("/bundles")
 @typechecked
 async def bundles_list() -> dict:
-    return {"bundles": await asyncio.to_thread(bundles_store.list_bundles)}
+    return {
+        "bundles": await asyncio.to_thread(bundles_store.list_bundles),
+        "sync": await asyncio.to_thread(bundles_store.sync_state),
+    }
 
 
 @gitgraph.router.post("/bundles")
