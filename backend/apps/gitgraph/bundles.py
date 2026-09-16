@@ -20,6 +20,11 @@ from backend.apps.store.store import load_store, save_store
 
 _STORE_KEY = "bundles"
 _META_KEY = "bundles_meta"
+# Deletions can't be represented by simply dropping a bundle from the map: the
+# next sync would just re-pull it from the shared repo. We instead record a
+# tombstone {bundle_id: deleted_at} that rides through the merge and removes the
+# bundle on every side.
+_TOMB_KEY = "bundles_deleted"
 
 # A bundle-in-bundle graph can't nest arbitrarily deep in practice, so the
 # cycle walk caps out defensively rather than trusting the data to terminate.
@@ -40,9 +45,16 @@ def _all() -> Dict[str, Any]:
 
 
 @typechecked
-def _write(bundles: Dict[str, Any], *, mark_dirty: bool = True) -> None:
+def _write(
+    bundles: Dict[str, Any],
+    *,
+    mark_dirty: bool = True,
+    tombstones: Optional[Dict[str, str]] = None,
+) -> None:
     store = load_store()
     patch: Dict[str, Any] = {_STORE_KEY: bundles}
+    if tombstones is not None:
+        patch[_TOMB_KEY] = tombstones
     # Any local mutation leaves the remote out of date until the next sync.
     if mark_dirty:
         meta = store.get(_META_KEY)
@@ -50,6 +62,21 @@ def _write(bundles: Dict[str, Any], *, mark_dirty: bool = True) -> None:
         meta["dirty"] = True
         patch[_META_KEY] = meta
     save_store({**store, **patch})
+
+
+@typechecked
+def _tombstones() -> Dict[str, str]:
+    raw = load_store().get(_TOMB_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+@typechecked
+def list_tombstones() -> Dict[str, str]:
+    """The {bundle_id: deleted_at} map. Sync merges these so deletions on one
+    device propagate to the shared repo and every other device."""
+    return _tombstones()
 
 
 @typechecked
@@ -147,7 +174,9 @@ def delete_bundle(bundle_id: str) -> bool:
     if bundle_id not in bundles:
         return False
     del bundles[bundle_id]
-    _write(bundles)
+    tombstones = _tombstones()
+    tombstones[bundle_id] = _now()
+    _write(bundles, tombstones=tombstones)
     return True
 
 
@@ -228,8 +257,10 @@ def remove_member(
 
 
 @typechecked
-def replace_all(bundles: Dict[str, Any]) -> None:
-    """Overwrite the whole bundle map. Used by sync after a merge, so it leaves
-    the dirty flag alone — sync clears it explicitly via mark_synced once the
-    push lands."""
-    _write(bundles, mark_dirty=False)
+def replace_all(
+    bundles: Dict[str, Any], tombstones: Optional[Dict[str, str]] = None,
+) -> None:
+    """Overwrite the whole bundle map (and, when given, the tombstone map). Used
+    by sync after a merge, so it leaves the dirty flag alone — sync clears it
+    explicitly via mark_synced once the push lands."""
+    _write(bundles, mark_dirty=False, tombstones=tombstones)

@@ -202,8 +202,33 @@ def _read_remote_bundles() -> Dict[str, Any]:
 
 
 @typechecked
-def _merge(local: Dict[str, Any], remote: Dict[str, Any]) -> Dict[str, Any]:
-    """Per-bundle union; on collision keep the newer `updated_at`."""
+def _read_remote_tombstones() -> Dict[str, str]:
+    """Read the {bundle_id: deleted_at} map from bundles.json. Returns {} when
+    the manifest or its `deleted` section is absent."""
+    manifest = _clone_dir() / _MANIFEST
+    if not manifest.is_file():
+        return {}
+    try:
+        raw = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    deleted = raw.get("deleted") if isinstance(raw, dict) else None
+    if not isinstance(deleted, dict):
+        return {}
+    return {k: v for k, v in deleted.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+@typechecked
+def _merge(
+    local: Dict[str, Any],
+    remote: Dict[str, Any],
+    local_tombs: Dict[str, str],
+    remote_tombs: Dict[str, str],
+) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """Per-bundle union; on collision keep the newer `updated_at`. Tombstones are
+    unioned too (later `deleted_at` wins). A tombstone removes a bundle unless the
+    bundle was re-created after the deletion (its `updated_at` is newer), in which
+    case the bundle wins and the tombstone is dropped."""
     merged: Dict[str, Any] = dict(remote)
     for bundle_id, local_bundle in local.items():
         if not isinstance(local_bundle, dict):
@@ -214,13 +239,27 @@ def _merge(local: Dict[str, Any], remote: Dict[str, Any]) -> Dict[str, Any]:
             continue
         if str(local_bundle.get("updated_at", "")) >= str(remote_bundle.get("updated_at", "")):
             merged[bundle_id] = local_bundle
-    return merged
+
+    tombs: Dict[str, str] = dict(remote_tombs)
+    for bundle_id, deleted_at in local_tombs.items():
+        if deleted_at >= tombs.get(bundle_id, ""):
+            tombs[bundle_id] = deleted_at
+
+    for bundle_id, deleted_at in list(tombs.items()):
+        bundle = merged.get(bundle_id)
+        if isinstance(bundle, dict) and str(bundle.get("updated_at", "")) > deleted_at:
+            # Re-created after it was deleted; the live bundle wins.
+            del tombs[bundle_id]
+        else:
+            merged.pop(bundle_id, None)
+    return merged, tombs
 
 
 @typechecked
-def _write_tree(bundles: Dict[str, Any]) -> None:
+def _write_tree(bundles: Dict[str, Any], tombstones: Dict[str, str]) -> None:
     """Write the merged map to the clone as bundles.json + one .webp per icon,
-    stripping icons out of the JSON and removing stale image files."""
+    stripping icons out of the JSON and removing stale image files. The tombstone
+    map is persisted under `deleted` so deletions travel to every other device."""
     path = _clone_dir()
     json_safe: Dict[str, Any] = {}
     keep_icons: set = set()
@@ -240,7 +279,10 @@ def _write_tree(bundles: Dict[str, Any]) -> None:
         json_safe[bundle_id] = stripped
 
     (path / _MANIFEST).write_text(
-        json.dumps({"bundles": json_safe}, indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            {"bundles": json_safe, "deleted": tombstones},
+            indent=2, sort_keys=True,
+        ) + "\n",
         encoding="utf-8",
     )
     # Drop icon files for bundles that no longer carry an image.
@@ -299,12 +341,14 @@ async def sync() -> Tuple[bool, Any]:
         return False, err
 
     remote = await asyncio.to_thread(_read_remote_bundles)
+    remote_tombs = await asyncio.to_thread(_read_remote_tombstones)
     local = {b["id"]: b for b in bundles_store.list_bundles() if isinstance(b, dict) and b.get("id")}
+    local_tombs = bundles_store.list_tombstones()
 
-    merged = _merge(local, remote)
-    bundles_store.replace_all(merged)
+    merged, merged_tombs = _merge(local, remote, local_tombs, remote_tombs)
+    bundles_store.replace_all(merged, merged_tombs)
 
-    await asyncio.to_thread(_write_tree, merged)
+    await asyncio.to_thread(_write_tree, merged, merged_tombs)
     ok, err = await asyncio.to_thread(_commit_and_push, token)
     if not ok:
         return False, err
