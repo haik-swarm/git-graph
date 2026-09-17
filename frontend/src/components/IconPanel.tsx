@@ -8,6 +8,9 @@ import CircularProgress from '@mui/material/CircularProgress';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import UploadRoundedIcon from '@mui/icons-material/UploadRounded';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { popover, primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import {
@@ -66,6 +69,66 @@ interface IconJob {
 
 const MODELS = ['haiku', 'sonnet', 'opus'] as const;
 
+// The popover opens on a chooser, then drills into one of these surfaces.
+type Mode = 'menu' | 'auto' | 'custom' | 'upload';
+
+// Committed icons are capped to this square so an uploaded photo can't land a
+// multi-megabyte base64 blob in the repo.
+const MAX_ICON_DIM = 512;
+
+// Canvas can only re-encode these raster types; anything else falls back to png.
+const UPLOAD_CANVAS_MIME: Record<string, string> = {
+  'image/webp': 'image/webp',
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+};
+
+// Read a local image file, downscale it to fit MAX_ICON_DIM, and return a data
+// URI ready to hand to the same apply path the generated icons use. The source
+// type is preserved (a webp stays webp) when the canvas can encode it; otherwise
+// it falls back to png.
+function fileToIconDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Please choose an image file.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.onload = () => {
+      const src = String(reader.result || '');
+      const img = new Image();
+      img.onerror = () => reject(new Error('That image could not be loaded.'));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_ICON_DIM / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          // No canvas: fall back to the raw file, still a valid data URI.
+          resolve(src);
+          return;
+        }
+        const outMime = UPLOAD_CANVAS_MIME[file.type] || 'image/png';
+        // jpeg has no alpha; paint white first so transparent source pixels
+        // don't come out black.
+        if (outMime === 'image/jpeg') {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        // quality arg is ignored by png, honored by webp/jpeg.
+        resolve(canvas.toDataURL(outMime, 0.95));
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const IconPanel: React.FC<Props> = ({
   workspaceId,
   appName,
@@ -98,7 +161,13 @@ const IconPanel: React.FC<Props> = ({
   const [done, setDone] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
-  const oneClickRef = useRef(false);
+
+  // Which surface the popover is showing, plus the pending upload preview.
+  const [mode, setMode] = useState<Mode>('menu');
+  const [uploadUri, setUploadUri] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Pull the global defaults that a one-click generate will use. Runs on mount
   // and again whenever the settings sheet saves.
@@ -129,6 +198,8 @@ const IconPanel: React.FC<Props> = ({
     setError(null);
     setDone(null);
     setNudge('');
+    setUploadUri(null);
+    setUploadName('');
     setPrompt((appDescription || appName || '').trim());
   }, [workspaceId, appDescription, appName]);
 
@@ -235,69 +306,96 @@ const IconPanel: React.FC<Props> = ({
   const results = (job?.results ?? []).filter(r => r.ok && r.data_uri);
   const failed = (job?.results ?? []).filter(r => !r.ok);
 
-  // One click: generate straight away with the saved global defaults, opening
-  // the popover so progress and results are visible. The gear opens the global
-  // defaults sheet directly — there is no per-run configuration.
-  const oneClick = (e: React.MouseEvent<HTMLElement>) => {
-    oneClickRef.current = true;
+  // Open the popover on the three-way chooser, resetting any prior run so the
+  // menu is clean every time.
+  const openMenu = (e: React.MouseEvent<HTMLElement>) => {
+    setMode('menu');
+    setJob(null);
+    setError(null);
+    setDone(null);
+    setNudge('');
+    setUploadUri(null);
+    setUploadName('');
     setAnchor(e.currentTarget);
   };
 
-  // Fire the one-click generation once the popover is anchored, so `generate`
-  // runs against the mounted panel rather than racing the state update.
-  useEffect(() => {
-    if (anchor && oneClickRef.current) {
-      oneClickRef.current = false;
-      void generate();
+  // Read a picked file into a preview; committing happens on "Set as icon".
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // let the same file be re-picked later
+    if (!file) return;
+    setError(null);
+    setDone(null);
+    try {
+      const uri = await fileToIconDataUri(file);
+      setUploadUri(uri);
+      setUploadName(file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read that image.');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchor]);
+  };
+
+  // Commit the uploaded image through the same path generated icons use: a
+  // caller-owned persist (bundles) or a repo commit (apps).
+  const applyUpload = async () => {
+    if (!uploadUri) return;
+    setUploading(true);
+    setError(null);
+    setDone(null);
+    try {
+      if (onApply) {
+        await onApply(uploadUri);
+        setDone('Icon set.');
+        onApplied?.();
+        return;
+      }
+      const res = await fetch(gitgraphIconApplyUrl(workspaceId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data_uri: uploadUri, message: 'Set app icon (upload)' }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.detail === 'string' ? data.detail : `Failed (${res.status})`,
+        );
+      }
+      setDone(`Committed ${data?.icon_path ?? 'icon'}. Push to send it to GitHub.`);
+      onApplied?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply that icon.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const busy = generating || applyingIdx !== null || uploading;
+  const headings: Record<Mode, string> = {
+    menu: heading,
+    auto: 'Auto-generate',
+    custom: 'Customize',
+    upload: 'Upload an image',
+  };
 
   return (
     <>
-      <Box
+      <ButtonBase
+        onClick={openMenu}
         sx={{
-          display: 'inline-flex',
-          alignItems: 'stretch',
-          borderRadius: `${c.radius.sm}px`,
-          overflow: 'hidden',
-          border: `1px solid ${c.border.medium}`,
+          ...pushButton(c),
+          color: c.text.secondary,
+          gap: '4px',
         }}
+        title="Set this icon — auto-generate, customize, or upload"
       >
-        <ButtonBase
-          onClick={oneClick}
-          sx={{
-            ...pushButton(c),
-            color: c.text.secondary,
-            gap: '4px',
-            border: 'none',
-            borderRadius: 0,
-          }}
-          title="Generate an icon now with your saved defaults"
-        >
-          <AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />
-          Icon
-        </ButtonBase>
-        <ButtonBase
-          onClick={e => setAnchor(e.currentTarget)}
-          sx={{
-            ...pushButton(c),
-            color: nudge.trim() ? c.accent.primary : c.text.secondary,
-            px: '6px',
-            border: 'none',
-            borderLeft: `1px solid ${c.border.medium}`,
-            borderRadius: 0,
-          }}
-          title="Add a live nudge appended to the prompt for this generation"
-        >
-          <EditRoundedIcon sx={{ fontSize: 15 }} />
-        </ButtonBase>
-      </Box>
+        <AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />
+        Icon
+      </ButtonBase>
 
       <Popover
         open={Boolean(anchor)}
         anchorEl={anchor}
-        onClose={() => !generating && applyingIdx === null && setAnchor(null)}
+        onClose={() => !busy && setAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { sx: { ...popover(c), mt: 0.5, width: 360 } } }}
@@ -312,33 +410,50 @@ const IconPanel: React.FC<Props> = ({
             gap: 1,
           }}
         >
+          {mode !== 'menu' && (
+            <ButtonBase
+              onClick={() => !busy && setMode('menu')}
+              disabled={busy}
+              sx={{
+                color: c.text.secondary,
+                borderRadius: `${c.radius.sm}px`,
+                p: '2px',
+                '&:hover': { background: c.bg.secondary },
+              }}
+              title="Back to options"
+            >
+              <ArrowBackRoundedIcon sx={{ fontSize: 16 }} />
+            </ButtonBase>
+          )}
           <Typography sx={{ ...c.type.headline, color: c.text.primary, flex: 1 }}>
-            {heading}
+            {headings[mode]}
           </Typography>
-          <ButtonBase
-            onClick={() => {
-              if (onOpenSettings) {
-                setAnchor(null);
-                onOpenSettings();
-              } else {
-                setSettingsOpen(true);
-              }
-            }}
-            sx={{
-              ...c.type.caption,
-              color: c.accent.primary,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '3px',
-              px: '4px',
-              borderRadius: `${c.radius.sm}px`,
-              '&:hover': { background: c.bg.secondary },
-            }}
-            title="Edit the global defaults and view the raw prompt templates"
-          >
-            <TuneRoundedIcon sx={{ fontSize: 14 }} />
-            Global defaults
-          </ButtonBase>
+          {(mode === 'auto' || mode === 'custom') && (
+            <ButtonBase
+              onClick={() => {
+                if (onOpenSettings) {
+                  setAnchor(null);
+                  onOpenSettings();
+                } else {
+                  setSettingsOpen(true);
+                }
+              }}
+              sx={{
+                ...c.type.caption,
+                color: c.accent.primary,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                px: '4px',
+                borderRadius: `${c.radius.sm}px`,
+                '&:hover': { background: c.bg.secondary },
+              }}
+              title="Edit the global defaults and view the raw prompt templates"
+            >
+              <TuneRoundedIcon sx={{ fontSize: 14 }} />
+              Global defaults
+            </ButtonBase>
+          )}
         </Box>
 
         <Box
@@ -352,41 +467,162 @@ const IconPanel: React.FC<Props> = ({
             ...slimScroll(c),
           }}
         >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
-              Live nudge (appended to the prompt, this run only)
-            </Typography>
-            <InputBase
-              value={nudge}
-              onChange={e => setNudge(e.target.value)}
-              multiline
-              minRows={2}
-              maxRows={4}
-              placeholder="e.g. bolder outline, warmer palette, no text"
-              sx={{
-                ...sunkenField(c),
-                ...c.type.body,
-                color: c.text.primary,
-                px: 1,
-                py: '6px',
-                '& textarea': { ...slimScroll(c) },
-              }}
-            />
-          </Box>
+          {mode === 'menu' &&
+            (
+              [
+                {
+                  key: 'auto',
+                  icon: <AutoAwesomeRoundedIcon sx={{ fontSize: 18 }} />,
+                  title: 'Auto',
+                  desc: 'Generate an icon from your saved defaults',
+                  onClick: () => {
+                    setNudge('');
+                    setMode('auto');
+                    void generate();
+                  },
+                },
+                {
+                  key: 'custom',
+                  icon: <EditRoundedIcon sx={{ fontSize: 18 }} />,
+                  title: 'Custom',
+                  desc: 'Add a nudge, then generate variations to pick from',
+                  onClick: () => setMode('custom'),
+                },
+                {
+                  key: 'upload',
+                  icon: <UploadRoundedIcon sx={{ fontSize: 18 }} />,
+                  title: 'Upload',
+                  desc: 'Use an image from your device',
+                  onClick: () => setMode('upload'),
+                },
+              ] as const
+            ).map(opt => (
+              <ButtonBase
+                key={opt.key}
+                onClick={opt.onClick}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.25,
+                  width: '100%',
+                  textAlign: 'left',
+                  p: 1,
+                  borderRadius: `${c.radius.sm}px`,
+                  border: `1px solid ${c.border.medium}`,
+                  color: c.text.primary,
+                  '&:hover': { borderColor: c.accent.primary, background: c.bg.secondary },
+                }}
+              >
+                <Box sx={{ color: c.accent.primary, display: 'inline-flex' }}>{opt.icon}</Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ ...c.type.body, color: c.text.primary }}>
+                    {opt.title}
+                  </Typography>
+                  <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                    {opt.desc}
+                  </Typography>
+                </Box>
+                <ChevronRightRoundedIcon sx={{ fontSize: 18, color: c.text.tertiary }} />
+              </ButtonBase>
+            ))}
 
-          <ButtonBase
-            disabled={generating}
-            onClick={() => void generate()}
-            sx={{ ...primaryButton(c) }}
-          >
-            {generating ? (
-              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
-            ) : job ? (
-              'Generate again'
-            ) : (
-              'Generate'
-            )}
-          </ButtonBase>
+          {mode === 'custom' && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                Live nudge (appended to the prompt, this run only)
+              </Typography>
+              <InputBase
+                value={nudge}
+                onChange={e => setNudge(e.target.value)}
+                multiline
+                minRows={2}
+                maxRows={4}
+                placeholder="e.g. bolder outline, warmer palette, no text"
+                sx={{
+                  ...sunkenField(c),
+                  ...c.type.body,
+                  color: c.text.primary,
+                  px: 1,
+                  py: '6px',
+                  '& textarea': { ...slimScroll(c) },
+                }}
+              />
+            </Box>
+          )}
+
+          {(mode === 'auto' || mode === 'custom') && (
+            <ButtonBase
+              disabled={generating}
+              onClick={() => void generate()}
+              sx={{ ...primaryButton(c) }}
+            >
+              {generating ? (
+                <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+              ) : job ? (
+                'Generate again'
+              ) : (
+                'Generate'
+              )}
+            </ButtonBase>
+          )}
+
+          {mode === 'upload' && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={e => void onFilePicked(e)}
+              />
+              {uploadUri && (
+                <Box
+                  sx={{
+                    alignSelf: 'center',
+                    width: 96,
+                    height: 96,
+                    borderRadius: `${c.radius.sm}px`,
+                    border: `1px solid ${c.border.medium}`,
+                    overflow: 'hidden',
+                    background: '#FFFFFF',
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={uploadUri}
+                    alt={uploadName || 'Selected image'}
+                    sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                </Box>
+              )}
+              <ButtonBase
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                sx={{ ...pushButton(c), gap: '4px' }}
+              >
+                <UploadRoundedIcon sx={{ fontSize: 16 }} />
+                {uploadUri ? 'Choose a different image' : 'Choose an image…'}
+              </ButtonBase>
+              {uploadUri && (
+                <ButtonBase
+                  disabled={uploading}
+                  onClick={() => void applyUpload()}
+                  sx={{ ...primaryButton(c) }}
+                >
+                  {uploading ? (
+                    <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                  ) : (
+                    'Set as icon'
+                  )}
+                </ButtonBase>
+              )}
+              <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
+                {pickHint
+                  ? 'Your image is resized to a square-safe 512px, then set as the icon.'
+                  : 'Your image is resized to 512px and committed as the icon. Push to send it to GitHub.'}
+              </Typography>
+            </>
+          )}
 
           {generating && (
             <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
@@ -396,7 +632,7 @@ const IconPanel: React.FC<Props> = ({
             </Typography>
           )}
 
-          {results.length > 0 && (
+          {(mode === 'auto' || mode === 'custom') && results.length > 0 && (
             <>
               <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
                 {pickHint ?? 'Pick one to commit it into the repo'}
@@ -450,7 +686,7 @@ const IconPanel: React.FC<Props> = ({
             </>
           )}
 
-          {failed.length > 0 && (
+          {(mode === 'auto' || mode === 'custom') && failed.length > 0 && (
             <Typography sx={{ ...c.type.caption, color: c.text.tertiary }}>
               {failed.length} candidate{failed.length === 1 ? '' : 's'} failed:{' '}
               {failed[0].error}
