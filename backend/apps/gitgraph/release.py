@@ -308,11 +308,50 @@ def _list_releases(
                 "html_url": rel.get("html_url"),
                 "created_at": rel.get("published_at") or rel.get("created_at"),
                 "draft": bool(rel.get("draft")),
-                "asset_url": swarm.get("browser_download_url") if swarm else None,
+                # The API asset endpoint, not browser_download_url: fetched with
+                # the token it streams the bytes even for a private repo. The
+                # bare browser_download_url 404s for an anonymous webview, which
+                # is what a naked <a href> click was doing.
+                "asset_url": swarm.get("url") if swarm else None,
                 "asset_name": swarm.get("name") if swarm else None,
             }
         )
     return out
+
+
+@typechecked
+def resolve_asset(
+    owner: str, repo: str, tag: str
+) -> Optional[Tuple[bytes, str]]:
+    """The `.swarm` bytes + filename for a published release, or None.
+
+    Re-lists the repo's releases server-side and matches `tag`, so the client
+    can't point this at an arbitrary URL: it only ever names a release that the
+    authenticated sweep already surfaced. The asset is pulled from GitHub's
+    authenticated asset endpoint (`Accept: application/octet-stream`), which is
+    why a private-repo download works here where the raw link 404s.
+    """
+    token = github.read_token()
+    if not token:
+        return None
+    try:
+        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+            releases = _list_releases(client, token, owner, repo)
+            match = next(
+                (r for r in releases if r.get("tag") == tag and not r.get("draft")),
+                None,
+            )
+            if not match or not match.get("asset_url"):
+                return None
+            headers = github._headers(token)
+            headers["Accept"] = "application/octet-stream"
+            res = client.get(str(match["asset_url"]), headers=headers)
+            if res.status_code != 200:
+                return None
+            name = str(match.get("asset_name") or f"{repo}-{tag}.swarm")
+            return res.content, name
+    except httpx.HTTPError:
+        return None
 
 
 @typechecked

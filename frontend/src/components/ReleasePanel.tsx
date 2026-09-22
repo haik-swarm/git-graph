@@ -18,6 +18,7 @@ import {
   sunkenField,
 } from '@/shared/styles/ui';
 import {
+  gitgraphReleaseAssetUrl,
   gitgraphReleaseFilesUrl,
   gitgraphReleaseUrl,
 } from '@/shared/state/API_ENDPOINTS';
@@ -333,10 +334,15 @@ const ReleasePanel: React.FC<Props> = ({
                       {r.tag ?? r.name}
                       <OpenInNewIcon sx={{ fontSize: 13, flexShrink: 0 }} />
                     </Box>
-                    {r.asset_url && (
+                    {r.asset_url && r.tag && status.owner && status.repo && (
                       <Box
                         component="a"
-                        href={r.asset_url}
+                        href={gitgraphReleaseAssetUrl(
+                          status.owner,
+                          status.repo,
+                          r.tag,
+                        )}
+                        download={r.asset_name ?? ''}
                         title={r.asset_name ?? 'Download .swarm'}
                         sx={{
                           display: 'flex',

@@ -18,6 +18,7 @@ import { relativeTime } from '@/shared/graphLayout';
 import {
   GITGRAPH_RELEASES_SWEEP_URL,
   GITGRAPH_SKILLS_RELEASES_SWEEP_URL,
+  gitgraphReleaseAssetUrl,
 } from '@/shared/state/API_ENDPOINTS';
 
 interface ReleaseEntry {
@@ -349,10 +350,15 @@ const Releases: React.FC<Props> = ({ onOpen }) => {
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
-                  {app.latest.asset_url && (
+                  {app.latest.asset_url && app.latest.tag && (
                     <Box
                       component="a"
-                      href={app.latest.asset_url}
+                      href={gitgraphReleaseAssetUrl(
+                        app.owner,
+                        app.repo,
+                        app.latest.tag,
+                      )}
+                      download={app.latest.asset_name ?? ''}
                       title={app.latest.asset_name ?? 'Download .swarm'}
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
                       sx={{

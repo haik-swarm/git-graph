@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from swarm_debug import debug
 from typeguard import typechecked
@@ -921,6 +921,32 @@ async def icon_raw(workspace_id: str) -> FileResponse:
                 headers={"Cache-Control": "no-store"},
             )
     raise HTTPException(status_code=404, detail="No icon set for this app.")
+
+
+# Path is "/release-asset", not "/release/asset": the latter collides with the
+# "/release/{workspace_id}" template above (FastAPI matches it first and treats
+# "asset" as a workspace id -> 404 "Workspace not found"), which silently made
+# the download save an error page instead of the bundle.
+@gitgraph.router.get("/release-asset")
+@typechecked
+async def release_asset(owner: str, repo: str, tag: str) -> Response:
+    """Stream a published release's `.swarm` bundle as an attachment.
+
+    The Releases tab links here instead of at github.com directly: the sweep
+    lists releases with the user's token, so private-repo assets show up, but a
+    naked <a href> to the asset hits github.com anonymously and 404s. This route
+    re-fetches the asset with the same token and hands the bytes back with a
+    download disposition.
+    """
+    resolved = release.resolve_asset(owner, repo, tag)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Release asset not found.")
+    blob, name = resolved
+    return Response(
+        content=blob,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @gitgraph.router.post("/local-delete/{workspace_id}")

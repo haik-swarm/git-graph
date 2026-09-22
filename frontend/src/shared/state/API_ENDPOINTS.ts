@@ -182,3 +182,13 @@ export const GITGRAPH_BUNDLE_MEMBER_URL = (
 export const GITGRAPH_BUNDLE_SUGGEST_URL = (bundleId: string) =>
   `${API_URL}/gitgraph/bundles/${encodeURIComponent(bundleId)}/suggest`;
 export const GITGRAPH_BUNDLES_SYNC_URL = API_URL + '/gitgraph/bundles/sync';
+// Authenticated proxy for a release's .swarm asset. Links here instead of at
+// github.com so private-repo downloads carry the user's token server-side
+// rather than 404ing as an anonymous webview request.
+export const gitgraphReleaseAssetUrl = (
+  owner: string,
+  repo: string,
+  tag: string,
+) =>
+  `${API_URL}/gitgraph/release-asset?owner=${encodeURIComponent(owner)}` +
+  `&repo=${encodeURIComponent(repo)}&tag=${encodeURIComponent(tag)}`;
