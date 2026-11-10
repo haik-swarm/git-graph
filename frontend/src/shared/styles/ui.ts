@@ -7,12 +7,12 @@ export function card(c: SwarmTokens, interactive = false) {
     border: `1px solid ${c.border.subtle}`,
     background: c.bg.surface,
     transition: c.transition,
+    boxShadow: c.shadow.sm,
     ...(interactive && {
       cursor: 'pointer',
       '&:hover': {
         borderColor: c.border.strong,
         boxShadow: c.shadow.md,
-        transform: 'translateY(-2px)',
       },
     }),
   } as const;
@@ -30,7 +30,7 @@ export function popover(c: SwarmTokens) {
 }
 
 export function menuSurface(c: SwarmTokens) {
-  return { ...popover(c), p: '6px' } as const;
+  return { ...popover(c), p: '4px' } as const;
 }
 
 /** One row of a dropdown menu. `danger` tints the row for destructive entries. */
@@ -40,16 +40,16 @@ export function menuItem(c: SwarmTokens, danger = false) {
     alignItems: 'center',
     gap: 1,
     width: '100%',
-    minHeight: 34,
-    px: '10px',
+    minHeight: 30,
+    px: '8px',
     border: 'none',
     background: 'transparent',
     cursor: 'pointer',
     textAlign: 'left',
-    borderRadius: `${c.radius.sm}px`,
+    borderRadius: `${c.radius.xs}px`,
     fontFamily: c.font.sans,
     ...c.type.body,
-    color: danger ? c.text.ghost : c.text.secondary,
+    color: danger ? c.status.error : c.text.secondary,
     transition: c.transition,
     '&:hover': {
       background: danger ? c.status.errorBg : c.bg.secondary,
@@ -64,7 +64,7 @@ export function menuSectionLabel(c: SwarmTokens) {
     ...c.type.caption,
     fontWeight: 500,
     color: c.text.muted,
-    px: '10px',
+    px: '8px',
     pt: 1,
     pb: '4px',
     userSelect: 'none',
@@ -72,7 +72,7 @@ export function menuSectionLabel(c: SwarmTokens) {
 }
 
 export function menuDivider(c: SwarmTokens) {
-  return { height: '1px', background: c.border.subtle, my: '6px', mx: '10px' } as const;
+  return { height: '1px', background: c.border.subtle, my: '4px', mx: '-4px' } as const;
 }
 
 export function menuHint(c: SwarmTokens) {
@@ -91,18 +91,20 @@ export function pushButton(c: SwarmTokens) {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '6px',
-    minHeight: 34,
-    px: '14px',
+    minHeight: 28,
+    px: '10px',
     cursor: 'pointer',
     fontFamily: c.font.sans,
-    ...c.type.body,
+    ...c.type.callout,
     fontWeight: 500,
-    color: c.text.secondary,
-    background: 'transparent',
+    color: c.text.primary,
+    background: c.bg.surface,
     border: `1px solid ${c.border.medium}`,
     borderRadius: `${c.radius.sm}px`,
+    boxShadow: c.shadow.sm,
     whiteSpace: 'nowrap',
     transition: c.transition,
+    '& svg': { fontSize: 14, color: c.text.tertiary },
     '&:hover': {
       background: c.bg.secondary,
       borderColor: c.border.strong,
@@ -119,13 +121,14 @@ export function primaryButton(c: SwarmTokens) {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '6px',
-    minHeight: 34,
-    px: '16px',
+    minHeight: 28,
+    px: '12px',
     cursor: 'pointer',
     fontFamily: c.font.sans,
-    ...c.type.body,
+    ...c.type.callout,
     fontWeight: 500,
-    color: '#FFFFFF',
+    color: c.accent.contrast,
+    '& svg': { fontSize: 14 },
     background: c.accent.primary,
     border: '1px solid transparent',
     borderRadius: `${c.radius.sm}px`,
@@ -139,23 +142,24 @@ export function primaryButton(c: SwarmTokens) {
 }
 
 /** Chromeless icon button. Always wrap the call site in a Tooltip. */
-export function iconButton(c: SwarmTokens, size = 32) {
+export function iconButton(c: SwarmTokens, size = 28) {
   return {
     width: size,
     height: size,
     borderRadius: `${c.radius.sm}px`,
     color: c.text.tertiary,
     transition: c.transition,
+    '& svg': { fontSize: Math.round(size * 0.5) },
     '&:hover': {
-      color: c.accent.primary,
-      background: `rgba(${c.accentRgb},0.06)`,
+      color: c.text.primary,
+      background: c.bg.secondary,
     },
     '&.Mui-disabled': { color: c.text.ghost },
   } as const;
 }
 
 /** Ghost at rest, error only on hover. */
-export function destructiveIconButton(c: SwarmTokens, size = 32) {
+export function destructiveIconButton(c: SwarmTokens, size = 28) {
   return {
     width: size,
     height: size,
@@ -175,18 +179,20 @@ export function statusChip(
     success: { bg: c.status.successBg, fg: c.status.success },
     error: { bg: c.status.errorBg, fg: c.status.error },
     warning: { bg: c.status.warningBg, fg: c.status.warning },
-    accent: { bg: `rgba(${c.accentRgb},0.10)`, fg: c.accent.primary },
-    neutral: { bg: c.bg.secondary, fg: c.text.muted },
+    accent: { bg: c.bg.secondary, fg: c.text.primary },
+    neutral: { bg: 'transparent', fg: c.text.tertiary },
   }[tone];
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '5px',
-    height: 22,
-    px: '9px',
-    borderRadius: `${c.radius.full}px`,
+    gap: '4px',
+    height: 20,
+    px: '6px',
+    borderRadius: `${c.radius.xs}px`,
+    border: `1px solid ${c.border.subtle}`,
     ...c.type.caption,
     fontWeight: 500,
+    fontVariantNumeric: 'tabular-nums',
     background: tones.bg,
     color: tones.fg,
     whiteSpace: 'nowrap',
@@ -198,13 +204,14 @@ export function statusChip(
 /** Inset field: search boxes, text inputs. */
 export function sunkenField(c: SwarmTokens) {
   return {
-    background: c.bg.secondary,
-    border: `1px solid ${c.border.subtle}`,
+    background: c.bg.surface,
+    border: `1px solid ${c.border.medium}`,
     borderRadius: `${c.radius.sm}px`,
     transition: c.transition,
+    '&:hover': { borderColor: c.border.strong },
     '&:focus-within': {
-      borderColor: c.accent.primary,
-      background: c.bg.surface,
+      borderColor: `rgba(${c.focusRgb},0.6)`,
+      boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.14)`,
     },
   } as const;
 }
@@ -227,7 +234,7 @@ export function focusRing(c: SwarmTokens) {
   return {
     '&:focus-visible': {
       outline: 'none',
-      boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)`,
+      boxShadow: `0 0 0 2px ${c.bg.page}, 0 0 0 4px rgba(${c.focusRgb},0.5)`,
     },
   } as const;
 }
@@ -244,8 +251,8 @@ export function focusRing(c: SwarmTokens) {
  */
 export function writingField(c: SwarmTokens) {
   return {
-    borderColor: c.accent.primary,
-    background: `linear-gradient(90deg, ${c.bg.secondary} 30%, rgba(${c.accentRgb},0.10) 50%, ${c.bg.secondary} 70%)`,
+    borderColor: `rgba(${c.focusRgb},0.6)`,
+    background: `linear-gradient(90deg, ${c.bg.secondary} 30%, rgba(${c.focusRgb},0.10) 50%, ${c.bg.secondary} 70%)`,
     backgroundSize: '300% 100%',
     animation: `swarm-writing-sheen 1.8s ${c.ease} infinite, swarm-writing-glow 1.8s ${c.ease} infinite`,
     '@keyframes swarm-writing-sheen': {
@@ -253,8 +260,8 @@ export function writingField(c: SwarmTokens) {
       '100%': { backgroundPosition: '0% 50%' },
     },
     '@keyframes swarm-writing-glow': {
-      '0%, 100%': { boxShadow: `0 0 0 0 rgba(${c.accentRgb},0.22)` },
-      '50%': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.22)` },
+      '0%, 100%': { boxShadow: `0 0 0 0 rgba(${c.focusRgb},0.18)` },
+      '50%': { boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.18)` },
     },
     '@media (prefers-reduced-motion: reduce)': {
       animation: 'none',
@@ -285,5 +292,71 @@ export function skeleton(c: SwarmTokens) {
       animation: 'none',
       background: c.bg.secondary,
     },
+  } as const;
+}
+
+/** Segmented control track + item, Linear style: a sunken track with a raised active pill. */
+export function segmentTrack(c: SwarmTokens) {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+    p: '2px',
+    borderRadius: `${c.radius.sm}px`,
+    background: c.bg.secondary,
+    border: `1px solid ${c.border.subtle}`,
+  } as const;
+}
+
+export function segmentItem(c: SwarmTokens, active: boolean) {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    height: 22,
+    px: '8px',
+    border: 'none',
+    cursor: 'pointer',
+    borderRadius: `${c.radius.xs}px`,
+    fontFamily: c.font.sans,
+    ...c.type.caption,
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
+    transition: c.transition,
+    color: active ? c.text.primary : c.text.tertiary,
+    background: active ? c.bg.surface : 'transparent',
+    boxShadow: active ? `${c.shadow.sm}, 0 0 0 1px ${c.border.subtle}` : 'none',
+    '& svg': { fontSize: 13 },
+    '&:hover': { color: c.text.primary },
+  } as const;
+}
+
+/** Small coloured dot for status, the only place colour shows up at rest. */
+export function statusDot(color: string, size = 6) {
+  return { width: size, height: size, borderRadius: '50%', background: color, flexShrink: 0 } as const;
+}
+
+/** Borderless toolbar control: text + icon, fills on hover. */
+export function ghostButton(c: SwarmTokens) {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    minHeight: 28,
+    px: '8px',
+    cursor: 'pointer',
+    fontFamily: c.font.sans,
+    ...c.type.callout,
+    fontWeight: 500,
+    color: c.text.secondary,
+    background: 'transparent',
+    border: '1px solid transparent',
+    borderRadius: `${c.radius.sm}px`,
+    whiteSpace: 'nowrap',
+    transition: c.transition,
+    '& svg': { fontSize: 15, color: c.text.tertiary },
+    '&:hover': { background: c.bg.secondary, color: c.text.primary, '& svg': { color: c.text.secondary } },
+    '&:disabled': { opacity: 0.4, cursor: 'default' },
   } as const;
 }

@@ -33,7 +33,7 @@ const Sparkline: React.FC<Props> = ({ values, width = 132, height = 28 }) => {
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={c.accent.primary} stopOpacity={0.28} />
+            <stop offset="0%" stopColor={c.accent.primary} stopOpacity={0.10} />
             <stop offset="100%" stopColor={c.accent.primary} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -41,8 +41,8 @@ const Sparkline: React.FC<Props> = ({ values, width = 132, height = 28 }) => {
         <polyline
           points={line}
           fill="none"
-          stroke={c.accent.primary}
-          strokeWidth={1.5}
+          stroke={c.text.tertiary}
+          strokeWidth={1.25}
           strokeLinejoin="round"
           strokeLinecap="round"
         />

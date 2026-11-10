@@ -197,7 +197,7 @@ const RestoreControl: React.FC<Props> = ({
                   sx={{ ...primaryButton(c) }}
                 >
                   {busy ? (
-                    <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
+                    <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                   ) : isHead ? (
                     'Already here'
                   ) : (

@@ -15,7 +15,9 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DriveFileRenameOutlineRoundedIcon from '@mui/icons-material/DriveFileRenameOutlineRounded';
 import Tooltip from '@mui/material/Tooltip';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
-import { iconButton, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
+import { ghostButton, iconButton, menuDivider, menuItem, menuSurface, primaryButton, pushButton, slimScroll } from '@/shared/styles/ui';
+import Popover from '@mui/material/Popover';
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import { layoutCommits, type Commit } from '@/shared/graphLayout';
 import {
   GITGRAPH_APPS_URL,
@@ -130,6 +132,7 @@ const Home: React.FC = () => {
   const [noticeKey, setNoticeKey] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const [remoteHtmlUrl, setRemoteHtmlUrl] = useState<string | null>(null);
 
   // Fetch both sources in parallel and merge. Each list is tagged with its
@@ -661,23 +664,14 @@ const Home: React.FC = () => {
     return (
       <Shell rail={rail}>
         <Toolbar>
-          <Box sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}>
+          <Box sx={{ ...c.type.headline, color: c.text.primary }}>
             Home
-          </Box>
-          <Box sx={{ ...c.type.callout, color: c.text.tertiary }}>
-            {apps.length} {apps.length === 1 ? 'item' : 'items'}
           </Box>
           <Box sx={{ flex: 1 }} />
           <Tooltip title="Your cloud — install any OpenSwarm app you've pushed to GitHub">
             <ButtonBase
               onClick={() => setCloudOpen(true)}
-              sx={{
-                ...pushButton(c),
-                gap: '6px',
-                color: c.accent.primary,
-                borderColor: `rgba(${c.accentRgb},0.35)`,
-                '& svg': { fontSize: 16 },
-              }}
+              sx={ghostButton(c)}
               aria-label="Your cloud"
             >
               <CloudRoundedIcon />
@@ -687,11 +681,7 @@ const Home: React.FC = () => {
           <Tooltip title="Generate icons — make icons for many apps at once with your saved defaults">
             <ButtonBase
               onClick={() => setIconSheetOpen(true)}
-              sx={{
-                ...pushButton(c),
-                gap: '6px',
-                '& svg': { fontSize: 16 },
-              }}
+              sx={ghostButton(c)}
               aria-label="Generate icons"
             >
               <AutoAwesomeRoundedIcon />
@@ -701,17 +691,14 @@ const Home: React.FC = () => {
           <Tooltip title="Global .gitignore — one list, mirrored into every tracked app">
             <ButtonBase
               onClick={goSettings}
-              sx={{
-                ...pushButton(c),
-                gap: '6px',
-                '& svg': { fontSize: 16 },
-              }}
+              sx={ghostButton(c)}
               aria-label="Global .gitignore"
             >
               <RuleFolderRoundedIcon />
-              Global .gitignore
+              .gitignore
             </ButtonBase>
           </Tooltip>
+          <Box sx={{ width: '1px', height: 16, background: c.border.medium, mx: 0.5 }} />
           {toolbarChrome}
         </Toolbar>
         <RestartNotice refreshKey={noticeKey} />
@@ -775,11 +762,19 @@ const Home: React.FC = () => {
   return (
     <Shell rail={rail}>
       <Toolbar>
-        <Box sx={{ ...c.type.headline, color: c.text.primary, letterSpacing: '-0.01em' }}>
+        <Box
+          component="button"
+          onClick={goHome}
+          sx={{ ...c.type.headline, fontWeight: 400, color: c.text.tertiary, background: 'none', border: 'none', p: 0, cursor: 'pointer', fontFamily: c.font.sans, '&:hover': { color: c.text.primary } }}
+        >
+          Home
+        </Box>
+        <Box sx={{ color: c.text.ghost, ...c.type.callout }}>/</Box>
+        <Box sx={{ ...c.type.headline, color: c.text.primary }}>
           {selected ? selected.name : 'Git Graph'}
         </Box>
         {selected && graph?.is_repo && (
-          <Box sx={{ ...c.type.callout, color: c.text.tertiary }}>
+          <Box sx={{ ...c.type.caption, color: c.text.muted, fontVariantNumeric: 'tabular-nums' }}>
             {layout.nodes.length} {layout.nodes.length === 1 ? 'commit' : 'commits'}
             {graph.truncated && '+'}
           </Box>
@@ -828,43 +823,48 @@ const Home: React.FC = () => {
         )}
 
         {selected && (
-          <Tooltip title="Rename this app everywhere its name lives">
+          <Tooltip title="More">
             <ButtonBase
-              onClick={() => setRenameOpen(true)}
-              sx={{
-                ...pushButton(c),
-                gap: '4px',
-                color: c.text.secondary,
-                '&:hover': { color: c.accent.primary, borderColor: c.accent.primary },
-                '& svg': { fontSize: 16 },
-              }}
-              aria-label="Rename app"
+              onClick={e => setMoreAnchor(e.currentTarget)}
+              sx={{ ...iconButton(c), display: 'flex' }}
+              aria-label="More actions"
             >
-              <DriveFileRenameOutlineRoundedIcon />
-              Rename
+              <MoreHorizRoundedIcon />
             </ButtonBase>
           </Tooltip>
         )}
+        <Popover
+          open={Boolean(moreAnchor)}
+          anchorEl={moreAnchor}
+          onClose={() => setMoreAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{ paper: { sx: { ...menuSurface(c), mt: 0.5, minWidth: 180 } } }}
+        >
+          <ButtonBase
+            onClick={() => {
+              setMoreAnchor(null);
+              setRenameOpen(true);
+            }}
+            sx={{ ...menuItem(c), justifyContent: 'flex-start' }}
+          >
+            <DriveFileRenameOutlineRoundedIcon sx={{ fontSize: 15, color: c.text.tertiary }} />
+            Rename
+          </ButtonBase>
+          <Box sx={menuDivider(c)} />
+          <ButtonBase
+            onClick={() => {
+              setMoreAnchor(null);
+              setDeleteOpen(true);
+            }}
+            sx={{ ...menuItem(c, true), justifyContent: 'flex-start' }}
+          >
+            <DeleteOutlineRoundedIcon sx={{ fontSize: 15 }} />
+            Delete app
+          </ButtonBase>
+        </Popover>
 
-        {selected && (
-          <Tooltip title="Delete this app locally (workspace + dashboard entry)">
-            <ButtonBase
-              onClick={() => setDeleteOpen(true)}
-              sx={{
-                ...pushButton(c),
-                gap: '4px',
-                color: c.text.secondary,
-                '&:hover': { color: c.status.error, borderColor: c.status.error },
-                '& svg': { fontSize: 16 },
-              }}
-              aria-label="Delete app"
-            >
-              <DeleteOutlineRoundedIcon />
-              Delete
-            </ButtonBase>
-          </Tooltip>
-        )}
-
+        <Box sx={{ width: '1px', height: 16, background: c.border.medium, mx: 0.5 }} />
         {toolbarChrome}
       </Toolbar>
 
@@ -908,7 +908,7 @@ const Home: React.FC = () => {
                   sx={{ ...primaryButton(c) }}
                 >
                   {initBusy ? (
-                    <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
+                    <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                   ) : (
                     'Track this app'
                   )}
@@ -952,7 +952,8 @@ const Home: React.FC = () => {
             <Box
               sx={{
                 mx: 3,
-                mb: 1,
+                mt: 1,
+                mb: 0.5,
                 pb: 1,
                 display: 'flex',
                 alignItems: 'baseline',
@@ -960,7 +961,7 @@ const Home: React.FC = () => {
                 borderBottom: `1px solid ${c.border.subtle}`,
               }}
             >
-              <Box sx={{ ...c.type.headline, color: c.text.primary }}>
+              <Box sx={{ ...c.type.caption, fontWeight: 600, color: c.text.secondary, letterSpacing: '0.02em', textTransform: 'uppercase' }}>
                 History
               </Box>
               <Box sx={{ flex: 1 }} />

@@ -96,13 +96,13 @@ const CommitList: React.FC<Props> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1.25,
-                px: 1.5,
+                px: 1.25,
                 cursor: 'pointer',
-                borderRadius: `${c.radius.md}px`,
-                background: isSelected ? `rgba(${c.accentRgb},0.10)` : 'transparent',
-                transition: 'background 120ms ease',
+                borderRadius: `${c.radius.sm}px`,
+                background: isSelected ? c.bg.secondary : 'transparent',
+                transition: 'background 100ms ease',
                 '&:hover': {
-                  background: isSelected ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary,
+                  background: c.bg.secondary,
                 },
                 '&:hover .row-caret': { color: c.text.secondary },
               }}
@@ -112,7 +112,7 @@ const CommitList: React.FC<Props> = ({
                   <Box
                     sx={{
                       ...c.type.body,
-                      fontWeight: isHead ? 590 : 400,
+                      fontWeight: isHead ? 500 : 400,
                       color: c.text.primary,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -125,9 +125,9 @@ const CommitList: React.FC<Props> = ({
                   {isHead && (
                     <Box
                       title="Your working tree is on this commit"
-                      sx={statusChip(c, 'accent')}
+                      sx={{ ...statusChip(c, 'success'), height: 18, px: '5px' }}
                     >
-                      current
+                      HEAD
                     </Box>
                   )}
 
@@ -136,9 +136,12 @@ const CommitList: React.FC<Props> = ({
                       key={ref}
                       sx={{
                         ...statusChip(c, 'neutral'),
+                        height: 18,
+                        px: '5px',
                         fontFamily: c.font.mono,
-                        color: laneColor(node.lane),
-                        background: `${laneColor(node.lane)}1A`,
+                        fontSize: '0.65625rem',
+                        color: c.text.secondary,
+                        '& svg': { fontSize: 11, color: laneColor(node.lane) },
                       }}
                     >
                       <CallSplitRoundedIcon />
@@ -152,9 +155,9 @@ const CommitList: React.FC<Props> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    mt: '3px',
+                    mt: '2px',
                     ...c.type.caption,
-                    color: c.text.tertiary,
+                    color: c.text.muted,
                   }}
                 >
                   <Box
@@ -165,9 +168,10 @@ const CommitList: React.FC<Props> = ({
                       width: 14,
                       height: 14,
                       borderRadius: '50%',
-                      background: `${laneColor(node.lane)}22`,
-                      color: laneColor(node.lane),
-                      fontSize: '9px',
+                      background: c.bg.secondary,
+                      border: `1px solid ${c.border.subtle}`,
+                      color: c.text.tertiary,
+                      fontSize: '8.5px',
                       fontWeight: 600,
                       flexShrink: 0,
                       textTransform: 'uppercase',
@@ -177,7 +181,7 @@ const CommitList: React.FC<Props> = ({
                   </Box>
                   <Box
                     sx={{
-                      color: c.text.secondary,
+                      color: c.text.tertiary,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -186,7 +190,7 @@ const CommitList: React.FC<Props> = ({
                   >
                     {node.author}
                   </Box>
-                  <Box sx={{ color: c.text.muted }}>·</Box>
+                  <Box sx={{ color: c.text.ghost }}>·</Box>
                   <Box title={absoluteTime(node.date)}>{relativeTime(node.date)}</Box>
                 </Box>
               </Box>
@@ -195,9 +199,9 @@ const CommitList: React.FC<Props> = ({
                 sx={{
                   ...c.type.caption,
                   fontFamily: c.font.mono,
-                  color: isSelected ? c.accent.primary : c.text.tertiary,
+                  color: isSelected ? c.text.secondary : c.text.muted,
+                  fontSize: '0.6875rem',
                   flexShrink: 0,
-                  letterSpacing: '0.02em',
                 }}
               >
                 {node.short}
@@ -208,7 +212,7 @@ const CommitList: React.FC<Props> = ({
                 sx={{
                   fontSize: 16,
                   flexShrink: 0,
-                  color: isSelected ? c.accent.primary : c.text.muted,
+                  color: isSelected ? c.text.secondary : c.text.ghost,
                   transform: isSelected ? 'rotate(180deg)' : 'none',
                   transition: 'transform 180ms ease, color 120ms ease',
                 }}

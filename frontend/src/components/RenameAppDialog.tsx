@@ -424,7 +424,7 @@ const RenameAppDialog: React.FC<Props> = ({
             }}
           >
             {busy ? (
-              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+              <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
             ) : (
               'Rename'
             )}

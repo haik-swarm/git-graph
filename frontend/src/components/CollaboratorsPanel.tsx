@@ -257,7 +257,7 @@ const CollaboratorsPanel: React.FC<Props> = ({ workspaceId, refreshKey, onRoster
                   sx={{ ...primaryButton(c), px: '12px' }}
                 >
                   {busy === 'invite' ? (
-                    <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                    <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                   ) : (
                     'Invite'
                   )}

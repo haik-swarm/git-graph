@@ -281,7 +281,7 @@ const ReleasePanel: React.FC<Props> = ({
                 sx={{ ...primaryButton(c) }}
               >
                 {busy ? (
-                  <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                  <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                 ) : (
                   `Publish ${version.trim() || status.next_version}`
                 )}

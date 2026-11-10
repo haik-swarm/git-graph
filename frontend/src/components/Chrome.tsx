@@ -68,11 +68,11 @@ export const Shell: React.FC<{
     >
       <Box
         sx={{
-          width: 284,
+          width: 248,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          background: c.bg.surface,
+          background: c.bg.rail,
           borderRight: `1px solid ${c.border.subtle}`,
         }}
       >
@@ -93,10 +93,10 @@ export const Toolbar: React.FC<{ children: React.ReactNode }> = ({ children }) =
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1.5,
-        minHeight: 64,
+        gap: 1,
+        minHeight: 48,
         flexShrink: 0,
-        px: 3,
+        px: 2.5,
         borderBottom: `1px solid ${c.border.subtle}`,
         background: c.bg.page,
       }}
@@ -124,8 +124,8 @@ export const RailLabel: React.FC<{ children: React.ReactNode }> = ({ children })
         fontWeight: 500,
         color: c.text.muted,
         px: '8px',
-        pt: 1.25,
-        pb: 1,
+        pt: 1.5,
+        pb: '4px',
         userSelect: 'none',
       }}
     >
@@ -189,8 +189,8 @@ export const BrandGlyph: React.FC<{
   const [saveError, setSaveError] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
   const hue = seedHue(seed);
-  const bg = `hsl(${hue} ${c.isDark ? '38% 30%' : '70% 93%'})`;
-  const fg = `hsl(${hue} ${c.isDark ? '70% 80%' : '50% 32%'})`;
+  const bg = `hsl(${hue} ${c.isDark ? '14% 20%' : '22% 94%'})`;
+  const fg = `hsl(${hue} ${c.isDark ? '24% 72%' : '18% 38%'})`;
   const showIcon = Boolean(iconId) && hasIcon === true && !imgFailed;
   const canSave = Boolean(downloadable) && showIcon;
   const canCrop = Boolean(croppable) && showIcon;
@@ -202,18 +202,20 @@ export const BrandGlyph: React.FC<{
         width: size,
         height: size,
         flexShrink: 0,
-        borderRadius: `${c.radius.sm}px`,
+        borderRadius: `${Math.max(4, Math.round(size * 0.24))}px`,
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         background: showIcon ? c.bg.secondary : bg,
+        outline: `1px solid ${c.border.subtle}`,
+        outlineOffset: '-1px',
         color: fg,
         fontFamily: c.font.sans,
         fontSize: size * 0.42,
         fontWeight: 600,
         letterSpacing: '-0.02em',
-        boxShadow: active ? `0 0 0 2px ${c.accent.primary}` : 'none',
+        boxShadow: active ? `0 0 0 1.5px ${c.bg.page}, 0 0 0 3px ${c.text.primary}` : 'none',
         transition: c.transition,
         userSelect: 'none',
       }}
@@ -361,8 +363,8 @@ export const Placeholder: React.FC<{
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 2,
-        py: 10,
+        gap: 1.25,
+        py: 9,
         px: 3,
         textAlign: 'center',
       }}
@@ -370,15 +372,18 @@ export const Placeholder: React.FC<{
       {icon && (
         <Box
           sx={{
-            width: 56,
-            height: 56,
-            borderRadius: `${c.radius.xl}px`,
+            width: 40,
+            height: 40,
+            mb: 0.5,
+            borderRadius: `${c.radius.md}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: danger ? c.status.errorBg : c.bg.secondary,
+            border: `1px solid ${c.border.medium}`,
+            background: c.bg.surface,
+            boxShadow: c.shadow.sm,
             color: danger ? c.status.error : c.text.tertiary,
-            '& svg': { fontSize: 26 },
+            '& svg': { fontSize: 20 },
           }}
         >
           {icon}
@@ -395,11 +400,10 @@ export const Placeholder: React.FC<{
       {hint && (
         <Box
           sx={{
-            ...c.type.body,
+            ...c.type.callout,
             color: c.text.tertiary,
-            maxWidth: 400,
-            lineHeight: 1.6,
-            mt: -0.5,
+            maxWidth: 360,
+            lineHeight: 1.55,
           }}
         >
           {hint}

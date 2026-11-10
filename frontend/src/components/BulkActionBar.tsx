@@ -121,22 +121,12 @@ const BulkActionBar: React.FC<Props> = ({
   return (
     <Box
       sx={{
-        borderRadius: `${c.radius.xl}px`,
-        border: `1px solid ${c.border.subtle}`,
+        borderRadius: `${c.radius.lg}px`,
+        border: `1px solid ${c.border.medium}`,
         background: c.bg.surface,
         boxShadow: c.shadow.sm,
         position: 'relative',
         overflow: 'hidden',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 3,
-          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.primary})`,
-          zIndex: 1,
-        },
       }}
     >
       <Box
@@ -146,8 +136,9 @@ const BulkActionBar: React.FC<Props> = ({
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1.5,
-          p: 1.5,
+          gap: 1.25,
+          p: 1.25,
+          px: 1.5,
           cursor: busy ? 'default' : 'pointer',
           transition: c.transition,
           '&:hover': { background: busy ? 'transparent' : c.bg.secondary },
@@ -155,14 +146,15 @@ const BulkActionBar: React.FC<Props> = ({
       >
         <Box
           sx={{
-            width: 32,
-            height: 32,
-            borderRadius: `${c.radius.md}px`,
+            width: 28,
+            height: 28,
+            borderRadius: `${c.radius.sm}px`,
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: `rgba(255,149,0,${c.isDark ? 0.2 : 0.14})`,
+            background: c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
             color: c.status.warning,
           }}
         >
@@ -709,7 +701,7 @@ const BulkPicker: React.FC<PickerProps> = ({
                       background: isChosen ? c.accent.primary : 'transparent',
                     }}
                   >
-                    {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
+                    {isChosen && <CheckIcon sx={{ fontSize: 14, color: c.accent.contrast }} />}
                   </ButtonBase>
                 )}
 
@@ -887,7 +879,7 @@ const BulkPicker: React.FC<PickerProps> = ({
                         }}
                       >
                         {included.has(id) && (
-                          <CheckIcon sx={{ fontSize: 11, color: '#FFFFFF' }} />
+                          <CheckIcon sx={{ fontSize: 11, color: c.accent.contrast }} />
                         )}
                       </Box>
                       {included.has(id)
@@ -1045,7 +1037,7 @@ const BulkPicker: React.FC<PickerProps> = ({
             sx={{ ...primaryButton(c) }}
           >
             {busy ? (
-              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+              <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
             ) : result ? (
               'Done'
             ) : phase === 'review' ? (

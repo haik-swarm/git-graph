@@ -13,8 +13,9 @@ import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { card, primaryButton, pushButton, slimScroll, sunkenField } from '@/shared/styles/ui';
+import { card, pushButton, segmentItem, segmentTrack, slimScroll, statusDot, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
 import BulkActionBar from '@/components/BulkActionBar';
 import type { BulkEntry } from '@/components/BulkActionBar';
@@ -245,17 +246,21 @@ const HomeGrid: React.FC<Props> = ({
   }, [kindApps, meta]);
 
   return (
-    <Box sx={{ px: 3, pb: 4 }}>
-      <Box sx={{ pt: 3, pb: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Box
-          sx={{
-            ...c.type.title,
-            color: c.text.primary,
-            letterSpacing: '-0.022em',
-            lineHeight: 1.1,
-          }}
-        >
-          {titleWord}
+    <Box sx={{ px: 3, pb: 5, maxWidth: 1360, mx: 'auto' }}>
+      <Box sx={{ pt: 3, pb: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+          <Box
+            sx={{
+              ...c.type.title2,
+              color: c.text.primary,
+              lineHeight: 1.2,
+            }}
+          >
+            {titleWord}
+          </Box>
+          <Box sx={{ ...c.type.callout, color: c.text.muted, fontVariantNumeric: 'tabular-nums' }}>
+            {rows.length.toLocaleString()} shown
+          </Box>
         </Box>
 
         <StatRow
@@ -275,20 +280,44 @@ const HomeGrid: React.FC<Props> = ({
           onSyncRemotes={onSyncRemotes}
         />
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', color: '#16A34A', fontSize: 'sm', fontWeight: 'medium'}}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Segmented
+            value={kind}
+            onChange={setKind}
+            options={[
+              { id: 'all', label: 'All', count: kindCounts.all },
+              { id: 'apps', label: 'Apps', count: kindCounts.apps },
+              { id: 'skills', label: 'Skills', count: kindCounts.skills },
+            ]}
+          />
+
+          <Box sx={{ width: '1px', height: 16, background: c.border.medium, mx: 0.25 }} />
+
+          <Segmented
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { id: 'all', label: 'Any status', count: counts.total },
+              { id: 'tracked', label: 'Tracked', count: counts.tracked },
+              { id: 'untracked', label: 'Untracked', count: counts.total - counts.tracked },
+            ]}
+          />
+
+          <Box sx={{ flex: 1 }} />
+
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1,
-              minHeight: 38,
-              px: 1.5,
-              width: 320,
-              maxWidth: '100%',
+              gap: '6px',
+              height: 28,
+              px: 1,
+              flex: '0 1 200px',
+              minWidth: 120,
               ...sunkenField(c),
             }}
           >
-            <SearchRoundedIcon sx={{ fontSize: 18, color: c.text.muted, flexShrink: 0 }} />
+            <SearchRoundedIcon sx={{ fontSize: 15, color: c.text.muted, flexShrink: 0 }} />
             <Box
               component="input"
               value={query}
@@ -301,9 +330,9 @@ const HomeGrid: React.FC<Props> = ({
                 outline: 'none',
                 background: 'transparent',
                 fontFamily: c.font.sans,
-                ...c.type.body,
+                ...c.type.callout,
                 color: c.text.primary,
-                '&::placeholder': { color: c.text.tertiary },
+                '&::placeholder': { color: c.text.muted },
               }}
             />
             {query && (
@@ -328,28 +357,6 @@ const HomeGrid: React.FC<Props> = ({
           </Box>
 
           <Segmented
-            value={kind}
-            onChange={setKind}
-            options={[
-              { id: 'all', label: `All · ${kindCounts.all}` },
-              { id: 'apps', label: `Apps · ${kindCounts.apps}` },
-              { id: 'skills', label: `Skills · ${kindCounts.skills}` },
-            ]}
-          />
-
-          <Segmented
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { id: 'all', label: `All · ${counts.total}` },
-              { id: 'tracked', label: `Tracked · ${counts.tracked}` },
-              { id: 'untracked', label: `Untracked · ${counts.total - counts.tracked}` },
-            ]}
-          />
-
-          <Box sx={{ flex: 1 }} />
-
-          <Segmented
             value={sort}
             onChange={setSort}
             options={[
@@ -363,8 +370,8 @@ const HomeGrid: React.FC<Props> = ({
             value={view}
             onChange={setView}
             options={[
-              { id: 'cards', label: 'Cards', icon: <GridViewRoundedIcon sx={{ fontSize: 15 }} /> },
-              { id: 'table', label: 'Table', icon: <TableRowsRoundedIcon sx={{ fontSize: 15 }} /> },
+              { id: 'cards', label: '', title: 'Cards', icon: <GridViewRoundedIcon sx={{ fontSize: 14 }} /> },
+              { id: 'table', label: '', title: 'Table', icon: <TableRowsRoundedIcon sx={{ fontSize: 14 }} /> },
             ]}
           />
         </Box>
@@ -421,8 +428,8 @@ const HomeGrid: React.FC<Props> = ({
         <Box
           sx={{
             display: 'grid',
-            gap: 1.75,
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 1.25,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(272px, 1fr))',
           }}
         >
           {rows.map(app => (
@@ -459,6 +466,8 @@ const AppCard: React.FC<{
   const unpushed = meta?.unpushed ?? 0;
   const needsPublish = isUnpublished(app, meta);
 
+  const sep = <Box component="span" sx={{ color: c.text.ghost }}>·</Box>;
+
   return (
     <Box
       component="button"
@@ -467,39 +476,38 @@ const AppCard: React.FC<{
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: 1.5,
-        p: 2.5,
-        minHeight: 176,
+        gap: 1.25,
+        p: 1.75,
+        minHeight: 148,
         textAlign: 'left',
         overflow: 'hidden',
+        fontFamily: c.font.sans,
         ...card(c, true),
-        '&:focus-visible': { outline: 'none', boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
+        '&:hover': { borderColor: c.border.strong, boxShadow: c.shadow.md, '& .gg-open': { opacity: 1 } },
+        '&:focus-visible': { outline: 'none', boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.35)` },
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
         <Box sx={{ position: 'relative', flexShrink: 0 }}>
           <BrandGlyph
             seed={app.workspace_id}
             letter={app.name[0] || '?'}
-            size={36}
+            size={30}
             iconId={app.workspace_id}
             hasIcon={app.has_icon}
           />
           {meta?.runtime_running && (
             <Box
-              title={meta.runtime_ready ? 'Open in OpenSwarm' : 'Starting…'}
+              title={meta.runtime_ready ? 'Running in OpenSwarm' : 'Starting…'}
               sx={{
                 position: 'absolute',
                 right: -2,
                 bottom: -2,
-                width: 12,
-                height: 12,
+                width: 10,
+                height: 10,
                 borderRadius: '50%',
                 background: meta.runtime_ready ? c.status.success : c.status.warning,
                 border: `2px solid ${c.bg.surface}`,
-                boxShadow: meta.runtime_ready
-                  ? `0 0 0 3px rgba(52,199,89,0.18)`
-                  : `0 0 0 3px rgba(255,149,0,0.18)`,
               }}
             />
           )}
@@ -507,9 +515,9 @@ const AppCard: React.FC<{
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box
             sx={{
-              ...c.type.title3,
+              ...c.type.headline,
+              fontWeight: 600,
               color: c.text.primary,
-              letterSpacing: '-0.012em',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -520,20 +528,18 @@ const AppCard: React.FC<{
           <Box
             sx={{
               ...c.type.caption,
-              color: c.text.tertiary,
-              mt: '2px',
+              color: c.text.muted,
               display: 'flex',
               alignItems: 'center',
-              gap: '5px',
+              gap: '4px',
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
           >
             {tracked && meta?.current_branch ? (
               <>
-                <CallSplitRoundedIcon sx={{ fontSize: 14 }} />
-                <Box component="span" sx={{ fontFamily: c.font.mono }}>
+                <CallSplitRoundedIcon sx={{ fontSize: 12 }} />
+                <Box component="span" sx={{ fontFamily: c.font.mono, fontSize: '0.6875rem' }}>
                   {meta.current_branch}
                 </Box>
               </>
@@ -541,34 +547,54 @@ const AppCard: React.FC<{
               'workspace gone'
             ) : tracked ? (
               'no branch'
+            ) : flat ? (
+              'single file'
             ) : (
               'not tracked'
             )}
           </Box>
         </Box>
-        {tracked ? (
-          <CheckCircleRoundedIcon
-            sx={{ fontSize: 16, color: dirty ? c.status.warning : c.status.success, flexShrink: 0 }}
-          />
-        ) : null}
+        {!tracked && !missing && !flat ? (
+          <Box
+            component="span"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              void onTrack(app);
+            }}
+            sx={{ ...pushButton(c), minHeight: 24, px: 1, ...c.type.caption, fontWeight: 500 }}
+          >
+            {tracking ? <CircularProgress size={11} sx={{ color: c.text.tertiary }} /> : 'Track'}
+          </Box>
+        ) : (
+          <Box
+            className="gg-open"
+            sx={{
+              opacity: 0,
+              transition: c.transition,
+              color: c.text.muted,
+              display: 'flex',
+              '& svg': { fontSize: 16 },
+            }}
+          >
+            <ChevronRightRoundedIcon />
+          </Box>
+        )}
       </Box>
 
-      {app.description && (
-        <Box
-          sx={{
-            ...c.type.callout,
-            color: c.text.secondary,
-            lineHeight: 1.45,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            minHeight: 34,
-          }}
-        >
-          {app.description}
-        </Box>
-      )}
+      <Box
+        sx={{
+          ...c.type.callout,
+          color: app.description ? c.text.tertiary : c.text.ghost,
+          lineHeight: 1.5,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          minHeight: 37,
+        }}
+      >
+        {app.description || 'No description'}
+      </Box>
 
       <Box sx={{ flex: 1 }} />
 
@@ -576,99 +602,67 @@ const AppCard: React.FC<{
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
-          flexWrap: 'wrap',
-          minHeight: 22,
+          gap: '6px',
+          pt: 1.25,
+          borderTop: `1px solid ${c.border.subtle}`,
+          ...c.type.caption,
+          color: c.text.tertiary,
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          minHeight: 18,
         }}
       >
         {loading && !meta ? (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CircularProgress size={10} sx={{ color: c.text.tertiary }} />
-            <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
-              Reading graph…
-            </Box>
-          </Box>
-        ) : flat ? (
-          <Pill tone="ghost">single file</Pill>
+          <>
+            <CircularProgress size={9} sx={{ color: c.text.muted }} />
+            Reading graph…
+          </>
         ) : missing ? (
-          <Pill tone="danger">workspace missing</Pill>
+          <>
+            <Box sx={statusDot(c.status.error)} />
+            Workspace missing
+          </>
         ) : !tracked ? (
-          <Pill tone="ghost">not tracked yet</Pill>
+          <Box component="span" sx={{ color: c.text.muted }}>
+            {flat ? 'No history for single files' : 'No history yet'}
+          </Box>
         ) : (
           <>
-            <Pill>
-              <HistoryRoundedIcon />
+            <Box
+              title={dirty ? `${dirty} uncommitted` : needsPublish ? 'Never published' : 'Clean'}
+              sx={statusDot(
+                dirty || unpushed ? c.status.warning : needsPublish ? c.text.muted : c.status.success,
+              )}
+            />
+            <span>
               {commits.toLocaleString()} commit{commits === 1 ? '' : 's'}
-            </Pill>
+            </span>
             {dirty > 0 && (
-              <Pill tone="warning">
-                <RadioButtonCheckedRoundedIcon />
-                {dirty} uncommitted
-              </Pill>
+              <>
+                {sep}
+                <Box component="span" sx={{ color: c.text.secondary }}>{dirty} changed</Box>
+              </>
             )}
             {unpushed > 0 && (
-              <Pill tone="warning">
-                <CloudUploadRoundedIcon />
-                {unpushed} to push
-              </Pill>
+              <>
+                {sep}
+                <Box component="span" sx={{ color: c.text.secondary }}>{unpushed} to push</Box>
+              </>
             )}
             {needsPublish && (
-              <Pill tone="accent">
-                <PublishRoundedIcon />
-                never published
-              </Pill>
+              <>
+                {sep}
+                <span>local only</span>
+              </>
             )}
+            <Box sx={{ flex: 1 }} />
             {meta?.head_date && (
-              <Box
-                title={absoluteTime(meta.head_date)}
-                sx={{
-                  ...c.type.caption,
-                  color: c.text.tertiary,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <ScheduleRoundedIcon sx={{ fontSize: 14 }} />
+              <Box component="span" title={absoluteTime(meta.head_date)} sx={{ color: c.text.muted }}>
                 {relativeTime(meta.head_date)}
               </Box>
             )}
           </>
-        )}
-
-        <Box sx={{ flex: 1 }} />
-
-        {!tracked && !missing && (
-          <Box
-            component="span"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              void onTrack(app);
-            }}
-            sx={{
-              ...primaryButton(c),
-              minHeight: 30,
-              px: 1.5,
-            }}
-          >
-            {tracking ? (
-              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
-            ) : (
-              'Track'
-            )}
-          </Box>
-        )}
-        {tracked && (
-          <Box
-            component="span"
-            sx={{
-              ...pushButton(c),
-              minHeight: 30,
-              px: 1.5,
-            }}
-          >
-            Open
-          </Box>
         )}
       </Box>
     </Box>
@@ -691,13 +685,14 @@ const AppTable: React.FC<{
     color: c.text.muted,
     textAlign: 'left' as const,
     px: 1.5,
-    py: 1,
+    py: '7px',
+    borderBottom: `1px solid ${c.border.subtle}`,
     whiteSpace: 'nowrap' as const,
     userSelect: 'none' as const,
   };
   const bodyCell = {
     px: 1.5,
-    py: 1.25,
+    py: '7px',
     verticalAlign: 'middle' as const,
     borderTop: `1px solid ${c.border.subtle}`,
   };
@@ -707,7 +702,7 @@ const AppTable: React.FC<{
       <Box sx={{ overflowX: 'auto', ...slimScroll(c) }}>
         <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <Box component="thead">
-            <Box component="tr" sx={{ background: c.bg.secondary }}>
+            <Box component="tr">
               <Box component="th" sx={headCell}>Name</Box>
               <Box component="th" sx={headCell}>Branch</Box>
               <Box component="th" sx={headCell}>Status</Box>
@@ -717,7 +712,7 @@ const AppTable: React.FC<{
               <Box component="th" sx={{ ...headCell, textAlign: 'right' }} />
             </Box>
           </Box>
-          <Box component="tbody">
+          <Box component="tbody" sx={{ '& tr:first-of-type td': { borderTop: 'none' } }}>
             {rows.map(app => (
               <AppRow
                 key={app.id}
@@ -763,7 +758,7 @@ const AppRow: React.FC<{
         cursor: 'pointer',
         transition: c.transition,
         '&:hover': { background: c.bg.secondary },
-        '&:focus-visible': { outline: 'none', background: `rgba(${c.accentRgb},0.06)` },
+        '&:focus-visible': { outline: 'none', background: c.bg.secondary },
       }}
       tabIndex={0}
       onKeyDown={(e: React.KeyboardEvent) => {
@@ -779,7 +774,7 @@ const AppRow: React.FC<{
             <BrandGlyph
               seed={app.workspace_id}
               letter={app.name[0] || '?'}
-              size={28}
+              size={22}
               iconId={app.workspace_id}
               hasIcon={app.has_icon}
             />
@@ -868,21 +863,11 @@ const AppRow: React.FC<{
           <Pill tone="danger">missing</Pill>
         ) : !tracked ? (
           <Pill tone="ghost">not tracked</Pill>
-        ) : dirty > 0 ? (
-          <Pill tone="warning">
-            <RadioButtonCheckedRoundedIcon />
-            uncommitted
-          </Pill>
-        ) : needsPublish ? (
-          <Pill tone="accent">
-            <PublishRoundedIcon />
-            unpublished
-          </Pill>
         ) : (
-          <Pill tone="success">
-            <CheckCircleRoundedIcon />
-            clean
-          </Pill>
+          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '6px', ...c.type.caption, color: c.text.secondary }}>
+            <Box sx={statusDot(dirty > 0 ? c.status.warning : needsPublish ? c.text.muted : c.status.success)} />
+            {dirty > 0 ? 'Uncommitted' : needsPublish ? 'Local only' : 'Clean'}
+          </Box>
         )}
       </Box>
 
@@ -898,13 +883,13 @@ const AppRow: React.FC<{
       <Box component="td" sx={bodyCell}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           {dirty > 0 && (
-            <Pill tone="warning">
+            <Pill>
               <RadioButtonCheckedRoundedIcon />
               {dirty}
             </Pill>
           )}
           {unpushed > 0 && (
-            <Pill tone="warning">
+            <Pill>
               <CloudUploadRoundedIcon />
               {unpushed}
             </Pill>
@@ -930,7 +915,6 @@ const AppRow: React.FC<{
               whiteSpace: 'nowrap',
             }}
           >
-            <ScheduleRoundedIcon sx={{ fontSize: 13 }} />
             {relativeTime(meta.head_date)}
           </Box>
         ) : (
@@ -948,14 +932,12 @@ const AppRow: React.FC<{
               e.stopPropagation();
               void onTrack(app);
             }}
-            sx={{ ...primaryButton(c), minHeight: 28, px: 1.5 }}
+            sx={{ ...pushButton(c), minHeight: 24, px: 1, ...c.type.caption, fontWeight: 500 }}
           >
-            {tracking ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Track'}
+            {tracking ? <CircularProgress size={11} sx={{ color: c.text.tertiary }} /> : 'Track'}
           </Box>
         ) : tracked ? (
-          <Box component="span" sx={{ ...pushButton(c), minHeight: 28, px: 1.5 }}>
-            Open
-          </Box>
+          <ChevronRightRoundedIcon sx={{ fontSize: 16, color: c.text.muted, verticalAlign: 'middle' }} />
         ) : null}
       </Box>
     </Box>
@@ -968,120 +950,34 @@ function Segmented<T extends string>({
   onChange,
 }: {
   value: T;
-  options: { id: T; label: string; icon?: React.ReactNode }[];
+  options: { id: T; label: string; icon?: React.ReactNode; count?: number; title?: string }[];
   onChange: (v: T) => void;
 }) {
   const c = useClaudeTokens();
-  const trackRef = React.useRef<HTMLDivElement | null>(null);
-  const btnRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
-  const [pill, setPill] = React.useState<{ left: number; width: number } | null>(null);
-
-  // Measure the active item so a single pill can slide to it. Runs after
-  // layout (fonts, reflow) and on every value/option change.
-  React.useLayoutEffect(() => {
-    const track = trackRef.current;
-    const el = btnRefs.current[value];
-    if (!track || !el) return;
-    const measure = () => {
-      const t = track.getBoundingClientRect();
-      const e = el.getBoundingClientRect();
-      setPill({ left: e.left - t.left, width: e.width });
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(track);
-    return () => ro.disconnect();
-  }, [value, options]);
-
   return (
-    <Box
-      ref={trackRef}
-      sx={{
-        position: 'relative',
-        display: 'flex',
-        gap: '2px',
-        p: '3px',
-        ...sunkenField(c),
-        // sunkenField is for text inputs: it flips the track to the surface
-        // colour on focus-within, which here collides with the active pill's
-        // surface colour and hides the selection. Keep the track static so
-        // only the pill moves.
-        '&:focus-within': { background: c.bg.secondary, borderColor: c.border.subtle },
-        flexShrink: 0,
-        minHeight: 38,
-      }}
-    >
-      {pill && (
-        <Box
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            top: '3px',
-            bottom: '3px',
-            left: 0,
-            width: pill.width,
-            transform: `translateX(${pill.left}px)`,
-            background: c.bg.surface,
-            borderRadius: `${c.radius.xs}px`,
-            boxShadow: c.shadow.sm,
-            transition: `transform 260ms ${c.ease}, width 260ms ${c.ease}`,
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
-        />
-      )}
+    <Box sx={{ ...segmentTrack(c), flexShrink: 0 }}>
       {options.map(o => {
         const on = o.id === value;
         return (
           <Box
             component="button"
             key={o.id}
-            ref={(el: HTMLButtonElement | null) => {
-              btnRefs.current[o.id] = el;
-            }}
+            title={o.title}
+            aria-label={o.title ?? o.label}
+            aria-pressed={on}
             onClick={() => onChange(o.id)}
-            sx={{
-              position: 'relative',
-              zIndex: 1,
-              px: 1.75,
-              border: 'none',
-              cursor: 'pointer',
-              borderRadius: `${c.radius.xs}px`,
-              fontFamily: c.font.sans,
-              ...c.type.body,
-              color: on ? c.text.primary : c.text.muted,
-              background: 'transparent',
-              transition: `color 200ms ${c.ease}`,
-              whiteSpace: 'nowrap',
-              display: 'inline-grid',
-              alignItems: 'center',
-              justifyItems: 'center',
-              '&:hover': { color: c.text.primary },
-              // Reserve the bold width up front so the row doesn't reflow
-              // when the active item's weight changes.
-              '&::before': {
-                content: `"${o.label}"`,
-                gridArea: '1 / 1',
-                fontWeight: 500,
-                visibility: 'hidden',
-                pointerEvents: 'none',
-                paddingLeft: o.icon ? '21px' : 0,
-              },
-            }}
+            sx={{ ...segmentItem(c, on), ...(o.label ? {} : { px: '6px' }) }}
           >
-            <Box
-              component="span"
-              sx={{
-                gridArea: '1 / 1',
-                fontWeight: on ? 500 : 400,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              {o.icon}
-              {o.label}
-            </Box>
+            {o.icon}
+            {o.label}
+            {o.count !== undefined && (
+              <Box
+                component="span"
+                sx={{ color: on ? c.text.tertiary : c.text.muted, fontVariantNumeric: 'tabular-nums', fontWeight: 400 }}
+              >
+                {o.count}
+              </Box>
+            )}
           </Box>
         );
       })}

@@ -681,7 +681,7 @@ const IconSection: React.FC = () => {
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
             <ButtonBase disabled={saving} onClick={() => void save()} sx={{ ...primaryButton(c) }}>
-              {saving ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Save defaults'}
+              {saving ? <CircularProgress size={12} sx={{ color: c.accent.contrast }} /> : 'Save defaults'}
             </ButtonBase>
             {saved && (
               <Box
@@ -942,7 +942,7 @@ const IgnoreSection: React.FC<{ onSaved?: () => void }> = ({ onSaved }) => {
                         justifyContent: 'center',
                       }}
                     >
-                      {app.included && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
+                      {app.included && <CheckIcon sx={{ fontSize: 14, color: c.accent.contrast }} />}
                     </Box>
                     <BrandGlyph seed={app.workspace_id} letter={app.name[0] || '?'} size={22} />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -976,7 +976,7 @@ const IgnoreSection: React.FC<{ onSaved?: () => void }> = ({ onSaved }) => {
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
             <ButtonBase onClick={() => void save()} disabled={!dirty || saving} sx={{ ...primaryButton(c) }}>
-              {saving ? <CircularProgress size={12} sx={{ color: '#FFFFFF' }} /> : 'Save & sync'}
+              {saving ? <CircularProgress size={12} sx={{ color: c.accent.contrast }} /> : 'Save & sync'}
             </ButtonBase>
             <Box sx={{ ...c.type.caption, color: c.text.tertiary }}>
               {error ? (

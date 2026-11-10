@@ -193,71 +193,93 @@ const StatRow: React.FC<Props> = ({
   return (
     <Box
       sx={{
-        display: 'grid',
-        gap: 1.75,
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+        ...card(c),
+        display: 'flex',
+        alignItems: 'stretch',
+        overflowX: 'auto',
+        '& > *:not(:last-child)': { borderRight: `1px solid ${c.border.subtle}` },
       }}
     >
       {cells.map(cell => {
         const clickable = Boolean(cell.onClick);
-        const toneColor =
+        const dot =
           cell.tone === 'warning'
             ? c.status.warning
             : cell.tone === 'accent'
-              ? c.accent.primary
+              ? c.text.primary
               : null;
-        const ink = toneColor ?? c.text.primary;
         return (
           <Box
             key={cell.key}
             component={clickable ? 'button' : 'div'}
             onClick={cell.onClick}
             sx={{
-              ...card(c, clickable),
+              flex: '1 1 0',
+              minWidth: 112,
               display: 'flex',
               flexDirection: 'column',
-              gap: '6px',
-              px: 2,
-              py: 1.75,
+              justifyContent: 'center',
+              gap: '3px',
+              px: 1.75,
+              py: 1.25,
               textAlign: 'left',
-              // Repeated under &:hover because card()'s hover rule would
-              // otherwise repaint the border and hide that this is the
-              // filter you're currently looking at.
+              border: 'none',
+              background: cell.active ? c.bg.secondary : 'transparent',
+              fontFamily: c.font.sans,
+              cursor: clickable ? 'pointer' : 'default',
+              transition: c.transition,
+              position: 'relative',
+              ...(clickable && { '&:hover': { background: c.bg.secondary } }),
               ...(cell.active && {
-                borderColor: c.accent.primary,
-                boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.12)`,
-                '&:hover': {
-                  borderColor: c.accent.primary,
-                  boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.20)`,
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  left: 14,
+                  right: 14,
+                  bottom: 0,
+                  height: '2px',
+                  borderRadius: 1,
+                  background: c.text.primary,
                 },
               }),
               '&:focus-visible': {
                 outline: 'none',
-                boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)`,
+                boxShadow: `inset 0 0 0 2px rgba(${c.focusRgb},0.5)`,
               },
             }}
           >
             <Box
               sx={{
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'baseline',
                 gap: '6px',
-                color: toneColor ?? c.text.muted,
-                '& svg': { fontSize: 14 },
               }}
             >
-              {cell.icon}
-              <Box sx={{ ...c.type.caption }}>{cell.label}</Box>
+              <Box
+                sx={{
+                  ...c.type.title3,
+                  fontWeight: 600,
+                  color: c.text.primary,
+                  lineHeight: 1.2,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {cell.value}
+              </Box>
+              {dot && (
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: dot, alignSelf: 'center' }} />
+              )}
             </Box>
             <Box
               sx={{
-                ...c.type.title2,
-                color: ink,
-                lineHeight: 1,
-                fontVariantNumeric: 'tabular-nums',
+                ...c.type.caption,
+                color: c.text.tertiary,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
-              {cell.value}
+              {cell.label}
             </Box>
             {cell.footnote}
           </Box>
@@ -293,7 +315,7 @@ const SyncNote: React.FC<{
       display: 'inline-flex',
       alignItems: 'center',
       gap: '4px',
-      mt: '2px',
+      mt: 0,
       p: 0,
       border: 'none',
       background: 'transparent',
@@ -304,6 +326,7 @@ const SyncNote: React.FC<{
       transition: c.transition,
       ...(onClick && { '&:hover': { color: c.text.secondary } }),
       '& svg': { fontSize: 11 },
+      whiteSpace: 'nowrap',
     }}
   >
     {spinning ? (

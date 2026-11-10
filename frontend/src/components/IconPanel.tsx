@@ -557,7 +557,7 @@ const IconPanel: React.FC<Props> = ({
               sx={{ ...primaryButton(c) }}
             >
               {generating ? (
-                <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
               ) : job ? (
                 'Generate again'
               ) : (
@@ -610,7 +610,7 @@ const IconPanel: React.FC<Props> = ({
                   sx={{ ...primaryButton(c) }}
                 >
                   {uploading ? (
-                    <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                    <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                   ) : (
                     'Set as icon'
                   )}
@@ -677,7 +677,7 @@ const IconPanel: React.FC<Props> = ({
                           background: 'rgba(0,0,0,0.35)',
                         }}
                       >
-                        <CircularProgress size={16} sx={{ color: '#FFFFFF' }} />
+                        <CircularProgress size={16} sx={{ color: c.accent.contrast }} />
                       </Box>
                     )}
                   </ButtonBase>

@@ -198,7 +198,7 @@ const DirtyDetails: React.FC<Props> = ({
                     background: isChosen ? c.accent.primary : 'transparent',
                   }}
                 >
-                  {isChosen && <CheckIcon sx={{ fontSize: 14, color: '#FFFFFF' }} />}
+                  {isChosen && <CheckIcon sx={{ fontSize: 14, color: c.accent.contrast }} />}
                 </ButtonBase>
               }
               trailing={
@@ -309,7 +309,7 @@ const DirtyDetails: React.FC<Props> = ({
           )}
           <ButtonBase disabled={!canCommit} onClick={() => void submit()} sx={{ ...primaryButton(c) }}>
             {busy ? (
-              <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+              <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
             ) : hasRemote ? (
               'Commit and push'
             ) : (

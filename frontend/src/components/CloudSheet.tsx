@@ -289,7 +289,7 @@ const CloudSheet: React.FC<Props> = ({ open, onClose, onInstalled }) => {
             height: 30,
             px: '10px',
             ...sunkenField(c),
-            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
+            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.35)` },
           }}
         >
           <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
@@ -502,7 +502,7 @@ const RepoRow: React.FC<{
             }}
           >
             {installing ? (
-              <CircularProgress size={11} sx={{ color: "#FFFFFF" }} />
+              <CircularProgress size={11} sx={{ color: c.accent.contrast }} />
             ) : (
               <>
                 <CloudDownloadRoundedIcon sx={{ fontSize: 14 }} />

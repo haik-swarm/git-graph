@@ -701,7 +701,7 @@ const IconSettingsSheet: React.FC<Props> = ({ open, onClose, onSaved }) => {
           sx={{ ...primaryButton(c) }}
         >
           {saving ? (
-            <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+            <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
           ) : (
             'Save defaults'
           )}

@@ -21,7 +21,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WebAssetRoundedIcon from '@mui/icons-material/WebAssetRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
+import { menuSurface, skeleton, slimScroll, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, RailLabel } from '@/components/Chrome';
 import { AppDockScroll, useAppDockItem } from '@/components/AppDock';
 import { gitgraphInitUrl } from '@/shared/state/API_ENDPOINTS';
@@ -248,74 +248,26 @@ const AppRail: React.FC<Props> = ({
 
   return (
     <>
-      <AppDockScroll sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pl: '6px', pr: '14px', pt: '10px', pb: '10px', ...slimScroll(c) }}>
-        <Box
-          component="button"
-          onClick={onHome}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            width: '100%',
-            height: 32,
-            px: '8px',
-            mb: '4px',
-            border: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-            borderRadius: `${c.radius.sm}px`,
-            background: homeActive ? `rgba(${c.accentRgb},0.10)` : 'transparent',
-            color: c.text.primary,
-            transition: 'background 100ms linear',
-            '&:hover': { background: homeActive ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary },
-          }}
-        >
-          <Box
-            sx={{
-              width: 20,
-              height: 20,
-              flexShrink: 0,
-              borderRadius: `${c.radius.sm}px`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: homeActive ? c.accent.primary : c.text.tertiary,
-              background: homeActive ? `rgba(${c.accentRgb},0.10)` : 'transparent',
-            }}
-          >
-            <GridViewRoundedIcon sx={{ fontSize: 14 }} />
-          </Box>
-          <Box
-            sx={{
-              flex: 1,
-              ...c.type.body,
-              fontWeight: homeActive ? 590 : 400,
-              color: c.text.primary,
-            }}
-          >
-            Home
-          </Box>
-        </Box>
-
-        <Box sx={{ px: '2px', mb: '4px' }}>
+      <AppDockScroll sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: '8px', pt: '10px', pb: '12px', ...slimScroll(c) }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          <NavRow
+            icon={<GridViewRoundedIcon sx={{ fontSize: 15 }} />}
+            label="Home"
+            active={homeActive}
+            onClick={onHome}
+          />
           <NavRow
             icon={<LocalOfferRoundedIcon sx={{ fontSize: 15 }} />}
             label="Releases"
             active={releasesActive}
             onClick={onReleases}
           />
-        </Box>
-
-        <Box sx={{ px: '2px', mb: '4px' }}>
           <NavRow
             icon={<Inventory2RoundedIcon sx={{ fontSize: 15 }} />}
             label="Bundles"
             active={bundlesActive}
             onClick={onBundles}
           />
-        </Box>
-
-        <Box sx={{ px: '2px', mb: '4px' }}>
           <NavRow
             icon={<SettingsRoundedIcon sx={{ fontSize: 15 }} />}
             label="Settings"
@@ -328,10 +280,9 @@ const AppRail: React.FC<Props> = ({
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          px: '6px',
-          pt: '40px',
-          pb: '0px',
+          gap: '4px',
+          pt: 2,
+          pb: '2px',
           flexShrink: 0,
         }}
       >
@@ -345,10 +296,13 @@ const AppRail: React.FC<Props> = ({
             height: 26,
             px: '8px',
             ...sunkenField(c),
-            '&:focus-within': { boxShadow: `0 0 0 3px rgba(${c.accentRgb},0.35)` },
+            background: 'transparent',
+            borderColor: 'transparent',
+            '&:hover': { background: c.bg.secondary },
+            '&:focus-within': { background: c.bg.surface, borderColor: c.border.medium, boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.12)` },
           }}
         >
-          <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.tertiary, flexShrink: 0 }} />
+          <SearchRoundedIcon sx={{ fontSize: 14, color: c.text.muted, flexShrink: 0 }} />
           <Box
             component="input"
             value={query}
@@ -369,7 +323,7 @@ const AppRail: React.FC<Props> = ({
               fontFamily: c.font.sans,
               ...c.type.callout,
               color: c.text.primary,
-              '&::placeholder': { color: c.text.tertiary },
+              '&::placeholder': { color: c.text.muted },
             }}
           />
           {query && (
@@ -402,26 +356,23 @@ const AppRail: React.FC<Props> = ({
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
-            gap: '2px',
+            gap: '1px',
             height: 26,
-            pl: '10px',
-            pr: '6px',
+            pl: '8px',
+            pr: '4px',
             borderRadius: `${c.radius.sm}px`,
-            background: c.bg.surface,
-            border: `1px solid ${c.border.subtle}`,
             ...c.type.caption,
-            fontWeight: 600,
-            color: c.text.primary,
-            boxShadow: c.shadow.sm,
+            fontWeight: 500,
+            color: c.text.tertiary,
             transition: c.transition,
-            '&:hover': { background: c.bg.secondary },
+            '&:hover': { background: c.bg.secondary, color: c.text.primary },
           }}
         >
           {RAIL_KIND_LABEL[railKind]}
           <KeyboardArrowDownRoundedIcon
             sx={{
-              fontSize: 16,
-              color: c.text.tertiary,
+              fontSize: 14,
+              color: c.text.muted,
               transition: c.transition,
               transform: kindAnchor ? 'rotate(180deg)' : 'none',
             }}
@@ -439,10 +390,8 @@ const AppRail: React.FC<Props> = ({
               sx: {
                 mt: '4px',
                 minWidth: 140,
-                borderRadius: `${c.radius.sm}px`,
-                background: c.bg.surface,
-                border: `1px solid ${c.border.subtle}`,
-                boxShadow: c.shadow.md,
+                ...menuSurface(c),
+                p: 0,
               },
             },
           }}
@@ -467,18 +416,18 @@ const AppRail: React.FC<Props> = ({
                   borderRadius: `${c.radius.xs}px`,
                   gap: '8px',
                   ...c.type.callout,
-                  fontWeight: active ? 600 : 500,
+                  fontWeight: 500,
                   color: active ? c.text.primary : c.text.secondary,
-                  '&.Mui-selected': { background: `rgba(${c.accentRgb},0.10)` },
-                  '&.Mui-selected:hover': { background: `rgba(${c.accentRgb},0.16)` },
+                  '&.Mui-selected': { background: 'transparent' },
+                  '&.Mui-selected:hover': { background: c.bg.secondary },
                   '&:hover': { background: c.bg.secondary },
                 }}
               >
                 <Box sx={{ flex: 1 }}>{RAIL_KIND_LABEL[key]}</Box>
                 <CheckRoundedIcon
                   sx={{
-                    fontSize: 15,
-                    color: c.accent.primary,
+                    fontSize: 14,
+                    color: c.text.primary,
                     visibility: active ? 'visible' : 'hidden',
                   }}
                 />
@@ -501,7 +450,7 @@ const AppRail: React.FC<Props> = ({
                 label="Uncommitted changes"
               />
               <LegendItem
-                glyph={<CloudUploadRoundedIcon sx={{ fontSize: 12, color: c.accent.primary }} />}
+                glyph={<CloudUploadRoundedIcon sx={{ fontSize: 12, color: c.text.tertiary }} />}
                 label="Commits to push"
               />
               <LegendItem
@@ -509,7 +458,7 @@ const AppRail: React.FC<Props> = ({
                 label="Shared collaborators"
               />
               <LegendItem
-                glyph={<LocalOfferRoundedIcon sx={{ fontSize: 11, color: c.status.success }} />}
+                glyph={<Box sx={{ ...c.type.caption, fontSize: 10, fontFamily: c.font.mono, color: c.text.muted }}>v1</Box>}
                 label="Latest release"
               />
               <LegendItem
@@ -520,7 +469,7 @@ const AppRail: React.FC<Props> = ({
               />
               <LegendItem
                 glyph={
-                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', background: c.accent.primary }} />
+                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', border: `1.5px solid ${c.text.muted}` }} />
                 }
                 label="Never published"
               />
@@ -548,14 +497,14 @@ const AppRail: React.FC<Props> = ({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 26,
+              width: 22,
               height: 26,
-              color: c.text.tertiary,
+              color: c.text.muted,
               cursor: 'help',
               '&:hover': { color: c.text.primary },
             }}
           >
-            <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+            <InfoOutlinedIcon sx={{ fontSize: 14 }} />
           </Box>
         </Tooltip>
       </Box>
@@ -706,20 +655,22 @@ const NavRow: React.FC<{
         alignItems: 'center',
         justifyContent: 'flex-start',
         gap: '8px',
-        height: 30,
+        height: 28,
         px: '8px',
         borderRadius: `${c.radius.sm}px`,
-        color: active ? c.accent.primary : c.text.secondary,
-        background: active ? `rgba(${c.accentRgb},0.10)` : 'transparent',
+        color: active ? c.text.primary : c.text.secondary,
+        background: active ? c.bg.secondary : 'transparent',
+        boxShadow: active ? `inset 0 0 0 1px ${c.border.subtle}` : 'none',
         transition: c.transition,
+        '& svg': { color: active ? c.text.primary : c.text.tertiary },
         '&:hover': {
-          background: active ? `rgba(${c.accentRgb},0.14)` : c.bg.secondary,
-          color: active ? c.accent.primary : c.text.primary,
+          background: c.bg.secondary,
+          color: c.text.primary,
         },
       }}
     >
       {icon}
-      <Box sx={{ ...c.type.callout, fontWeight: active ? 600 : 500 }}>{label}</Box>
+      <Box sx={{ ...c.type.body, fontWeight: 500 }}>{label}</Box>
     </ButtonBase>
   );
 };
@@ -769,7 +720,7 @@ const RailAppRow: React.FC<{
   const c = useClaudeTokens();
   // Every app row rides the dock magnification. Nav rows and the home button
   // are separate components that never call this hook, so they stay fixed.
-  const { rowRef: dockRef, iconRef, trailRef } = useAppDockItem(true);
+  const { rowRef: dockRef, iconRef, trailRef } = useAppDockItem(false);
   const missing = !app.workspace_exists;
   const dirty = state?.dirty ?? 0;
   const unpushed = state?.unpushed ?? 0;
@@ -788,15 +739,17 @@ const RailAppRow: React.FC<{
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1,
+        gap: '8px',
         width: '100%',
-        height: 32,
+        height: 28,
         px: '8px',
         border: 'none',
         cursor: 'pointer',
         textAlign: 'left',
+        fontFamily: c.font.sans,
         borderRadius: `${c.radius.sm}px`,
-        background: selected ? `rgba(${c.accentRgb},0.10)` : 'transparent',
+        background: selected ? c.bg.secondary : 'transparent',
+        boxShadow: selected ? `inset 0 0 0 1px ${c.border.subtle}` : 'none',
         color: selected ? c.text.primary : c.text.primary,
         // The transform is driven imperatively per frame by the dock; anchoring
         // to the left keeps the label pinned as the row swells, and the eased
@@ -807,7 +760,7 @@ const RailAppRow: React.FC<{
           'background 100ms linear, transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
         '& .track-slot': { opacity: 0, transition: 'opacity 120ms linear' },
         '&:hover': {
-          background: selected ? `rgba(${c.accentRgb},0.10)` : c.bg.secondary,
+          background: c.bg.secondary,
           '& .track-slot': { opacity: 1 },
         },
       }}
@@ -826,8 +779,7 @@ const RailAppRow: React.FC<{
           <BrandGlyph
             seed={app.workspace_id}
             letter={app.name[0] || '?'}
-            size={20}
-            active={selected}
+            size={18}
             iconId={app.workspace_id}
             hasIcon={app.has_icon}
           />
@@ -838,11 +790,11 @@ const RailAppRow: React.FC<{
                 position: 'absolute',
                 right: -1,
                 bottom: -1,
-                width: 8,
-                height: 8,
+                width: 7,
+                height: 7,
                 borderRadius: '50%',
                 background: c.status.success,
-                border: `1.5px solid ${selected ? `rgba(${c.accentRgb},0.10)` : c.bg.surface}`,
+                border: `1.5px solid ${selected ? c.bg.secondary : c.bg.rail}`,
               }}
             />
           )}
@@ -853,11 +805,11 @@ const RailAppRow: React.FC<{
                 position: 'absolute',
                 right: -1,
                 top: -1,
-                width: 8,
-                height: 8,
+                width: 7,
+                height: 7,
                 borderRadius: '50%',
-                background: c.accent.primary,
-                border: `1.5px solid ${selected ? `rgba(${c.accentRgb},0.10)` : c.bg.surface}`,
+                background: selected ? c.bg.secondary : c.bg.rail,
+                border: `1.5px solid ${c.text.muted}`,
               }}
             />
           )}
@@ -866,20 +818,20 @@ const RailAppRow: React.FC<{
         <Box
           ref={iconRef}
           sx={{
-            width: 20,
-            height: 20,
+            width: 18,
+            height: 18,
             flexShrink: 0,
             borderRadius: `${c.radius.sm}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: c.text.muted,
+            color: c.text.ghost,
             transformOrigin: 'center',
             willChange: 'transform',
             transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
-          <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 14 }} />
+          <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 13 }} />
         </Box>
       )}
 
@@ -888,7 +840,7 @@ const RailAppRow: React.FC<{
       <Box
         component="span"
         title={app.kind === 'skill' ? 'Skill' : 'App'}
-        sx={{ display: 'inline-flex', flexShrink: 0, color: c.text.tertiary }}
+        sx={{ display: 'none' }}
       >
         {app.kind === 'skill' ? (
           <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />
@@ -903,8 +855,8 @@ const RailAppRow: React.FC<{
           flex: 1,
           minWidth: 0,
           ...c.type.body,
-          fontWeight: selected ? 590 : 400,
-          color: missing ? c.text.tertiary : c.text.primary,
+          fontWeight: selected ? 500 : 400,
+          color: missing ? c.text.muted : selected ? c.text.primary : c.text.secondary,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -941,11 +893,11 @@ const RailAppRow: React.FC<{
             gap: '3px',
             flexShrink: 0,
             ...c.type.caption,
-            fontWeight: 500,
-            color: c.status.warning,
+            fontVariantNumeric: 'tabular-nums',
+            color: c.text.tertiary,
           }}
         >
-          <RadioButtonCheckedRoundedIcon sx={{ fontSize: 11 }} />
+          <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: c.status.warning }} />
           {dirty}
         </Box>
       )}
@@ -959,11 +911,11 @@ const RailAppRow: React.FC<{
             gap: '3px',
             flexShrink: 0,
             ...c.type.caption,
-            fontWeight: 500,
-            color: c.accent.primary,
+            fontVariantNumeric: 'tabular-nums',
+            color: c.text.tertiary,
           }}
         >
-          <CloudUploadRoundedIcon sx={{ fontSize: 12 }} />
+          <CloudUploadRoundedIcon sx={{ fontSize: 12, color: c.text.muted }} />
           {unpushed}
         </Box>
       )}
@@ -981,7 +933,7 @@ const RailAppRow: React.FC<{
             gap: '3px',
             flexShrink: 0,
             ...c.type.caption,
-            color: c.text.tertiary,
+            color: c.text.muted,
           }}
         >
           <GroupRoundedIcon sx={{ fontSize: 12 }} />
@@ -999,19 +951,13 @@ const RailAppRow: React.FC<{
             alignItems: 'center',
             gap: '2px',
             flexShrink: 0,
-            maxWidth: 72,
-            height: 15,
-            pl: '3px',
-            pr: '5px',
+            maxWidth: 64,
             ...c.type.caption,
-            fontWeight: 600,
-            color: c.status.success,
-            background: `rgba(${c.accentRgb},0.10)`,
-            border: `1px solid ${c.border.subtle}`,
-            borderRadius: `${c.radius.xs}px`,
+            fontFamily: c.font.mono,
+            fontSize: '0.65625rem',
+            color: c.text.muted,
           }}
         >
-          <LocalOfferRoundedIcon sx={{ fontSize: 10, flexShrink: 0 }} />
           <Box
             component="span"
             sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
@@ -1039,13 +985,14 @@ const RailAppRow: React.FC<{
             px: '7px',
             ...c.type.caption,
             fontWeight: 500,
-            color: c.accent.primary,
+            color: c.text.secondary,
+            background: c.bg.surface,
             borderRadius: `${c.radius.xs}px`,
-            border: `1px solid ${`rgba(${c.accentRgb},0.35)`}`,
-            '&:hover': { background: `rgba(${c.accentRgb},0.10)` },
+            border: `1px solid ${c.border.medium}`,
+            '&:hover': { color: c.text.primary, borderColor: c.border.strong },
           }}
         >
-          {tracking ? <CircularProgress size={9} sx={{ color: c.accent.primary }} /> : 'Track'}
+          {tracking ? <CircularProgress size={9} sx={{ color: c.text.tertiary }} /> : 'Track'}
         </Box>
       ) : null}
       </Box>

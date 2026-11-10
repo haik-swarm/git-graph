@@ -502,10 +502,10 @@ const ReleaseExcludeSheet: React.FC<Props> = ({
                   }}
                 >
                   {!node.locked && mixed && (
-                    <RemoveRoundedIcon sx={{ fontSize: 13, color: '#FFFFFF' }} />
+                    <RemoveRoundedIcon sx={{ fontSize: 13, color: c.accent.contrast }} />
                   )}
                   {!node.locked && !mixed && checked && (
-                    <CheckRoundedIcon sx={{ fontSize: 13, color: '#FFFFFF' }} />
+                    <CheckRoundedIcon sx={{ fontSize: 13, color: c.accent.contrast }} />
                   )}
                   {node.locked && (
                     <LockRoundedIcon sx={{ fontSize: 11, color: c.text.muted }} />

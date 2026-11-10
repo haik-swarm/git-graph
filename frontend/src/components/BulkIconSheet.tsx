@@ -561,7 +561,7 @@ const BulkIconSheet: React.FC<Props> = ({ open, onClose, apps, onDone }) => {
                         }}
                       >
                         {isChosen && (
-                          <CheckRoundedIcon sx={{ fontSize: 13, color: '#FFFFFF' }} />
+                          <CheckRoundedIcon sx={{ fontSize: 13, color: c.accent.contrast }} />
                         )}
                       </ButtonBase>
                     ) : (

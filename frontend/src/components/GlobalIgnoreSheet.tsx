@@ -306,7 +306,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, source = 'apps', onClose, on
                       }}
                     >
                       {app.included && (
-                        <CheckIcon sx={{ fontSize: 14, color: "#FFFFFF" }} />
+                        <CheckIcon sx={{ fontSize: 14, color: c.accent.contrast }} />
                       )}
                     </Box>
                     <BrandGlyph
@@ -377,7 +377,7 @@ const GlobalIgnoreSheet: React.FC<Props> = ({ open, source = 'apps', onClose, on
               sx={{ ...primaryButton(c) }}
             >
               {saving ? (
-                <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
+                <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
               ) : (
                 'Save & sync'
               )}

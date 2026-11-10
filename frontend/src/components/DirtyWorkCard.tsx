@@ -99,24 +99,14 @@ const DirtyWorkCard: React.FC<Props> = ({
       sx={{
         mx: 3,
         mb: 2,
-        borderRadius: `${c.radius.xl}px`,
-        border: `1px solid ${c.border.subtle}`,
+        borderRadius: `${c.radius.lg}px`,
+        border: `1px solid ${c.border.medium}`,
         background: c.bg.surface,
         boxShadow: c.shadow.sm,
         // Signature detail: a hairline gradient stripe on the left communicates
         // "the working tree is diverging" without shouting.
         position: 'relative',
         overflow: 'hidden',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 3,
-          background: `linear-gradient(180deg, ${c.status.warning}, ${c.accent.primary})`,
-          zIndex: 1,
-        },
       }}
     >
     <Box
@@ -136,10 +126,11 @@ const DirtyWorkCard: React.FC<Props> = ({
       role="button"
       aria-expanded={open}
       sx={{
-        p: 1.75,
+        p: 1.25,
+        px: 1.5,
         display: 'flex',
         alignItems: 'center',
-        gap: 1.5,
+        gap: 1.25,
         cursor: dirty.length > 0 ? 'pointer' : 'default',
         transition: c.transition,
         '&:hover': { background: dirty.length > 0 ? c.bg.secondary : 'transparent' },
@@ -147,14 +138,15 @@ const DirtyWorkCard: React.FC<Props> = ({
     >
       <Box
         sx={{
-          width: 34,
-          height: 34,
-          borderRadius: `${c.radius.md}px`,
+          width: 28,
+          height: 28,
+          borderRadius: `${c.radius.sm}px`,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: `rgba(255,149,0,${c.isDark ? 0.2 : 0.14})`,
+          background: c.bg.secondary,
+            border: `1px solid ${c.border.subtle}`,
           color: c.status.warning,
         }}
       >

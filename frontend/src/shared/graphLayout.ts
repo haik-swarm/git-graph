@@ -100,14 +100,14 @@ export function layoutCommits(commits: Commit[]): Layout {
 
 /** Eight hues cycled by lane, so adjacent branches stay distinguishable. */
 export const LANE_COLORS = [
-  '#007AFF',
-  '#AF52DE',
-  '#FF9500',
-  '#34C759',
-  '#FF2D55',
-  '#5AC8FA',
-  '#FFCC00',
-  '#FF3B30',
+  '#5E6AD2',
+  '#9B6BD6',
+  '#D08A3E',
+  '#4C9F70',
+  '#D0657F',
+  '#4A9CC0',
+  '#B9A23A',
+  '#C9605A',
 ];
 
 export function laneColor(lane: number): string {

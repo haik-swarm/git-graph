@@ -267,7 +267,7 @@ const GitHubPanel: React.FC<Props> = ({
                 sx={{ ...primaryButton(c) }}
               >
                 {busy === 'create' ? (
-                  <CircularProgress size={12} sx={{ color: "#FFFFFF" }} />
+                  <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                 ) : (
                   'Create private repo'
                 )}
@@ -361,7 +361,7 @@ const GitHubPanel: React.FC<Props> = ({
                     sx={{ ...primaryButton(c) }}
                   >
                     {busy === 'pull' ? (
-                      <CircularProgress size={12} sx={{ color: '#FFFFFF' }} />
+                      <CircularProgress size={12} sx={{ color: c.accent.contrast }} />
                     ) : (
                       `Pull ${behind} ${behind === 1 ? 'commit' : 'commits'}`
                     )}

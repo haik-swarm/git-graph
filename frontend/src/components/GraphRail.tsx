@@ -3,9 +3,9 @@ import Box from '@mui/material/Box';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { laneColor, type Layout } from '@/shared/graphLayout';
 
-export const ROW_HEIGHT = 58;
-const LANE_WIDTH = 22;
-const DOT = 11;
+export const ROW_HEIGHT = 52;
+const LANE_WIDTH = 20;
+const DOT = 9;
 
 interface Props {
   layout: Layout;
@@ -69,8 +69,8 @@ const GraphRail: React.FC<Props> = ({
             d={d}
             fill="none"
             stroke={laneColor(Math.min(edge.fromLane, edge.toLane))}
-            strokeWidth={1.75}
-            strokeOpacity={0.5}
+            strokeWidth={1.5}
+            strokeOpacity={0.55}
             strokeLinecap="round"
           />
         );
