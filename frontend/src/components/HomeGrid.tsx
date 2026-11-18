@@ -14,6 +14,7 @@ import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import { card, pushButton, segmentItem, segmentTrack, slimScroll, statusDot, sunkenField } from '@/shared/styles/ui';
 import { BrandGlyph, Pill, Placeholder } from '@/components/Chrome';
@@ -458,6 +459,8 @@ const AppCard: React.FC<{
   tracking: boolean;
 }> = ({ app, meta, loading, onOpen, onTrack, tracking }) => {
   const c = useClaudeTokens();
+  // Keeps the Track slot alive after tracking so it can swap to "Open →".
+  const [justTracked, setJustTracked] = React.useState(false);
   const flat = Boolean(app.is_flat);
   const missing = !app.workspace_exists && !flat;
   const tracked = app.has_git && !missing && !flat;
@@ -554,17 +557,16 @@ const AppCard: React.FC<{
             )}
           </Box>
         </Box>
-        {!tracked && !missing && !flat ? (
-          <Box
-            component="span"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
+        {(!tracked || justTracked) && !missing && !flat ? (
+          <TrackAction
+            tracked={tracked}
+            tracking={tracking}
+            onTrack={() => {
+              setJustTracked(true);
               void onTrack(app);
             }}
-            sx={{ ...pushButton(c), minHeight: 24, px: 1, ...c.type.caption, fontWeight: 500 }}
-          >
-            {tracking ? <CircularProgress size={11} sx={{ color: c.text.tertiary }} /> : 'Track'}
-          </Box>
+            onOpen={onOpen}
+          />
         ) : (
           <Box
             className="gg-open"
@@ -669,6 +671,86 @@ const AppCard: React.FC<{
   );
 };
 
+/**
+ * Track button that, once the repo exists, collapses out and is replaced by a
+ * quiet "Open →" link, so tracking several apps in a row never navigates away.
+ */
+const TrackAction: React.FC<{
+  tracked: boolean;
+  tracking: boolean;
+  onTrack: () => void;
+  onOpen: () => void;
+}> = ({ tracked, tracking, onTrack, onOpen }) => {
+  const c = useClaudeTokens();
+  const ease = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+
+  if (tracked && !tracking) {
+    return (
+      <Box
+        component="span"
+        role="button"
+        tabIndex={0}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        onKeyDown={(e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpen();
+          }
+        }}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '2px',
+          minHeight: 24,
+          px: '6px',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          ...c.type.caption,
+          fontWeight: 500,
+          color: c.text.tertiary,
+          transition: c.transition,
+          animation: `gg-open-in 320ms ${ease} both`,
+          '@keyframes gg-open-in': {
+            from: { opacity: 0, transform: 'translateX(-6px)', filter: 'blur(2px)' },
+            to: { opacity: 1, transform: 'none', filter: 'none' },
+          },
+          '& svg': { fontSize: 14, transition: `transform 180ms ${ease}` },
+          '&:hover': { color: c.text.primary, background: c.bg.secondary, '& svg': { transform: 'translateX(2px)' } },
+          '&:focus-visible': { outline: 'none', boxShadow: `0 0 0 3px rgba(${c.focusRgb},0.35)` },
+        }}
+      >
+        Open
+        <ArrowForwardRoundedIcon />
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      component="span"
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!tracking) onTrack();
+      }}
+      sx={{
+        ...pushButton(c),
+        minHeight: 24,
+        px: 1,
+        ...c.type.caption,
+        fontWeight: 500,
+        pointerEvents: tracking ? 'none' : undefined,
+      }}
+    >
+      {tracking ? <CircularProgress size={11} sx={{ color: c.text.tertiary }} /> : 'Track'}
+    </Box>
+  );
+};
+
 const AppTable: React.FC<{
   rows: AppEntry[];
   meta: Record<string, Meta>;
@@ -742,6 +824,7 @@ const AppRow: React.FC<{
   bodyCell: Record<string, unknown>;
 }> = ({ app, meta, loading, onOpen, onTrack, tracking, bodyCell }) => {
   const c = useClaudeTokens();
+  const [justTracked, setJustTracked] = React.useState(false);
   const flat = Boolean(app.is_flat);
   const missing = !app.workspace_exists && !flat;
   const tracked = app.has_git && !missing && !flat;
@@ -925,17 +1008,16 @@ const AppRow: React.FC<{
       </Box>
 
       <Box component="td" sx={{ ...bodyCell, textAlign: 'right' }}>
-        {!tracked && !missing ? (
-          <Box
-            component="span"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
+        {(!tracked || justTracked) && !missing ? (
+          <TrackAction
+            tracked={tracked}
+            tracking={tracking}
+            onTrack={() => {
+              setJustTracked(true);
               void onTrack(app);
             }}
-            sx={{ ...pushButton(c), minHeight: 24, px: 1, ...c.type.caption, fontWeight: 500 }}
-          >
-            {tracking ? <CircularProgress size={11} sx={{ color: c.text.tertiary }} /> : 'Track'}
-          </Box>
+            onOpen={onOpen}
+          />
         ) : tracked ? (
           <ChevronRightRoundedIcon sx={{ fontSize: 16, color: c.text.muted, verticalAlign: 'middle' }} />
         ) : null}

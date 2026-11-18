@@ -412,7 +412,10 @@ const Home: React.FC = () => {
   }, [selected, selectedSha]);
 
   const trackApp = useCallback(
-    async (app: AppEntry) => {
+    // `open: false` tracks in place (Home grid) so you can click through and
+    // track several apps without being yanked into each one's graph.
+    async (app: AppEntry, opts: { open?: boolean } = {}) => {
+      const open = opts.open ?? true;
       setInitBusy(true);
       setTrackingId(app.is_flat ? app.id : app.workspace_id);
       setInitError(null);
@@ -427,6 +430,7 @@ const Home: React.FC = () => {
         // flat id we started from. A normal app keeps its workspace_id.
         const data = await res.json().catch(() => ({}));
         const list = await refetchApps();
+        if (!open) return;
         const fresh = app.is_flat
           ? list.find(a => a.id === data?.id)
           : list.find(a => a.workspace_id === app.workspace_id);
@@ -733,7 +737,7 @@ const Home: React.FC = () => {
               meta={homeMeta}
               metaBusy={metaBusy}
               onOpen={openApp}
-              onTrack={trackApp}
+              onTrack={app => trackApp(app, { open: false })}
               trackingId={trackingId}
               syncing={syncing}
               syncedAt={syncedAt}
